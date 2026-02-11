@@ -1,0 +1,29 @@
+appId: com.qshield.desktop
+productName: QShield Desktop
+directories:
+  output: dist
+  buildResources: resources
+mac:
+  category: public.app-category.utilities
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  notarize: true
+win:
+  target:
+    - nsis
+  sign: true
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+publish:
+  provider: github
+  releaseType: release
+files:
+  - dist/**/*
+  - "!dist/electron"
+  - dist/electron/main.js
+  - dist/electron/preload.js

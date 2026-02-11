@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.turbo/
+.vite/
+*.dmg
+*.exe
+*.AppImage
+*.snap
+.env
+.env.local
+.DS_Store
+thumbs.db
+*.log
+coverage/
+test-results/
+playwright-report/

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "outDir": "dist/electron",
+    "rootDir": "electron",
+    "baseUrl": ".",
+    "paths": {
+      "~/*": ["electron/*"]
+    },
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["electron/**/*.ts"],
+  "exclude": ["dist"]
+}
