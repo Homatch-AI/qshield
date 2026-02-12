@@ -692,6 +692,19 @@ app.whenReady().then(() => {
   services = createServiceRegistry(configManager);
   registerIpcHandlers(services);
 
+  // Toggle main window — registered here for direct mainWindow access
+  ipcMain.handle('app:toggle-main-window', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    }
+    return { success: true, data: null };
+  });
+
   // Shield toggle handler — registered here because it needs access to shieldWindow
   ipcMain.handle('app:toggle-shield-overlay', () => {
     if (shieldWindow) {

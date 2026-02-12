@@ -15,6 +15,7 @@ export default function ShieldOverlay() {
   const strokeColor = TRUST_LEVEL_STROKE_COLORS[level];
 
   const handleDoubleClick = useCallback(() => {
+    console.log('DBLCLICK FIRED');
     if (isIPCAvailable() && window.qshield.app.toggleMainWindow) {
       window.qshield.app.toggleMainWindow();
     }
@@ -22,8 +23,11 @@ export default function ShieldOverlay() {
 
   return (
     <div
-      className="flex h-screen w-screen flex-col items-center justify-center bg-transparent select-none"
-      style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      className="flex h-screen w-screen flex-col items-center justify-center select-none"
+      style={{
+        WebkitAppRegion: 'drag',
+        backgroundColor: 'rgba(0,0,0,0.01)',
+      } as React.CSSProperties}
     >
       <div
         onDoubleClick={handleDoubleClick}
