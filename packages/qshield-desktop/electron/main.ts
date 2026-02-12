@@ -237,16 +237,27 @@ function setupCSP(): void {
     connectSources.push('ws://localhost:*', 'http://localhost:*');
   }
 
-  const cspDirectives = [
-    "default-src 'self'",
-    "script-src 'self'",
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
-    "font-src 'self'",
-    `connect-src ${connectSources.join(' ')}`,
-    "object-src 'none'",
-    "base-uri 'self'",
-  ];
+  const cspDirectives = isDev
+    ? [
+        // Dev mode: relax CSP to allow Vite dev server (inline scripts, HMR, module loading)
+        "default-src 'self' http://localhost:*",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:*",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self'",
+        `connect-src ${connectSources.join(' ')}`,
+      ]
+    : [
+        // Production: hardened CSP
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self'",
+        `connect-src ${connectSources.join(' ')}`,
+        "object-src 'none'",
+        "base-uri 'self'",
+      ];
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
