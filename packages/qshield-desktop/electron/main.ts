@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import log from 'electron-log';
 import { registerIpcHandlers, type ServiceRegistry } from './ipc/handlers';
 import { ConfigManager, type WindowBounds, type ShieldOverlayConfig } from './services/config';
+import { StandaloneCertGenerator } from './services/standalone-cert';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,9 +60,9 @@ if (!gotLock) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Get the preload script path (compiled JS, not TS) */
+/** Get the preload script path (compiled to CJS with .cjs extension) */
 function getPreloadPath(): string {
-  return path.join(__dirname, 'preload.js');
+  return path.join(__dirname, 'preload.cjs');
 }
 
 /** Hardened webPreferences shared by all windows */
@@ -169,7 +170,7 @@ function createMainWindow(): BrowserWindow {
 function getShieldPosition(shieldConfig: ShieldOverlayConfig): { x: number; y: number } {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
-  const overlaySize = 120;
+  const overlaySize = 80;
   const margin = shieldConfig.margin;
 
   switch (shieldConfig.anchor) {
@@ -185,27 +186,26 @@ function getShieldPosition(shieldConfig: ShieldOverlayConfig): { x: number; y: n
   }
 }
 
-/** Create the shield overlay window (always-on-top corner widget) */
+/** Create the shield overlay window (always-on-top draggable floating widget) */
 function createShieldWindow(): BrowserWindow {
   const shieldConfig = configManager?.getShieldConfig();
   const position = getShieldPosition(shieldConfig ?? { enabled: true, anchor: 'bottom-right', margin: 20, opacity: 1.0 });
 
   const win = new BrowserWindow({
-    width: 120,
-    height: 120,
+    width: 80,
+    height: 80,
     x: position.x,
     y: position.y,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
     resizable: false,
+    movable: true,
     skipTaskbar: true,
     hasShadow: false,
     opacity: shieldConfig?.opacity ?? 1.0,
     webPreferences: getSecureWebPreferences(),
   });
-
-  win.setIgnoreMouseEvents(true, { forward: true });
 
   if (isDev) {
     win.loadURL('http://localhost:5173/#/shield-overlay');
@@ -414,8 +414,10 @@ function updateTray(score: number, level: typeof currentTrustLevel): void {
 
 // ── Service registry ─────────────────────────────────────────────────────────
 
-/** Create stub service registry for IPC handlers */
+/** Create service registry for IPC handlers */
 function createServiceRegistry(config: ConfigManager): ServiceRegistry {
+  const certGen = new StandaloneCertGenerator();
+
   return {
     trustMonitor: {
       getState: () => {
@@ -448,12 +450,14 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       export: () => ({ ok: true }),
     },
     certGenerator: {
-      generate: () => ({
-        id: '',
-        sessionId: '',
-        generatedAt: new Date().toISOString(),
-      }),
-      list: () => [],
+      generate: (opts: { sessionId: string }) =>
+        certGen.generate({
+          sessionId: opts.sessionId,
+          trustScore: currentTrustScore,
+          trustLevel: currentTrustLevel,
+        }),
+      list: () => certGen.list(),
+      getPdfPath: (id: string) => certGen.getPdfPath(id),
     },
     gatewayClient: {
       getStatus: () => ({ connected: false, url: '' }),

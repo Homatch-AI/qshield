@@ -12,7 +12,8 @@ import type {
 
 interface QShieldTrustAPI {
   getState(): Promise<TrustState>;
-  subscribe(callback: (state: TrustState) => void): () => void;
+  subscribe(callback: (state: TrustState) => void): void;
+  unsubscribe(): void;
 }
 
 interface QShieldEvidenceAPI {
@@ -26,7 +27,7 @@ interface QShieldEvidenceAPI {
 interface QShieldCertificatesAPI {
   list(): Promise<TrustCertificate[]>;
   generate(options: CertOptions): Promise<TrustCertificate>;
-  exportPdf(id: string): Promise<{ path: string }>;
+  exportPdf(id: string): Promise<{ saved: boolean; path?: string }>;
 }
 
 interface QShieldGatewayAPI {
@@ -62,6 +63,7 @@ interface QShieldAppAPI {
   quit(): Promise<void>;
   minimize(): Promise<void>;
   toggleShieldOverlay(): Promise<void>;
+  focusMain(): Promise<void>;
 }
 
 interface QShieldAPI {

@@ -14,7 +14,7 @@ export default defineConfig({
           build: {
             outDir: 'dist/electron',
             rollupOptions: {
-              external: ['electron', 'better-sqlite3', 'electron-store', 'electron-log', 'pdfkit', 'zod'],
+              external: ['electron', 'better-sqlite3', 'electron-store', 'electron-log', 'zod'],
             },
           },
         },
@@ -27,8 +27,18 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist/electron',
+            lib: {
+              entry: 'electron/preload.ts',
+              formats: ['cjs'],
+              fileName: () => 'preload',
+            },
             rollupOptions: {
               external: ['electron'],
+              output: {
+                // Force .cjs extension so Node doesn't treat it as ESM
+                // (package.json has "type": "module")
+                entryFileNames: 'preload.cjs',
+              },
             },
           },
         },

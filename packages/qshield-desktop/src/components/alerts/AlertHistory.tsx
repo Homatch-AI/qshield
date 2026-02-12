@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { Fragment, useState, useMemo } from 'react';
 import type { Alert } from '@qshield/core';
 import { SEVERITY_COLORS } from '@/lib/constants';
 import { formatDate, formatAdapterName } from '@/lib/formatters';
+import { AlertDetail } from '@/components/alerts/AlertDetail';
 
 interface AlertHistoryProps {
   alerts: Alert[];
@@ -12,6 +13,7 @@ const SEVERITY_OPTIONS = ['all', 'critical', 'high', 'medium', 'low'] as const;
 export function AlertHistory({ alerts }: AlertHistoryProps) {
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState('');
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
 
   const filteredAlerts = useMemo(() => {
     let filtered = alerts.slice().sort(
@@ -29,6 +31,10 @@ export function AlertHistory({ alerts }: AlertHistoryProps) {
 
     return filtered;
   }, [alerts, severityFilter, dateFilter]);
+
+  const handleRowClick = (alertId: string) => {
+    setSelectedAlertId(selectedAlertId === alertId ? null : alertId);
+  };
 
   return (
     <div className="space-y-4">
@@ -107,41 +113,67 @@ export function AlertHistory({ alerts }: AlertHistoryProps) {
             <tbody className="divide-y divide-slate-700/50">
               {filteredAlerts.map((alert) => {
                 const colors = SEVERITY_COLORS[alert.severity] ?? SEVERITY_COLORS.low;
+                const isSelected = selectedAlertId === alert.id;
                 return (
-                  <tr key={alert.id} className="bg-slate-900 hover:bg-slate-800/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${colors.bg} ${colors.text} border ${colors.border}`}
-                      >
-                        {alert.severity}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-slate-200">{alert.title}</span>
-                      {alert.description && (
-                        <p className="text-xs text-slate-500 mt-0.5 truncate max-w-xs">
-                          {alert.description}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-400 text-xs uppercase">
-                      {formatAdapterName(alert.source)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">
-                      {formatDate(alert.timestamp)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          alert.dismissed
-                            ? 'bg-slate-800 text-slate-500'
-                            : 'bg-amber-500/10 text-amber-400'
-                        }`}
-                      >
-                        {alert.dismissed ? 'Dismissed' : 'Active'}
-                      </span>
-                    </td>
-                  </tr>
+                  <Fragment key={alert.id}>
+                    <tr
+                      className={`bg-slate-900 cursor-pointer transition-colors ${isSelected ? 'bg-slate-800/70' : 'hover:bg-slate-800/50'}`}
+                      onClick={() => handleRowClick(alert.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleRowClick(alert.id);
+                        }
+                      }}
+                    >
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${colors.bg} ${colors.text} border ${colors.border}`}
+                        >
+                          {alert.severity}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-slate-200">{alert.title}</span>
+                        {alert.description && (
+                          <p className="text-xs text-slate-500 mt-0.5 truncate max-w-xs">
+                            {alert.description}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 text-xs uppercase">
+                        {formatAdapterName(alert.source)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 text-xs">
+                        {formatDate(alert.timestamp)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            alert.dismissed
+                              ? 'bg-slate-800 text-slate-500'
+                              : 'bg-amber-500/10 text-amber-400'
+                          }`}
+                        >
+                          {alert.dismissed ? 'Dismissed' : 'Active'}
+                        </span>
+                      </td>
+                    </tr>
+                    {isSelected && (
+                      <tr key={`${alert.id}-detail`}>
+                        <td colSpan={5} className="p-0">
+                          <div className="px-4 py-3 bg-slate-900/60">
+                            <AlertDetail
+                              alert={alert}
+                              onClose={() => setSelectedAlertId(null)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>

@@ -9,6 +9,7 @@ import type {
   AdapterType,
   EvidenceRecord,
   Alert,
+  AlertSourceMetadata,
   AdapterStatus,
   TrustCertificate,
   ListResult,
@@ -248,18 +249,143 @@ export function mockEvidenceList(records: EvidenceRecord[], options: ListOptions
   };
 }
 
+/** Generate source-specific metadata for an alert */
+export function generateSourceMetadata(source: AdapterType): AlertSourceMetadata {
+  switch (source) {
+    case 'email':
+      return {
+        sender: randomItem([
+          'external.user@untrusted-domain.com',
+          'phishing@spoofed-bank.net',
+          'unknown@temporary-mail.org',
+          'noreply@suspicious-service.xyz',
+        ]),
+        recipient: randomItem([
+          'employee@company.com',
+          'admin@company.com',
+          'finance@company.com',
+          'hr@company.com',
+        ]),
+        subject: randomItem([
+          'Quarterly Report - CONFIDENTIAL',
+          'Urgent: Password Reset Required',
+          'Invoice #38291 Attached',
+          'ACTION REQUIRED: Verify Account',
+        ]),
+        headers: {
+          'X-SPF': randomItem(['fail', 'softfail', 'pass']),
+          'DKIM-Signature': randomItem(['none', 'invalid', 'valid']),
+          'Return-Path': randomItem([
+            'bounce@suspicious.com',
+            'mailer@untrusted.net',
+            'noreply@legit-service.com',
+          ]),
+        },
+      };
+    case 'file':
+      return {
+        fileName: randomItem([
+          'quarterly-report-final.xlsx',
+          'employee-database.csv',
+          'credentials-backup.zip',
+          'source-code-archive.tar.gz',
+        ]),
+        filePath: randomItem([
+          '/Users/employee/Documents/reports/',
+          '/Users/employee/Desktop/',
+          '/shared/confidential/',
+          '/tmp/staging/',
+        ]),
+        fileSize: randomItem([2457600, 10485760, 524288, 104857600]),
+        fileHash: fakeHash(),
+        operation: randomItem([
+          'copy-to-external',
+          'upload-to-cloud',
+          'move-to-usb',
+          'email-attachment',
+        ]),
+      };
+    case 'zoom':
+      return {
+        meetingId: `${100 + Math.floor(Math.random() * 900)}-${100 + Math.floor(Math.random() * 900)}-${100 + Math.floor(Math.random() * 900)}`,
+        meetingTitle: randomItem([
+          'Project Alpha Sync',
+          'Client Review - Q4 Financials',
+          'Board Strategy Meeting',
+          'Engineering All-Hands',
+        ]),
+        participants: randomItem([
+          ['alice@company.com', 'bob@partner.com', 'unknown@external.io'],
+          ['ceo@company.com', 'investor@fund.com', 'unverified@temp.net'],
+          ['dev1@company.com', 'contractor@freelance.com'],
+          ['hr@company.com', 'candidate@gmail.com', 'recruiter@agency.com'],
+        ]),
+        triggerReason: randomItem([
+          'Unverified external participant joined',
+          'Recording started without consent prompt',
+          'Screen share of sensitive document detected',
+          'Participant joined from blocked region',
+        ]),
+      };
+    case 'teams':
+      return {
+        meetingId: `teams-call-${Math.random().toString(36).slice(2, 8)}`,
+        meetingTitle: randomItem([
+          'Engineering Standup',
+          'Security Review',
+          'Product Planning',
+          'Incident Response',
+        ]),
+        participants: randomItem([
+          ['dev1@company.com', 'dev2@company.com'],
+          ['security@company.com', 'ops@company.com', 'external-auditor@firm.com'],
+          ['pm@company.com', 'designer@company.com', 'contractor@agency.net'],
+          ['lead@company.com', 'intern@company.com'],
+        ]),
+        triggerReason: randomItem([
+          'Sensitive file shared in public channel',
+          'External guest added to private channel',
+          'Confidential keyword detected in message',
+          'Bulk file download from shared drive',
+        ]),
+      };
+    case 'api':
+      return {
+        endpoint: randomItem([
+          '/api/v1/users/export',
+          '/api/v1/billing/invoices',
+          '/api/v2/admin/config',
+          '/api/v1/data/bulk-download',
+        ]),
+        method: randomItem(['POST', 'GET', 'DELETE', 'PUT']),
+        statusCode: randomItem([403, 429, 401, 500]),
+        requestIp: `${randomItem([203, 198, 185, 104])}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+        policyViolated: randomItem([
+          'bulk-data-export-restriction',
+          'rate-limit-exceeded',
+          'unauthorized-admin-access',
+          'geo-blocked-region',
+        ]),
+      };
+    default:
+      return {};
+  }
+}
+
 /** Generate a single mock Alert */
 export function mockAlert(overrides?: Partial<Alert>): Alert {
   const idx = Math.floor(Math.random() * ALERT_TITLES.length);
   const severity = randomItem(SEVERITIES);
+  const source = overrides?.source ?? randomItem(ADAPTERS);
   return {
     id: uid(),
     severity,
     title: ALERT_TITLES[idx],
     description: ALERT_DESCRIPTIONS[idx],
-    source: randomItem(ADAPTERS),
+    source,
     timestamp: minutesAgo(Math.floor(Math.random() * 480)),
     dismissed: false,
+    sourceMetadata: generateSourceMetadata(source),
     ...overrides,
   };
 }

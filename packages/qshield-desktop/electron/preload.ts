@@ -6,20 +6,41 @@
  * - All IPC uses invoke (request/response), never send/sendSync
  * - No Node.js APIs leak to the renderer
  * - contextBridge serializes all data (no prototype pollution)
+ *
+ * IPC envelope unwrapping:
+ * - Main process handlers return { success, data } or { success: false, error }
+ * - This preload auto-unwraps: returns `data` on success, throws on failure
+ * - Renderer code receives clean data, never sees the envelope
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS, IPC_EVENTS } from './ipc/channels';
 
-// ── Types for the exposed API ────────────────────────────────────────────────
+// ── IPC envelope unwrapper ────────────────────────────────────────────────────
 
-/** IPC structured response envelope */
-interface IpcResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: { code: string; message: string; details?: unknown };
+/**
+ * Invoke an IPC channel and unwrap the structured response envelope.
+ * Returns `data` on success, throws Error on failure.
+ */
+async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  const response = await ipcRenderer.invoke(channel, ...args);
+
+  // Handle the { success, data, error } envelope from wrapHandler
+  if (response && typeof response === 'object' && 'success' in response) {
+    if (response.success) {
+      return response.data as T;
+    }
+    const errMsg = response.error?.message ?? 'IPC call failed';
+    const err = new Error(errMsg);
+    (err as Error & { code?: string }).code = response.error?.code;
+    throw err;
+  }
+
+  // If the response is not an envelope (shouldn't happen), return as-is
+  return response as T;
 }
 
-/** Trust state as returned by the trust monitor */
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 interface TrustState {
   score: number;
   level: 'critical' | 'warning' | 'elevated' | 'normal' | 'verified';
@@ -34,7 +55,6 @@ interface TrustState {
   sessionId: string;
 }
 
-/** Pagination/list options */
 interface ListOptions {
   page?: number;
   pageSize?: number;
@@ -43,7 +63,6 @@ interface ListOptions {
   filter?: Record<string, unknown>;
 }
 
-/** Paginated list result */
 interface ListResult<T> {
   items: T[];
   total: number;
@@ -52,7 +71,6 @@ interface ListResult<T> {
   hasMore: boolean;
 }
 
-/** Evidence record */
 interface EvidenceRecord {
   id: string;
   hash: string;
@@ -65,14 +83,12 @@ interface EvidenceRecord {
   signature?: string;
 }
 
-/** Certificate generation options */
 interface CertOptions {
   sessionId: string;
   evidenceIds?: string[];
   includeAllEvidence?: boolean;
 }
 
-/** Trust certificate */
 interface TrustCertificate {
   id: string;
   sessionId: string;
@@ -80,9 +96,9 @@ interface TrustCertificate {
   trustScore?: number;
   trustLevel?: string;
   evidenceCount?: number;
+  pdfPath?: string;
 }
 
-/** Alert object */
 interface Alert {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
@@ -94,7 +110,6 @@ interface Alert {
   actionTaken?: string;
 }
 
-/** Policy configuration */
 interface PolicyConfig {
   rules: Array<{
     id: string;
@@ -117,7 +132,6 @@ interface PolicyConfig {
   };
 }
 
-/** Adapter status */
 interface AdapterStatus {
   id: string;
   name: string;
@@ -128,13 +142,11 @@ interface AdapterStatus {
   error?: string;
 }
 
-/** Gateway connection status */
 interface GatewayStatus {
   connected: boolean;
   url: string;
 }
 
-/** Callback function for event subscriptions */
 type EventCallback<T> = (data: T) => void;
 
 // ── Subscription management ──────────────────────────────────────────────────
@@ -145,19 +157,15 @@ const unsubscribers = new Map<string, () => void>();
 
 /**
  * The `window.qshield` API exposed to the renderer process.
- * All methods return structured IpcResponse objects.
- * All communication uses ipcRenderer.invoke (never send/sendSync).
+ * All invoke-based methods auto-unwrap the IPC envelope:
+ *   - Returns `data` directly on success
+ *   - Throws Error on failure
  */
 contextBridge.exposeInMainWorld('qshield', {
-  /**
-   * Trust monitoring — real-time trust score and signals.
-   */
   trust: {
-    /** Get current trust state (score, level, signals) */
-    getState: (): Promise<IpcResponse<TrustState>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.TRUST_GET_STATE),
+    getState: (): Promise<TrustState> =>
+      invoke<TrustState>(IPC_CHANNELS.TRUST_GET_STATE),
 
-    /** Subscribe to trust state change events */
     subscribe: (callback: EventCallback<TrustState>): void => {
       const handler = (_event: Electron.IpcRendererEvent, data: TrustState) => callback(data);
       ipcRenderer.on(IPC_EVENTS.TRUST_STATE_UPDATED, handler);
@@ -167,7 +175,6 @@ contextBridge.exposeInMainWorld('qshield', {
       });
     },
 
-    /** Unsubscribe from trust state change events */
     unsubscribe: (): void => {
       const unsub = unsubscribers.get('trust');
       if (unsub) {
@@ -178,74 +185,52 @@ contextBridge.exposeInMainWorld('qshield', {
     },
   },
 
-  /**
-   * Evidence vault — tamper-proof evidence records with hash chain.
-   */
   evidence: {
-    /** List evidence records with pagination */
-    list: (opts?: ListOptions): Promise<IpcResponse<ListResult<EvidenceRecord>>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.EVIDENCE_LIST, opts),
+    list: (opts?: ListOptions): Promise<ListResult<EvidenceRecord>> =>
+      invoke<ListResult<EvidenceRecord>>(IPC_CHANNELS.EVIDENCE_LIST, opts),
 
-    /** Get a single evidence record by UUID */
-    get: (id: string): Promise<IpcResponse<EvidenceRecord>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.EVIDENCE_GET, id),
+    get: (id: string): Promise<EvidenceRecord> =>
+      invoke<EvidenceRecord>(IPC_CHANNELS.EVIDENCE_GET, id),
 
-    /** Verify the hash chain integrity of an evidence record */
-    verify: (id: string): Promise<IpcResponse<{ valid: boolean; errors: string[] }>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.EVIDENCE_VERIFY, id),
+    verify: (id: string): Promise<{ valid: boolean; errors: string[] }> =>
+      invoke<{ valid: boolean; errors: string[] }>(IPC_CHANNELS.EVIDENCE_VERIFY, id),
 
-    /** Full-text search across evidence records */
-    search: (query: string): Promise<IpcResponse<ListResult<EvidenceRecord>>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.EVIDENCE_SEARCH, query),
+    search: (query: string): Promise<ListResult<EvidenceRecord>> =>
+      invoke<ListResult<EvidenceRecord>>(IPC_CHANNELS.EVIDENCE_SEARCH, query),
 
-    /** Export selected evidence records (rate-limited: 1/min) */
-    export: (ids: string[]): Promise<IpcResponse<{ ok: boolean }>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.EVIDENCE_EXPORT, ids),
+    export: (ids: string[]): Promise<{ ok: boolean }> =>
+      invoke<{ ok: boolean }>(IPC_CHANNELS.EVIDENCE_EXPORT, ids),
   },
 
-  /**
-   * Trust certificates — generate and list tamper-proof session certificates.
-   */
   certificates: {
-    /** Generate a trust certificate for a session (rate-limited: 1/min) */
-    generate: (opts: CertOptions): Promise<IpcResponse<TrustCertificate>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.CERT_GENERATE, opts),
+    generate: (opts: CertOptions): Promise<TrustCertificate> =>
+      invoke<TrustCertificate>(IPC_CHANNELS.CERT_GENERATE, opts),
 
-    /** List all generated certificates */
-    list: (): Promise<IpcResponse<TrustCertificate[]>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.CERT_LIST),
+    list: (): Promise<TrustCertificate[]> =>
+      invoke<TrustCertificate[]>(IPC_CHANNELS.CERT_LIST),
+
+    exportPdf: (id: string): Promise<{ saved: boolean; path?: string }> =>
+      invoke<{ saved: boolean; path?: string }>(IPC_CHANNELS.CERT_EXPORT_PDF, id),
   },
 
-  /**
-   * Gateway — connection to the QShield server.
-   */
   gateway: {
-    /** Get current gateway connection status */
-    status: (): Promise<IpcResponse<GatewayStatus>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.GATEWAY_STATUS),
+    status: (): Promise<GatewayStatus> =>
+      invoke<GatewayStatus>(IPC_CHANNELS.GATEWAY_STATUS),
 
-    /** Connect to a QShield Gateway */
-    connect: (url: string): Promise<IpcResponse<GatewayStatus>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.GATEWAY_CONNECT, url),
+    connect: (url: string): Promise<GatewayStatus> =>
+      invoke<GatewayStatus>(IPC_CHANNELS.GATEWAY_CONNECT, url),
 
-    /** Disconnect from the current gateway */
-    disconnect: (): Promise<IpcResponse<GatewayStatus>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.GATEWAY_DISCONNECT),
+    disconnect: (): Promise<GatewayStatus> =>
+      invoke<GatewayStatus>(IPC_CHANNELS.GATEWAY_DISCONNECT),
   },
 
-  /**
-   * Alerts — real-time security alerts from adapters.
-   */
   alerts: {
-    /** List all active alerts */
-    list: (): Promise<IpcResponse<Alert[]>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.ALERT_LIST),
+    list: (): Promise<Alert[]> =>
+      invoke<Alert[]>(IPC_CHANNELS.ALERT_LIST),
 
-    /** Dismiss an alert by UUID */
-    dismiss: (id: string): Promise<IpcResponse<{ id: string; dismissed: boolean }>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.ALERT_DISMISS, id),
+    dismiss: (id: string): Promise<{ id: string; dismissed: boolean }> =>
+      invoke<{ id: string; dismissed: boolean }>(IPC_CHANNELS.ALERT_DISMISS, id),
 
-    /** Subscribe to real-time alert events */
     subscribe: (callback: EventCallback<Alert>): void => {
       const handler = (_event: Electron.IpcRendererEvent, data: Alert) => callback(data);
       ipcRenderer.on(IPC_EVENTS.ALERT_RECEIVED, handler);
@@ -256,59 +241,41 @@ contextBridge.exposeInMainWorld('qshield', {
     },
   },
 
-  /**
-   * Policy — trust scoring rules and escalation configuration.
-   */
   policy: {
-    /** Get the current policy configuration */
-    get: (): Promise<IpcResponse<PolicyConfig>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.POLICY_GET),
+    get: (): Promise<PolicyConfig> =>
+      invoke<PolicyConfig>(IPC_CHANNELS.POLICY_GET),
 
-    /** Update the policy configuration */
-    update: (policy: PolicyConfig): Promise<IpcResponse<PolicyConfig>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.POLICY_UPDATE, policy),
+    update: (policy: PolicyConfig): Promise<PolicyConfig> =>
+      invoke<PolicyConfig>(IPC_CHANNELS.POLICY_UPDATE, policy),
   },
 
-  /**
-   * Config — application settings (persisted to disk).
-   */
   config: {
-    /** Read a config value by dot-notation key */
-    get: (key: string): Promise<IpcResponse<unknown>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET, key),
+    get: (key: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.CONFIG_GET, key),
 
-    /** Write a config value by dot-notation key (rate-limited: 10/min) */
-    set: (key: string, value: unknown): Promise<IpcResponse<null>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.CONFIG_SET, key, value),
+    set: (key: string, value: unknown): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.CONFIG_SET, key, value),
   },
 
-  /**
-   * Adapters — monitoring adapter lifecycle.
-   */
   adapters: {
-    /** Get status of all monitoring adapters */
-    status: (): Promise<IpcResponse<AdapterStatus[]>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.ADAPTER_STATUS),
+    status: (): Promise<AdapterStatus[]> =>
+      invoke<AdapterStatus[]>(IPC_CHANNELS.ADAPTER_STATUS),
 
-    /** Enable a monitoring adapter */
-    enable: (id: string): Promise<IpcResponse<{ id: string; enabled: boolean }>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.ADAPTER_ENABLE, id),
+    enable: (id: string): Promise<{ id: string; enabled: boolean }> =>
+      invoke<{ id: string; enabled: boolean }>(IPC_CHANNELS.ADAPTER_ENABLE, id),
 
-    /** Disable a monitoring adapter */
-    disable: (id: string): Promise<IpcResponse<{ id: string; enabled: boolean }>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.ADAPTER_DISABLE, id),
+    disable: (id: string): Promise<{ id: string; enabled: boolean }> =>
+      invoke<{ id: string; enabled: boolean }>(IPC_CHANNELS.ADAPTER_DISABLE, id),
   },
 
-  /**
-   * App — application-level actions.
-   */
   app: {
-    /** Get the application version string */
-    version: (): Promise<IpcResponse<string>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION),
+    version: (): Promise<string> =>
+      invoke<string>(IPC_CHANNELS.APP_VERSION),
 
-    /** Request graceful application shutdown */
-    quit: (): Promise<IpcResponse<null>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.APP_QUIT),
+    quit: (): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.APP_QUIT),
+
+    focusMain: (): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.APP_FOCUS_MAIN),
   },
 });

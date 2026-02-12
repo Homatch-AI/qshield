@@ -94,14 +94,17 @@ const useTrustStore = create<TrustStore>((set, get) => ({
   },
 
   subscribe: () => {
-    const existing = get()._unsubscribe;
-    if (existing) return;
+    // Guard: trust.subscribe returns void, so use a sentinel function
+    if (get()._unsubscribe) return;
 
     if (isIPCAvailable()) {
-      const unsubscribe = window.qshield.trust.subscribe((state: TrustState) => {
+      window.qshield.trust.subscribe((state: TrustState) => {
         get().setTrustState(state);
       });
-      set({ _unsubscribe: unsubscribe });
+      // Store a sentinel so we know we're subscribed
+      set({ _unsubscribe: () => {
+        if (isIPCAvailable()) window.qshield.trust.unsubscribe();
+      }});
     }
 
     // Start periodic updates for mock data or uptime tracking

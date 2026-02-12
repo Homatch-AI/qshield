@@ -33,6 +33,33 @@ export interface EvidenceRecord {
   signature?: string; // Future: Ed25519
 }
 
+export interface AlertSourceMetadata {
+  // Email
+  sender?: string;
+  recipient?: string;
+  subject?: string;
+  headers?: Record<string, string>;
+  // File
+  fileName?: string;
+  filePath?: string;
+  fileSize?: number;
+  fileHash?: string;
+  operation?: string;
+  // Zoom/Teams
+  meetingId?: string;
+  meetingTitle?: string;
+  participants?: string[];
+  triggerReason?: string;
+  // API
+  endpoint?: string;
+  method?: string;
+  statusCode?: number;
+  requestIp?: string;
+  policyViolated?: string;
+  // Common
+  rawEvent?: Record<string, unknown>;
+}
+
 export interface Alert {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
@@ -42,6 +69,7 @@ export interface Alert {
   timestamp: string;
   dismissed: boolean;
   actionTaken?: string;
+  sourceMetadata?: AlertSourceMetadata;
 }
 
 export interface PolicyConfig {

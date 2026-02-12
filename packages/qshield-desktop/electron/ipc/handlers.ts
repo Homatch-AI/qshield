@@ -2,7 +2,8 @@
  * IPC handler registration with validation, rate limiting, and structured responses.
  * Every handler validates input, logs calls with timing, and returns structured results.
  */
-import { ipcMain, app } from 'electron';
+import { ipcMain, app, dialog, BrowserWindow } from 'electron';
+import { copyFile } from 'node:fs/promises';
 import log from 'electron-log';
 import { IPC_CHANNELS } from './channels';
 import {
@@ -58,8 +59,9 @@ export interface ServiceRegistry {
     export: (ids: string[]) => unknown;
   };
   certGenerator: {
-    generate: (opts: CertOptionsInput) => unknown;
+    generate: (opts: CertOptionsInput) => Promise<unknown> | unknown;
     list: () => unknown;
+    getPdfPath: (id: string) => string | null;
   };
   gatewayClient: {
     getStatus: () => unknown;
@@ -225,11 +227,55 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
   // ── Certificates ─────────────────────────────────────────────────────
   wrapHandler(IPC_CHANNELS.CERT_GENERATE, async (_event, opts) => {
     const validOpts = validateCertOptions(opts);
-    return ok(services.certGenerator.generate(validOpts));
+    const cert = await services.certGenerator.generate(validOpts);
+    return ok(cert);
   });
 
   wrapHandler(IPC_CHANNELS.CERT_LIST, async () => {
     return ok(services.certGenerator.list());
+  });
+
+  wrapHandler(IPC_CHANNELS.CERT_EXPORT_PDF, async (_event, id) => {
+    const validId = validateUuid(id);
+    log.info(`CERT_EXPORT_PDF: request for id=${validId}`);
+
+    // Check for pre-existing PDF; if not found, generate one on the fly
+    let pdfPath = services.certGenerator.getPdfPath(validId);
+    log.info(`CERT_EXPORT_PDF: existing pdfPath=${pdfPath}`);
+
+    if (!pdfPath) {
+      // Generate a fresh cert/PDF for this export request
+      log.info('CERT_EXPORT_PDF: no existing PDF, generating on the fly...');
+      const cert = await services.certGenerator.generate({ sessionId: validId });
+      pdfPath = (cert as { pdfPath?: string })?.pdfPath ?? services.certGenerator.getPdfPath((cert as { id?: string })?.id ?? '');
+      log.info(`CERT_EXPORT_PDF: generated pdfPath=${pdfPath}`);
+      if (!pdfPath) {
+        return fail('GENERATION_FAILED', 'Failed to generate PDF certificate');
+      }
+    }
+
+    // Find a visible window for the save dialog (exclude the hidden PDF window)
+    const visibleWindows = BrowserWindow.getAllWindows().filter((w) => w.isVisible() && !w.isDestroyed());
+    const win = visibleWindows[0];
+    if (!win) {
+      return fail('NO_WINDOW', 'No visible window for save dialog');
+    }
+
+    log.info('CERT_EXPORT_PDF: showing save dialog...');
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Save Trust Certificate',
+      defaultPath: `qshield-certificate-${validId.slice(0, 8)}.pdf`,
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      log.info('CERT_EXPORT_PDF: user canceled save dialog');
+      return ok({ saved: false });
+    }
+
+    await copyFile(pdfPath, result.filePath);
+    log.info(`CERT_EXPORT_PDF: PDF exported to ${result.filePath}`);
+    return ok({ saved: true, path: result.filePath });
   });
 
   // ── Gateway ──────────────────────────────────────────────────────────
@@ -304,6 +350,17 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
 
   wrapHandler(IPC_CHANNELS.APP_QUIT, async () => {
     app.quit();
+    return ok(null);
+  });
+
+  wrapHandler(IPC_CHANNELS.APP_FOCUS_MAIN, async () => {
+    const windows = BrowserWindow.getAllWindows();
+    const mainWin = windows.find((w) => !w.isAlwaysOnTop());
+    if (mainWin) {
+      if (mainWin.isMinimized()) mainWin.restore();
+      mainWin.show();
+      mainWin.focus();
+    }
     return ok(null);
   });
 

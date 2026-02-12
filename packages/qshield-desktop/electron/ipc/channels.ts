@@ -31,6 +31,8 @@ export const IPC_CHANNELS = {
   CERT_GENERATE: 'cert:generate',
   /** List all generated certificates */
   CERT_LIST: 'cert:list',
+  /** Export a certificate as PDF with save dialog */
+  CERT_EXPORT_PDF: 'cert:export-pdf',
 
   // ── Gateway ────────────────────────────────────────────────────────────
   /** Get gateway connection status */
@@ -73,6 +75,8 @@ export const IPC_CHANNELS = {
   APP_VERSION: 'app:version',
   /** Request graceful application shutdown */
   APP_QUIT: 'app:quit',
+  /** Focus the main window (used by shield overlay double-click) */
+  APP_FOCUS_MAIN: 'app:focus-main',
 } as const;
 
 /** Union type of all valid IPC channel strings */

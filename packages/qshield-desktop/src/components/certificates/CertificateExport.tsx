@@ -34,7 +34,12 @@ export function CertificateExport({ onClose, onGenerated }: CertificateExportPro
     setError(null);
     try {
       if (isIPCAvailable()) {
-        await window.qshield.certificates.generate({ sessionId, includeAllEvidence });
+        // Generate the cert (creates the PDF file on disk)
+        const cert = await window.qshield.certificates.generate({ sessionId, includeAllEvidence });
+        // Immediately trigger the save dialog so user can save the PDF
+        if (cert?.id) {
+          await window.qshield.certificates.exportPdf(cert.id);
+        }
       }
       // Simulate brief delay in mock mode
       if (!isIPCAvailable()) await new Promise((r) => setTimeout(r, 800));
