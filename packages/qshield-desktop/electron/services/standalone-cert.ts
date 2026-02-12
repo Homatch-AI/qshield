@@ -123,310 +123,275 @@ function buildCertificateHtml(params: {
   const levelLabel = LEVEL_LABELS[trustLevel] ?? 'Normal';
   const verifiedCount = evidence.filter((e) => e.verified).length;
   const verificationHash = fakeHash();
-  const maxRows = Math.min(evidence.length, 25);
+  const maxRows = Math.min(evidence.length, 12);
+  const dateStr = new Date(generatedAt).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const timeStr = new Date(generatedAt).toLocaleTimeString('en-US', {
+    hour: '2-digit', minute: '2-digit',
+  });
+
+  // SVG arc for circular gauge
+  const radius = 54;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference - (trustScore / 100) * circumference;
+
+  // Source summary: count events by source
+  const sourceCounts: Record<string, number> = {};
+  for (const e of evidence) {
+    sourceCounts[e.source] = (sourceCounts[e.source] || 0) + 1;
+  }
+  const sourceIcons: Record<string, string> = {
+    zoom: 'Z', teams: 'T', email: 'E', file: 'F', api: 'A',
+  };
 
   const evidenceRows = evidence.slice(0, maxRows).map((rec, i) => {
-    const bgColor = i % 2 === 0 ? '#f8fafc' : '#ffffff';
-    const statusColor = rec.verified ? '#16a34a' : '#dc2626';
-    const statusLabel = rec.verified ? 'Verified' : 'Pending';
-    const ts = new Date(rec.timestamp).toLocaleString();
-    return `
-      <tr style="background-color: ${bgColor};">
-        <td style="padding: 5px 8px; font-family: 'Courier New', monospace; font-size: 7pt; color: #334155;">
-          ${escapeHtml(rec.hash.slice(0, 8))}...${escapeHtml(rec.hash.slice(-8))}
-        </td>
-        <td style="padding: 5px 8px; font-size: 7pt; color: #334155;">${escapeHtml(rec.source)}</td>
-        <td style="padding: 5px 8px; font-size: 7pt; color: #334155;">${escapeHtml(rec.eventType)}</td>
-        <td style="padding: 5px 8px; font-size: 7pt; color: #334155;">${escapeHtml(ts)}</td>
-        <td style="padding: 5px 8px; font-size: 7pt; color: ${statusColor}; font-weight: 600;">${statusLabel}</td>
-      </tr>`;
+    const statusDot = rec.verified
+      ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#16a34a;margin-right:4px;vertical-align:middle;"></span>'
+      : '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-right:4px;vertical-align:middle;"></span>';
+    const rowBg = i % 2 === 0 ? 'background:#f8fafc;' : '';
+    const ts = new Date(rec.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return `<tr style="${rowBg}">
+      <td style="padding:4px 6px;font-family:'Courier New',monospace;font-size:6.5pt;color:#475569;letter-spacing:0.3px;">${escapeHtml(rec.hash.slice(0, 12))}\u2026</td>
+      <td style="padding:4px 6px;font-size:7pt;color:#334155;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;">${escapeHtml(rec.source)}</td>
+      <td style="padding:4px 6px;font-size:7pt;color:#475569;">${escapeHtml(rec.eventType)}</td>
+      <td style="padding:4px 6px;font-size:7pt;color:#64748b;">${ts}</td>
+      <td style="padding:4px 6px;font-size:7pt;">${statusDot}${rec.verified ? '<span style="color:#16a34a;font-weight:600;">OK</span>' : '<span style="color:#f59e0b;font-weight:600;">Pend</span>'}</td>
+    </tr>`;
   }).join('');
 
-  const moreRecords = evidence.length > maxRows
-    ? `<p style="text-align: center; font-size: 8pt; font-style: italic; color: #94a3b8; margin-top: 4px;">
-        ... and ${evidence.length - maxRows} more records
-      </p>`
-    : '';
+  const remaining = evidence.length - maxRows;
 
-  // Generate a simple QR-like pattern (8x8 grid of squares)
+  // QR-like verification grid
   let qrCells = '';
-  for (let row = 0; row < 8; row++) {
-    for (let col = 0; col < 8; col++) {
-      // Use deterministic pattern based on certId chars for consistency
-      const charCode = certId.charCodeAt((row * 8 + col) % certId.length);
-      if (charCode % 3 !== 0) {
-        const x = 4 + col * 9;
-        const y = 4 + row * 9;
-        qrCells += `<rect x="${x}" y="${y}" width="8" height="8" fill="#334155"/>`;
+  for (let row = 0; row < 11; row++) {
+    for (let col = 0; col < 11; col++) {
+      const idx = (row * 11 + col) % certId.length;
+      const code = certId.charCodeAt(idx);
+      if (code % 3 !== 0) {
+        qrCells += `<rect x="${2 + col * 6}" y="${2 + row * 6}" width="5" height="5" rx="0.5" fill="#1e293b"/>`;
       }
     }
   }
+  // QR corners (finder patterns)
+  const corner = (x: number, y: number) => `
+    <rect x="${x}" y="${y}" width="16" height="16" rx="1" fill="#0f172a"/>
+    <rect x="${x + 2}" y="${y + 2}" width="12" height="12" rx="0.5" fill="#ffffff"/>
+    <rect x="${x + 4}" y="${y + 4}" width="8" height="8" rx="0.5" fill="#0f172a"/>`;
+  const qrSvg = `<svg width="70" height="70" viewBox="0 0 70 70" xmlns="http://www.w3.org/2000/svg">
+    <rect width="70" height="70" rx="3" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+    ${qrCells}
+    ${corner(2, 2)}${corner(50, 2)}${corner(2, 50)}
+  </svg>`;
 
   return `<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    @page { size: A4; margin: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-      color: #0f172a;
-      padding: 50px;
-      width: 794px;
-      background: #ffffff;
-    }
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 8px;
-    }
-    .header-text h1 {
-      font-size: 28pt;
-      font-weight: 700;
-      color: #0f172a;
-      line-height: 1;
-    }
-    .header-text p {
-      font-size: 12pt;
-      color: #64748b;
-      margin-top: 2px;
-    }
-    .divider {
-      height: 3px;
-      background: ${levelColor};
-      margin: 12px 0 20px 0;
-      border: none;
-    }
-    .section-title {
-      font-size: 16pt;
-      font-weight: 700;
-      color: #0f172a;
-      margin-bottom: 10px;
-    }
-    .score-section {
-      margin-bottom: 20px;
-    }
-    .gauge-row {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      margin-bottom: 16px;
-    }
-    .gauge-bg {
-      width: 220px;
-      height: 18px;
-      background: #e2e8f0;
-      border-radius: 9px;
-      overflow: hidden;
-    }
-    .gauge-fill {
-      height: 100%;
-      background: ${levelColor};
-      border-radius: 9px;
-      min-width: 18px;
-    }
-    .score-number {
-      font-size: 32pt;
-      font-weight: 700;
-      color: ${levelColor};
-      line-height: 1;
-    }
-    .level-badge {
-      display: inline-block;
-      background: ${levelColor};
-      color: #ffffff;
-      font-size: 12pt;
-      font-weight: 700;
-      padding: 4px 20px;
-      border-radius: 13px;
-      text-align: center;
-    }
-    .session-details {
-      font-size: 10pt;
-      color: #64748b;
-      line-height: 1.7;
-    }
-    .evidence-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 8px;
-    }
-    .evidence-table th {
-      background: #f1f5f9;
-      font-size: 8pt;
-      font-weight: 700;
-      color: #0f172a;
-      text-align: left;
-      padding: 6px 8px;
-    }
-    .chain-box {
-      background: #f0fdf4;
-      border-radius: 6px;
-      padding: 10px 14px;
-      margin-bottom: 12px;
-    }
-    .chain-box .title {
-      font-size: 11pt;
-      font-weight: 700;
-      color: #16a34a;
-    }
-    .chain-box .detail {
-      font-size: 8pt;
-      color: #64748b;
-      margin-top: 4px;
-    }
-    .sig-hash {
-      font-family: 'Courier New', monospace;
-      font-size: 7pt;
-      color: #475569;
-      word-break: break-all;
-    }
-    .verification-section {
-      display: flex;
-      gap: 20px;
-      margin-top: 16px;
-    }
-    .qr-placeholder {
-      flex-shrink: 0;
-    }
-    .qr-placeholder p {
-      font-size: 6pt;
-      color: #94a3b8;
-      text-align: center;
-      margin-top: 2px;
-    }
-    .verification-details {
-      flex: 1;
-    }
-    .verification-details .label {
-      font-size: 10pt;
-      font-weight: 700;
-      color: #0f172a;
-      margin-bottom: 4px;
-    }
-    .verification-details .hash {
-      font-family: 'Courier New', monospace;
-      font-size: 7pt;
-      color: #475569;
-      word-break: break-all;
-      margin-bottom: 12px;
-    }
-    .verification-details .meta {
-      font-size: 9pt;
-      color: #64748b;
-      line-height: 1.7;
-    }
-    .footer-line {
-      height: 1px;
-      background: #e2e8f0;
-      margin: 24px 0 8px 0;
-      border: none;
-    }
-    .footer {
-      font-size: 7pt;
-      color: #94a3b8;
-      text-align: center;
-    }
-    .thin-divider {
-      height: 1px;
-      background: #e2e8f0;
-      margin: 12px 0;
-      border: none;
-    }
-  </style>
+<meta charset="utf-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  @page{size:A4;margin:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;
+    color:#0f172a;
+    width:794px;
+    min-height:1123px;
+    background:#ffffff;
+    position:relative;
+  }
+  /* Outer border frame */
+  .frame{
+    position:absolute;
+    top:24px;left:24px;right:24px;bottom:24px;
+    border:2px solid #cbd5e1;
+    border-radius:4px;
+    padding:36px 40px 28px;
+    display:flex;
+    flex-direction:column;
+  }
+  /* Inner accent border */
+  .frame::before{
+    content:'';
+    position:absolute;
+    top:4px;left:4px;right:4px;bottom:4px;
+    border:0.5px solid #e2e8f0;
+    border-radius:2px;
+    pointer-events:none;
+  }
+  /* Header */
+  .hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .hdr-left{display:flex;align-items:center;gap:12px;}
+  .hdr h1{font-size:22pt;font-weight:800;color:#0f172a;letter-spacing:-0.5px;}
+  .hdr-sub{font-size:9pt;color:#64748b;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;}
+  .hdr-right{text-align:right;}
+  .hdr-right .cert-no{font-size:7pt;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;}
+  .hdr-right .cert-id{font-family:'Courier New',monospace;font-size:7.5pt;color:#64748b;margin-top:1px;}
+  .accent-bar{height:3px;background:linear-gradient(90deg,${levelColor},${levelColor}88,transparent);margin:10px 0 18px;border:none;border-radius:2px;}
+  /* Score panel */
+  .score-panel{display:flex;gap:28px;align-items:flex-start;margin-bottom:18px;}
+  .gauge-wrap{flex-shrink:0;text-align:center;}
+  .gauge-label{font-size:7pt;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:4px;}
+  .score-details{flex:1;}
+  .score-details h2{font-size:13pt;font-weight:700;color:#0f172a;margin-bottom:8px;}
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;}
+  .detail-item .lbl{font-size:7pt;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;font-weight:600;}
+  .detail-item .val{font-size:9pt;color:#334155;font-weight:500;margin-top:1px;}
+  .detail-item .val.mono{font-family:'Courier New',monospace;font-size:8pt;}
+  .badge{display:inline-block;background:${levelColor};color:#fff;font-size:8pt;font-weight:700;padding:3px 14px;border-radius:10px;letter-spacing:0.5px;text-transform:uppercase;}
+  /* Source bars */
+  .sources{display:flex;gap:6px;margin-top:10px;}
+  .src-chip{display:flex;align-items:center;gap:4px;background:#f1f5f9;border-radius:4px;padding:3px 8px;}
+  .src-icon{width:16px;height:16px;border-radius:3px;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:7pt;font-weight:800;color:#475569;}
+  .src-chip .src-name{font-size:7pt;color:#475569;text-transform:capitalize;font-weight:600;}
+  .src-chip .src-count{font-size:7pt;color:#94a3b8;}
+  /* Section divider */
+  .sep{height:1px;background:#e2e8f0;margin:14px 0;border:none;}
+  .sec-title{font-size:9pt;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+  /* Evidence table */
+  .ev-table{width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:4px;}
+  .ev-table th{background:#f1f5f9;font-size:6.5pt;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.8px;padding:5px 6px;text-align:left;border-bottom:1px solid #e2e8f0;}
+  .ev-table td{border-bottom:1px solid #f1f5f9;}
+  .ev-more{text-align:center;font-size:7pt;color:#94a3b8;padding:4px 0;font-style:italic;}
+  /* Chain integrity */
+  .chain-row{display:flex;gap:12px;align-items:stretch;}
+  .chain-status{flex:1;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #bbf7d0;border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;}
+  .chain-check{width:28px;height:28px;background:#16a34a;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .chain-text .ct-title{font-size:9pt;font-weight:700;color:#15803d;}
+  .chain-text .ct-sub{font-size:7pt;color:#4ade80;margin-top:1px;}
+  .sig-box{flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 14px;}
+  .sig-box .sb-title{font-size:7pt;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;font-weight:600;margin-bottom:3px;}
+  .sig-box .sb-hash{font-family:'Courier New',monospace;font-size:6.5pt;color:#475569;word-break:break-all;line-height:1.4;}
+  /* Footer */
+  .footer-area{margin-top:auto;padding-top:14px;}
+  .footer-sep{height:1px;background:linear-gradient(90deg,transparent,#cbd5e1,transparent);margin-bottom:10px;border:none;}
+  .footer-row{display:flex;align-items:flex-start;justify-content:space-between;}
+  .footer-qr{display:flex;gap:10px;align-items:center;}
+  .footer-qr-text{font-size:6.5pt;color:#94a3b8;line-height:1.5;}
+  .footer-qr-text .fq-hash{font-family:'Courier New',monospace;font-size:6pt;color:#94a3b8;word-break:break-all;}
+  .footer-meta{text-align:right;font-size:6.5pt;color:#94a3b8;line-height:1.5;}
+  .footer-bottom{text-align:center;font-size:6pt;color:#cbd5e1;margin-top:8px;letter-spacing:0.5px;}
+  /* Watermark */
+  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-size:72pt;font-weight:900;color:rgba(148,163,184,0.04);letter-spacing:8px;text-transform:uppercase;pointer-events:none;white-space:nowrap;}
+</style>
 </head>
 <body>
-  <!-- 1. BRANDING HEADER -->
-  <div class="header">
-    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M20 0 L40 12 L40 24 L20 40 L0 24 L0 12 Z" fill="${levelColor}"/>
-      <polyline points="12,20 18,26 28,14" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <div class="header-text">
-      <h1>QShield</h1>
-      <p>Trust Certificate</p>
-    </div>
-  </div>
-  <hr class="divider">
-
-  <!-- 2. TRUST SCORE SECTION -->
-  <div class="score-section">
-    <div class="section-title">Trust Score Summary</div>
-    <div class="gauge-row">
-      <div class="gauge-bg">
-        <div class="gauge-fill" style="width: ${Math.max(trustScore, 5)}%;"></div>
+<div class="watermark">QSHIELD</div>
+<div class="frame">
+  <!-- HEADER -->
+  <div class="hdr">
+    <div class="hdr-left">
+      <svg width="36" height="36" viewBox="0 0 40 40" fill="none">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="40" y2="40"><stop offset="0%" stop-color="${levelColor}"/><stop offset="100%" stop-color="${levelColor}cc"/></linearGradient></defs>
+        <path d="M20 2 L37 12 L37 28 L20 38 L3 28 L3 12 Z" fill="url(#g)"/>
+        <polyline points="13,20 18,25 27,15" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <h1>QShield</h1>
+        <div class="hdr-sub">Trust Verification Certificate</div>
       </div>
-      <div class="score-number">${trustScore}</div>
-      <div class="level-badge">${escapeHtml(levelLabel)}</div>
     </div>
-    <div class="session-details">
-      Session ID: ${escapeHtml(sessionId)}<br>
-      Evidence Records: ${evidence.length}<br>
-      Verified Records: ${verifiedCount}<br>
-      Generated: ${escapeHtml(new Date(generatedAt).toLocaleString())}
+    <div class="hdr-right">
+      <div class="cert-no">Certificate No.</div>
+      <div class="cert-id">${escapeHtml(certId.slice(0, 8)).toUpperCase()}</div>
+    </div>
+  </div>
+  <hr class="accent-bar">
+
+  <!-- SCORE + DETAILS -->
+  <div class="score-panel">
+    <div class="gauge-wrap">
+      <svg width="130" height="130" viewBox="0 0 130 130">
+        <circle cx="65" cy="65" r="${radius}" fill="none" stroke="#f1f5f9" stroke-width="10"/>
+        <circle cx="65" cy="65" r="${radius}" fill="none" stroke="${levelColor}" stroke-width="10"
+          stroke-dasharray="${circumference}" stroke-dashoffset="${dashOffset}"
+          stroke-linecap="round" transform="rotate(-90 65 65)"/>
+        <text x="65" y="58" text-anchor="middle" font-size="28" font-weight="800" fill="${levelColor}" font-family="-apple-system,sans-serif">${trustScore}</text>
+        <text x="65" y="74" text-anchor="middle" font-size="9" font-weight="600" fill="#94a3b8" font-family="-apple-system,sans-serif" text-transform="uppercase">/ 100</text>
+      </svg>
+      <div class="badge">${escapeHtml(levelLabel)}</div>
+    </div>
+    <div class="score-details">
+      <h2>Session Assessment</h2>
+      <div class="detail-grid">
+        <div class="detail-item"><div class="lbl">Session ID</div><div class="val mono">${escapeHtml(sessionId.length > 20 ? sessionId.slice(0, 20) + '\u2026' : sessionId)}</div></div>
+        <div class="detail-item"><div class="lbl">Date Issued</div><div class="val">${escapeHtml(dateStr)}</div></div>
+        <div class="detail-item"><div class="lbl">Evidence Records</div><div class="val">${evidence.length} total &middot; ${verifiedCount} verified</div></div>
+        <div class="detail-item"><div class="lbl">Time</div><div class="val">${escapeHtml(timeStr)}</div></div>
+      </div>
+      <div class="sources">
+        ${Object.entries(sourceCounts).map(([src, count]) => `
+          <div class="src-chip">
+            <div class="src-icon">${sourceIcons[src] || src[0].toUpperCase()}</div>
+            <span class="src-name">${escapeHtml(src)}</span>
+            <span class="src-count">${count}</span>
+          </div>
+        `).join('')}
+      </div>
     </div>
   </div>
 
-  <!-- 3. EVIDENCE TABLE -->
-  <div class="section-title">Evidence Records</div>
-  <table class="evidence-table">
-    <thead>
-      <tr>
-        <th style="width: 28%;">Hash</th>
-        <th style="width: 15%;">Source</th>
-        <th style="width: 25%;">Event Type</th>
-        <th style="width: 22%;">Timestamp</th>
-        <th style="width: 10%;">Status</th>
-      </tr>
-    </thead>
+  <hr class="sep">
+
+  <!-- EVIDENCE RECORDS -->
+  <div class="sec-title">Evidence Ledger</div>
+  <table class="ev-table">
+    <thead><tr>
+      <th style="width:22%">Record Hash</th>
+      <th style="width:14%">Source</th>
+      <th style="width:26%">Event</th>
+      <th style="width:22%">Time</th>
+      <th style="width:16%">Status</th>
+    </tr></thead>
     <tbody>
       ${evidenceRows}
+      ${remaining > 0 ? `<tr><td colspan="5" class="ev-more">+ ${remaining} additional records included in chain</td></tr>` : ''}
     </tbody>
   </table>
-  ${moreRecords}
 
-  <!-- 4. CHAIN INTEGRITY -->
-  <div style="margin-top: 20px;">
-    <div class="section-title">Hash Chain Integrity</div>
-    <div class="chain-box">
-      <div class="title">CHAIN VERIFIED -- All records are intact and properly linked.</div>
-      <div class="detail">Chain length: ${evidence.length} records &bull; All hashes verified</div>
+  <hr class="sep">
+
+  <!-- CHAIN INTEGRITY -->
+  <div class="sec-title">Integrity Verification</div>
+  <div class="chain-row">
+    <div class="chain-status">
+      <div class="chain-check">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="4,12 10,18 20,6" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="chain-text">
+        <div class="ct-title">Hash Chain Intact</div>
+        <div class="ct-sub">${evidence.length} records &middot; All links verified</div>
+      </div>
     </div>
-    <hr class="thin-divider">
-    <div style="font-size: 11pt; font-weight: 700; color: #0f172a; margin-bottom: 4px;">Signature Chain Hash</div>
-    <div class="sig-hash">${escapeHtml(signatureChain)}</div>
-  </div>
-
-  <!-- 5. VERIFICATION SECTION -->
-  <div style="margin-top: 20px;">
-    <div class="section-title">Verification</div>
-    <div class="verification-section">
-      <div class="qr-placeholder">
-        <svg width="80" height="80" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
-          <rect width="80" height="80" fill="none" stroke="#cbd5e1" stroke-width="2"/>
-          ${qrCells}
-        </svg>
-        <p>Scan to verify</p>
-      </div>
-      <div class="verification-details">
-        <div class="label">Verification Hash</div>
-        <div class="hash">${escapeHtml(verificationHash)}</div>
-        <div class="meta">
-          Certificate ID: ${escapeHtml(certId)}<br>
-          Generated: ${escapeHtml(new Date(generatedAt).toLocaleString())}<br>
-          Generator: QShield v${VERSION}
-        </div>
-      </div>
+    <div class="sig-box">
+      <div class="sb-title">Signature Chain Hash</div>
+      <div class="sb-hash">${escapeHtml(signatureChain)}</div>
     </div>
   </div>
 
   <!-- FOOTER -->
-  <hr class="footer-line">
-  <div class="footer">
-    This certificate was generated by QShield Desktop. Verify the signature chain hash to confirm evidence integrity.
+  <div class="footer-area">
+    <hr class="footer-sep">
+    <div class="footer-row">
+      <div class="footer-qr">
+        ${qrSvg}
+        <div class="footer-qr-text">
+          <strong style="font-size:7pt;color:#64748b;">Verification Hash</strong><br>
+          <span class="fq-hash">${escapeHtml(verificationHash)}</span>
+        </div>
+      </div>
+      <div class="footer-meta">
+        Certificate ID: ${escapeHtml(certId)}<br>
+        Generated by QShield v${VERSION}<br>
+        ${escapeHtml(dateStr)} at ${escapeHtml(timeStr)}<br>
+        HMAC-SHA256 evidence chain
+      </div>
+    </div>
+    <div class="footer-bottom">
+      This document is a cryptographically verifiable trust certificate generated by QShield Desktop.
+      Verify integrity at the signature chain hash above.
+    </div>
   </div>
+</div>
 </body>
 </html>`;
 }

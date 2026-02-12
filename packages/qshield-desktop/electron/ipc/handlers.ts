@@ -2,7 +2,7 @@
  * IPC handler registration with validation, rate limiting, and structured responses.
  * Every handler validates input, logs calls with timing, and returns structured results.
  */
-import { ipcMain, app, dialog, BrowserWindow } from 'electron';
+import { ipcMain, app, clipboard, dialog, BrowserWindow } from 'electron';
 import { copyFile } from 'node:fs/promises';
 import log from 'electron-log';
 import { IPC_CHANNELS } from './channels';
@@ -10,6 +10,7 @@ import {
   IpcValidationError,
   validateListOptions,
   validateUuid,
+  validateString,
   validateSearchQuery,
   validateExportIds,
   validateCertOptions,
@@ -18,9 +19,15 @@ import {
   validateAdapterId,
   validateConfigKey,
   validatePolicyConfig,
+  validateCryptoAddress,
+  validateCryptoTransaction,
+  validateCryptoAddressBookEntry,
   type ListOptionsInput,
   type CertOptionsInput,
   type PolicyConfigInput,
+  type CryptoAddressInput,
+  type CryptoTransactionInput,
+  type CryptoAddressBookEntryInput,
 } from './validators';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -78,12 +85,32 @@ export interface ServiceRegistry {
   };
   configManager: {
     get: (key: string) => unknown;
+    getAll: () => unknown;
     set: (key: string, value: unknown) => unknown;
   };
   adapterManager: {
     getStatus: () => unknown;
     enable: (id: string) => unknown;
     disable: (id: string) => unknown;
+  };
+  signatureGenerator: {
+    generate: (config: unknown, trustScore: number) => unknown;
+    getConfig: () => unknown;
+    setConfig: (config: unknown) => void;
+    getCurrentTrustScore: () => number;
+  };
+  verificationService: {
+    getStats: () => unknown;
+  };
+  cryptoService: {
+    getStatus: () => unknown;
+    verifyAddress: (input: CryptoAddressInput) => unknown;
+    verifyTransaction: (input: CryptoTransactionInput) => unknown;
+    getAddressBook: () => unknown;
+    addTrustedAddress: (input: CryptoAddressBookEntryInput) => unknown;
+    removeTrustedAddress: (address: string) => unknown;
+    getAlerts: () => unknown;
+    getClipboardStatus: () => unknown;
   };
 }
 
@@ -322,6 +349,10 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     return ok(services.configManager.get(validKey));
   });
 
+  wrapHandler(IPC_CHANNELS.CONFIG_GET_ALL, async () => {
+    return ok(services.configManager.getAll());
+  });
+
   wrapHandler(IPC_CHANNELS.CONFIG_SET, async (_event, key, value) => {
     const validKey = validateConfigKey(key);
     services.configManager.set(validKey, value);
@@ -343,6 +374,71 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     return ok(services.adapterManager.disable(validId));
   });
 
+  // ── Signature ────────────────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.SIGNATURE_GENERATE, async (_event, config) => {
+    const score = services.signatureGenerator.getCurrentTrustScore();
+    const result = services.signatureGenerator.generate(config, score);
+    return ok(result);
+  });
+
+  wrapHandler(IPC_CHANNELS.SIGNATURE_COPY, async (_event, config) => {
+    const score = services.signatureGenerator.getCurrentTrustScore();
+    const result = services.signatureGenerator.generate(config, score) as { html: string; trustScore: number };
+    clipboard.writeHTML(result.html);
+    return ok({ copied: true, trustScore: result.trustScore });
+  });
+
+  wrapHandler(IPC_CHANNELS.SIGNATURE_GET_CONFIG, async () => {
+    return ok(services.signatureGenerator.getConfig());
+  });
+
+  wrapHandler(IPC_CHANNELS.SIGNATURE_SET_CONFIG, async (_event, config) => {
+    services.signatureGenerator.setConfig(config);
+    return ok(null);
+  });
+
+  // ── Verification ────────────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.VERIFY_GET_STATS, async () => {
+    return ok(services.verificationService.getStats());
+  });
+
+  // ── Crypto ──────────────────────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.CRYPTO_GET_STATUS, async () => {
+    return ok(services.cryptoService.getStatus());
+  });
+
+  wrapHandler(IPC_CHANNELS.CRYPTO_VERIFY_ADDRESS, async (_event, input) => {
+    const validated = validateCryptoAddress(input);
+    return ok(services.cryptoService.verifyAddress(validated));
+  });
+
+  wrapHandler(IPC_CHANNELS.CRYPTO_VERIFY_TRANSACTION, async (_event, input) => {
+    const validated = validateCryptoTransaction(input);
+    return ok(services.cryptoService.verifyTransaction(validated));
+  });
+
+  wrapHandler(IPC_CHANNELS.CRYPTO_GET_ADDRESS_BOOK, async () => {
+    return ok(services.cryptoService.getAddressBook());
+  });
+
+  wrapHandler(IPC_CHANNELS.CRYPTO_ADD_TRUSTED_ADDRESS, async (_event, input) => {
+    const validated = validateCryptoAddressBookEntry(input);
+    return ok(services.cryptoService.addTrustedAddress(validated));
+  });
+
+  wrapHandler(IPC_CHANNELS.CRYPTO_REMOVE_TRUSTED_ADDRESS, async (_event, address) => {
+    const validAddress = validateString(address, 'address');
+    return ok(services.cryptoService.removeTrustedAddress(validAddress));
+  });
+
+  wrapHandler(IPC_CHANNELS.CRYPTO_GET_ALERTS, async () => {
+    return ok(services.cryptoService.getAlerts());
+  });
+
+  wrapHandler(IPC_CHANNELS.CRYPTO_CLIPBOARD_STATUS, async () => {
+    return ok(services.cryptoService.getClipboardStatus());
+  });
+
   // ── App ──────────────────────────────────────────────────────────────
   wrapHandler(IPC_CHANNELS.APP_VERSION, async () => {
     return ok(app.getVersion());
@@ -360,6 +456,20 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
       if (mainWin.isMinimized()) mainWin.restore();
       mainWin.show();
       mainWin.focus();
+    }
+    return ok(null);
+  });
+
+  wrapHandler(IPC_CHANNELS.APP_TOGGLE_MAIN, async () => {
+    const windows = BrowserWindow.getAllWindows();
+    const mainWin = windows.find((w) => !w.isAlwaysOnTop());
+    if (mainWin) {
+      if (mainWin.isVisible()) {
+        mainWin.hide();
+      } else {
+        mainWin.show();
+        mainWin.focus();
+      }
     }
     return ok(null);
   });

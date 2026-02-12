@@ -30,11 +30,12 @@ export interface AnomalyResult {
 
 /** Default weights for each adapter type. */
 const DEFAULT_WEIGHTS: Record<AdapterType, number> = {
-  zoom: 0.25,
-  teams: 0.25,
-  email: 0.2,
-  file: 0.15,
-  api: 0.15,
+  zoom: 0.20,
+  teams: 0.20,
+  email: 0.18,
+  file: 0.14,
+  api: 0.13,
+  crypto: 0.15,
 };
 
 /** Default trust scorer configuration. */

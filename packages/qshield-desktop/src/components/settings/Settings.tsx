@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import useConfigStore from '@/stores/config-store';
+import { useTrustState } from '@/hooks/useTrustState';
 import { SkeletonCard } from '@/components/shared/SkeletonLoader';
 import { formatFileSize } from '@/lib/formatters';
 import { ADAPTER_LABELS } from '@/lib/constants';
+import { isIPCAvailable } from '@/lib/mock-data';
 import type { PolicyRule, AdapterType } from '@qshield/core';
 
 /**
@@ -33,9 +35,9 @@ export default function Settings() {
       setGatewayUrl((config.gatewayUrl as string) ?? 'http://localhost:3001');
       setNotificationsEnabled((config.notificationsEnabled as boolean) ?? true);
       setNotificationThreshold((config.notificationSeverityThreshold as string) ?? 'medium');
-      setShieldOverlay((config.shieldOverlay as boolean) ?? true);
-      setShieldOpacity(((config.shieldOpacity as number) ?? 0.85) * 100);
-      setShieldPosition((config.shieldPosition as string) ?? 'bottom-right');
+      setShieldOverlay((config['shield.enabled'] as boolean) ?? (config.shieldOverlay as boolean) ?? true);
+      setShieldOpacity((((config['shield.opacity'] as number) ?? (config.shieldOpacity as number) ?? 0.85)) * 100);
+      setShieldPosition((config['shield.anchor'] as string) ?? (config.shieldPosition as string) ?? 'bottom-right');
       setStoragePath((config.storagePath as string) ?? '');
       setStorageQuota((config.storageQuotaMB as number) ?? 500);
     }
@@ -271,8 +273,13 @@ export default function Settings() {
               min="20"
               max="100"
               value={shieldOpacity}
-              onChange={(e) => setShieldOpacity(Number(e.target.value))}
-              onMouseUp={() => handleSave('shieldOpacity', shieldOpacity / 100)}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setShieldOpacity(val);
+                if (isIPCAvailable()) {
+                  window.qshield.app.setShieldOpacity(val / 100).catch(() => {});
+                }
+              }}
               className="mt-1.5 w-full accent-sky-500"
             />
           </div>
@@ -282,7 +289,12 @@ export default function Settings() {
               {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((pos) => (
                 <button
                   key={pos}
-                  onClick={() => { setShieldPosition(pos); handleSave('shieldPosition', pos); }}
+                  onClick={() => {
+                    setShieldPosition(pos);
+                    if (isIPCAvailable()) {
+                      window.qshield.app.setShieldPosition(pos as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right').catch(() => {});
+                    }
+                  }}
                   className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                     shieldPosition === pos
                       ? 'border-sky-500/30 bg-sky-500/10 text-sky-400'
@@ -362,6 +374,9 @@ export default function Settings() {
           </button>
         </div>
       </SettingsSection>
+
+      {/* Email Signature */}
+      <EmailSignatureSection />
 
       {/* App Info */}
       <SettingsSection title="About">
@@ -470,6 +485,254 @@ function PolicyRuleRow({
         <span className="text-slate-400">{rule.action}</span>
       </div>
     </div>
+  );
+}
+
+const ACCENT_COLORS = [
+  { name: 'Sky Blue', value: '#0ea5e9' },
+  { name: 'Emerald', value: '#10b981' },
+  { name: 'Purple', value: '#8b5cf6' },
+  { name: 'Slate', value: '#334155' },
+  { name: 'Navy', value: '#1e3a5f' },
+  { name: 'Red', value: '#ef4444' },
+];
+
+const STYLE_LABELS: Record<string, string> = {
+  inline: 'Inline Badge',
+  banner: 'Banner',
+  minimal: 'Minimal Line',
+};
+
+function EmailSignatureSection() {
+  const { score } = useTrustState();
+  const [style, setStyle] = useState<'inline' | 'banner' | 'minimal'>('inline');
+  const [primaryText, setPrimaryText] = useState('Verified by QShield');
+  const [secondaryText, setSecondaryText] = useState('This email is protected against silent interception');
+  const [accentColor, setAccentColor] = useState('#0ea5e9');
+  const [showScore, setShowScore] = useState(true);
+  const [showLink, setShowLink] = useState(true);
+  const [showIcon, setShowIcon] = useState(true);
+  const [showTimestamp, setShowTimestamp] = useState(true);
+  const [senderName, setSenderName] = useState('');
+  const [showTagline, setShowTagline] = useState(true);
+  const [showDownloadCta, setShowDownloadCta] = useState(true);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [verifyStats, setVerifyStats] = useState<{ totalGenerated: number; totalClicks: number; clickThroughRate: number } | null>(null);
+
+  // Load saved config on mount
+  useEffect(() => {
+    if (!isIPCAvailable() || configLoaded) return;
+    window.qshield.signature.getConfig().then((raw) => {
+      const cfg = raw as unknown as Record<string, unknown> | null;
+      if (cfg) {
+        if (cfg.style) setStyle(cfg.style as 'inline' | 'banner' | 'minimal');
+        if (cfg.primaryText) setPrimaryText(cfg.primaryText as string);
+        if (cfg.secondaryText) setSecondaryText(cfg.secondaryText as string);
+        if (cfg.accentColor) setAccentColor(cfg.accentColor as string);
+        if (cfg.showScore != null) setShowScore(cfg.showScore as boolean);
+        if (cfg.showLink != null) setShowLink(cfg.showLink as boolean);
+        if (cfg.showIcon != null) setShowIcon(cfg.showIcon as boolean);
+        if (cfg.showTimestamp != null) setShowTimestamp(cfg.showTimestamp as boolean);
+        if (cfg.senderName != null) setSenderName(cfg.senderName as string);
+        if (cfg.showTagline != null) setShowTagline(cfg.showTagline as boolean);
+        if (cfg.showDownloadCta != null) setShowDownloadCta(cfg.showDownloadCta as boolean);
+      }
+      setConfigLoaded(true);
+    }).catch(() => setConfigLoaded(true));
+    window.qshield.verification.getStats().then((raw) => {
+      const stats = raw as { totalGenerated: number; totalClicks: number; clickThroughRate: number };
+      setVerifyStats(stats);
+    }).catch(() => {});
+  }, [configLoaded]);
+
+  const currentConfig = {
+    style, primaryText, secondaryText, accentColor, showScore, showLink, showIcon, showTimestamp, senderName, showTagline, showDownloadCta,
+  };
+
+  // Save config on any change
+  useEffect(() => {
+    if (!configLoaded || !isIPCAvailable()) return;
+    window.qshield.signature.setConfig(currentConfig).catch(() => {});
+  }, [style, primaryText, secondaryText, accentColor, showScore, showLink, showIcon, showTimestamp, senderName, showTagline, showDownloadCta, configLoaded]);
+
+  // Generate live preview
+  useEffect(() => {
+    if (!isIPCAvailable()) return;
+    window.qshield.signature.generate(currentConfig).then((raw) => {
+      const result = raw as { html: string };
+      setPreviewHtml(result.html);
+    }).catch(() => {});
+  }, [style, primaryText, secondaryText, accentColor, showScore, showLink, showIcon, showTimestamp, senderName, showTagline, showDownloadCta, score]);
+
+  const handleCopy = useCallback(async () => {
+    if (!isIPCAvailable()) return;
+    try {
+      await window.qshield.signature.copy(currentConfig);
+      setCopyStatus('copied');
+      setTimeout(() => setCopyStatus('idle'), 3000);
+    } catch { /* ignore */ }
+  }, [style, primaryText, secondaryText, accentColor, showScore, showLink, showIcon, showTimestamp, senderName, showTagline, showDownloadCta]);
+
+  return (
+    <SettingsSection title="Email Signature" description="Add a QShield trust verification badge to your email signature">
+      <div className="space-y-4">
+        {/* Style selector */}
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Style</label>
+          <select
+            value={style}
+            onChange={(e) => setStyle(e.target.value as 'inline' | 'banner' | 'minimal')}
+            className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 focus:border-sky-500 focus:outline-none"
+          >
+            {Object.entries(STYLE_LABELS).map(([val, label]) => (
+              <option key={val} value={val}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Accent color swatches */}
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Accent Color</label>
+          <div className="mt-1.5 flex gap-2">
+            {ACCENT_COLORS.map((c) => (
+              <button
+                key={c.value}
+                onClick={() => setAccentColor(c.value)}
+                className={`w-8 h-8 rounded-full border-2 transition-all ${
+                  accentColor === c.value ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'
+                }`}
+                style={{ backgroundColor: c.value }}
+                title={c.name}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Primary text */}
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Primary Text</label>
+          <input
+            type="text"
+            value={primaryText}
+            onChange={(e) => setPrimaryText(e.target.value)}
+            className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
+          />
+        </div>
+
+        {/* Sender name */}
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Your Name</label>
+          <input
+            type="text"
+            value={senderName}
+            onChange={(e) => setSenderName(e.target.value)}
+            placeholder="Jane Smith"
+            className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
+          />
+          <p className="text-xs text-slate-500 mt-1">Shown on the verification landing page when recipients click "Verify"</p>
+        </div>
+
+        {/* Secondary text (only for banner) */}
+        {style === 'banner' && (
+          <div>
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Secondary Text</label>
+            <input
+              type="text"
+              value={secondaryText}
+              onChange={(e) => setSecondaryText(e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
+            />
+          </div>
+        )}
+
+        {/* Toggles */}
+        <div className="grid grid-cols-2 gap-3">
+          {([
+            ['Show Trust Score', showScore, setShowScore],
+            ['Show Verification Link', showLink, setShowLink],
+            ['Show Shield Icon', showIcon, setShowIcon],
+            ['Show Timestamp', showTimestamp, setShowTimestamp],
+            ['Powered by QShield', showTagline, setShowTagline],
+            ['Download CTA', showDownloadCta, setShowDownloadCta],
+          ] as [string, boolean, (v: boolean) => void][]).map(([label, checked, setter]) => (
+            <div key={label} className="flex items-center justify-between">
+              <span className="text-sm text-slate-300">{label}</span>
+              <ToggleSwitch checked={checked} onChange={setter} />
+            </div>
+          ))}
+        </div>
+
+        {/* Live preview */}
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Preview</label>
+          <div className="mt-1.5 rounded-lg border border-slate-700 bg-white p-4 overflow-x-auto">
+            {/* Mock email context */}
+            <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', fontSize: '13px', color: '#374151' }}>
+              <p style={{ margin: '0 0 8px' }}>Hi team,</p>
+              <p style={{ margin: '0 0 12px' }}>Just wanted to follow up on our conversation from earlier today...</p>
+              <p style={{ margin: '0 0 4px' }}>Best regards,<br />Jane Smith</p>
+              <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '12px', paddingTop: '4px' }}>
+                {previewHtml ? (
+                  <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                ) : (
+                  <div className="text-slate-400 text-xs italic py-2">Loading preview...</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Verification stats */}
+        {verifyStats && verifyStats.totalGenerated > 0 && (
+          <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3">
+            <div className="flex items-center gap-4 text-xs">
+              <div className="flex-1 text-center">
+                <div className="text-lg font-bold text-slate-200">{verifyStats.totalGenerated}</div>
+                <div className="text-slate-500">Signatures</div>
+              </div>
+              <div className="w-px h-8 bg-slate-700" />
+              <div className="flex-1 text-center">
+                <div className="text-lg font-bold text-sky-400">{verifyStats.totalClicks}</div>
+                <div className="text-slate-500">Verify Clicks</div>
+              </div>
+              <div className="w-px h-8 bg-slate-700" />
+              <div className="flex-1 text-center">
+                <div className="text-lg font-bold text-emerald-400">{verifyStats.clickThroughRate}%</div>
+                <div className="text-slate-500">CTR</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Copy button */}
+        <button
+          onClick={handleCopy}
+          className={`w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+            copyStatus === 'copied'
+              ? 'bg-emerald-600 text-white'
+              : 'bg-sky-600 text-white hover:bg-sky-500'
+          }`}
+        >
+          {copyStatus === 'copied' ? (
+            <>
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" strokeWidth={2.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+              QShield signature copied with trust score: {Math.round(score)}
+            </>
+          ) : (
+            <>
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+              </svg>
+              Copy to Clipboard
+            </>
+          )}
+        </button>
+      </div>
+    </SettingsSection>
   );
 }
 

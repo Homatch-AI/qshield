@@ -40,7 +40,7 @@ const uuidV4 = z.string().uuid('Must be a valid UUID v4');
 
 const nonEmptyString = z.string().trim().min(1, 'Must be a non-empty string');
 
-const adapterType = z.enum(['zoom', 'teams', 'email', 'file', 'api']);
+const adapterType = z.enum(['zoom', 'teams', 'email', 'file', 'api', 'crypto']);
 
 const sortOrder = z.enum(['asc', 'desc']);
 
@@ -142,6 +142,31 @@ export const policyConfigSchema = z.object({
 });
 export type PolicyConfigInput = z.infer<typeof policyConfigSchema>;
 
+/** Supported crypto chains */
+const cryptoChain = z.enum(['bitcoin', 'ethereum', 'solana', 'polygon', 'arbitrum', 'optimism']);
+
+/** Schema for crypto address verification */
+export const cryptoAddressSchema = z.object({
+  address: nonEmptyString.max(128, 'Address must be 128 characters or fewer'),
+  chain: cryptoChain,
+});
+export type CryptoAddressInput = z.infer<typeof cryptoAddressSchema>;
+
+/** Schema for crypto transaction verification */
+export const cryptoTransactionSchema = z.object({
+  hash: nonEmptyString.max(128, 'Transaction hash must be 128 characters or fewer'),
+  chain: cryptoChain,
+});
+export type CryptoTransactionInput = z.infer<typeof cryptoTransactionSchema>;
+
+/** Schema for adding a trusted address */
+export const cryptoAddressBookEntrySchema = z.object({
+  address: nonEmptyString.max(128, 'Address must be 128 characters or fewer'),
+  chain: cryptoChain,
+  label: z.string().max(100, 'Label must be 100 characters or fewer').optional(),
+});
+export type CryptoAddressBookEntryInput = z.infer<typeof cryptoAddressBookEntrySchema>;
+
 // ── Validator functions ──────────────────────────────────────────────────────
 
 /**
@@ -209,4 +234,19 @@ export function validateConfigKey(input: unknown): string {
 /** Validate a policy configuration object */
 export function validatePolicyConfig(input: unknown): PolicyConfigInput {
   return validate(policyConfigSchema, input);
+}
+
+/** Validate crypto address verification input */
+export function validateCryptoAddress(input: unknown): CryptoAddressInput {
+  return validate(cryptoAddressSchema, input);
+}
+
+/** Validate crypto transaction verification input */
+export function validateCryptoTransaction(input: unknown): CryptoTransactionInput {
+  return validate(cryptoTransactionSchema, input);
+}
+
+/** Validate crypto address book entry input */
+export function validateCryptoAddressBookEntry(input: unknown): CryptoAddressBookEntryInput {
+  return validate(cryptoAddressBookEntrySchema, input);
 }

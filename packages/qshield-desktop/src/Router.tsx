@@ -10,6 +10,7 @@ const TrustTimeline = lazy(() => import('@/components/timeline/TrustTimeline'));
 const EvidenceVault = lazy(() => import('@/components/vault/EvidenceVault'));
 const CertificatesPage = lazy(() => import('@/components/certificates/CertificatesPage'));
 const AlertsPage = lazy(() => import('@/components/alerts/AlertsPage'));
+const CryptoSecurity = lazy(() => import('@/components/crypto/CryptoSecurity'));
 const Settings = lazy(() => import('@/components/settings/Settings'));
 const ShieldOverlay = lazy(() => import('@/components/shield/ShieldOverlay'));
 
@@ -94,6 +95,16 @@ export function Router() {
             <Suspense fallback={<PageLoader />}>
               <ErrorBoundary>
                 <AlertsPage />
+              </ErrorBoundary>
+            </Suspense>
+          }
+        />
+        <Route
+          path="crypto"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <ErrorBoundary>
+                <CryptoSecurity />
               </ErrorBoundary>
             </Suspense>
           }

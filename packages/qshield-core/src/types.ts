@@ -19,7 +19,7 @@ export interface TrustSignal {
   metadata: Record<string, unknown>;
 }
 
-export type AdapterType = 'zoom' | 'teams' | 'email' | 'file' | 'api';
+export type AdapterType = 'zoom' | 'teams' | 'email' | 'file' | 'api' | 'crypto';
 
 export interface EvidenceRecord {
   id: string; // UUID v4
@@ -56,6 +56,11 @@ export interface AlertSourceMetadata {
   statusCode?: number;
   requestIp?: string;
   policyViolated?: string;
+  // Crypto
+  walletAddress?: string;
+  chain?: string;
+  transactionHash?: string;
+  riskLevel?: string;
   // Common
   rawEvent?: Record<string, unknown>;
 }
@@ -165,4 +170,49 @@ export interface AdapterEvent {
   timestamp: string;
   data: Record<string, unknown>;
   trustImpact: number; // -100 to +100
+}
+
+/** Supported blockchain networks */
+export type CryptoChain = 'bitcoin' | 'ethereum' | 'solana' | 'polygon' | 'arbitrum' | 'optimism';
+
+/** A crypto wallet address with metadata */
+export interface CryptoAddress {
+  address: string;
+  chain: CryptoChain;
+  label?: string;
+  trusted: boolean;
+  addedAt: string; // ISO 8601
+  lastSeen?: string;
+}
+
+/** A crypto transaction record */
+export interface CryptoTransaction {
+  hash: string;
+  chain: CryptoChain;
+  from: string;
+  to: string;
+  amount: string;
+  timestamp: string;
+  verified: boolean;
+  riskLevel: 'safe' | 'caution' | 'danger';
+  alerts: string[];
+}
+
+/** Result of a transaction verification check */
+export interface TransactionCheck {
+  valid: boolean;
+  chain: CryptoChain;
+  hash: string;
+  warnings: string[];
+  scamMatch: boolean;
+  checksumValid: boolean;
+}
+
+/** Clipboard guard state */
+export interface ClipboardGuardState {
+  enabled: boolean;
+  lastCheck: string; // ISO 8601
+  detections: number;
+  lastDetectedAddress?: string;
+  lastDetectedChain?: CryptoChain;
 }

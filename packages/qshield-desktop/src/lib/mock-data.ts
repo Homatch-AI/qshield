@@ -53,7 +53,7 @@ function daysAgo(d: number): string {
   return hoursAgo(d * 24);
 }
 
-const ADAPTERS: AdapterType[] = ['zoom', 'teams', 'email', 'file', 'api'];
+const ADAPTERS: AdapterType[] = ['zoom', 'teams', 'email', 'file', 'api', 'crypto'];
 const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const;
 
 const EVENT_TYPES: Record<AdapterType, string[]> = {
@@ -62,6 +62,7 @@ const EVENT_TYPES: Record<AdapterType, string[]> = {
   email: ['email.sent', 'email.received', 'attachment.downloaded', 'link.clicked', 'email.forwarded'],
   file: ['file.created', 'file.modified', 'file.deleted', 'file.moved', 'file.accessed'],
   api: ['request.inbound', 'request.outbound', 'auth.success', 'auth.failure', 'rate.limited'],
+  crypto: ['clipboard.check', 'address.verified', 'transaction.signed', 'wallet.connected', 'chain.mismatch'],
 };
 
 const SIGNAL_DESCRIPTIONS: Record<AdapterType, string[]> = {
@@ -99,6 +100,13 @@ const SIGNAL_DESCRIPTIONS: Record<AdapterType, string[]> = {
     'Outbound API request to external service',
     'Authentication token refreshed',
     'Unauthorized API access attempt blocked',
+  ],
+  crypto: [
+    'Clipboard hijack attempt detected',
+    'Wallet address verified via checksum',
+    'Transaction signed and broadcast',
+    'Hardware wallet connected',
+    'Chain mismatch warning triggered',
   ],
 };
 

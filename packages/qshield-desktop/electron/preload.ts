@@ -192,6 +192,9 @@ contextBridge.exposeInMainWorld('qshield', {
     get: (id: string): Promise<EvidenceRecord> =>
       invoke<EvidenceRecord>(IPC_CHANNELS.EVIDENCE_GET, id),
 
+    getOne: (id: string): Promise<EvidenceRecord> =>
+      invoke<EvidenceRecord>(IPC_CHANNELS.EVIDENCE_GET, id),
+
     verify: (id: string): Promise<{ valid: boolean; errors: string[] }> =>
       invoke<{ valid: boolean; errors: string[] }>(IPC_CHANNELS.EVIDENCE_VERIFY, id),
 
@@ -217,11 +220,18 @@ contextBridge.exposeInMainWorld('qshield', {
     status: (): Promise<GatewayStatus> =>
       invoke<GatewayStatus>(IPC_CHANNELS.GATEWAY_STATUS),
 
+    getStatus: (): Promise<GatewayStatus> =>
+      invoke<GatewayStatus>(IPC_CHANNELS.GATEWAY_STATUS),
+
     connect: (url: string): Promise<GatewayStatus> =>
       invoke<GatewayStatus>(IPC_CHANNELS.GATEWAY_CONNECT, url),
 
     disconnect: (): Promise<GatewayStatus> =>
       invoke<GatewayStatus>(IPC_CHANNELS.GATEWAY_DISCONNECT),
+
+    reconnect: (): Promise<GatewayStatus> =>
+      invoke<GatewayStatus>(IPC_CHANNELS.GATEWAY_DISCONNECT)
+        .then(() => invoke<GatewayStatus>(IPC_CHANNELS.GATEWAY_STATUS)),
   },
 
   alerts: {
@@ -253,12 +263,18 @@ contextBridge.exposeInMainWorld('qshield', {
     get: (key: string): Promise<unknown> =>
       invoke<unknown>(IPC_CHANNELS.CONFIG_GET, key),
 
+    getAll: (): Promise<Record<string, unknown>> =>
+      invoke<Record<string, unknown>>(IPC_CHANNELS.CONFIG_GET_ALL),
+
     set: (key: string, value: unknown): Promise<null> =>
       invoke<null>(IPC_CHANNELS.CONFIG_SET, key, value),
   },
 
   adapters: {
     status: (): Promise<AdapterStatus[]> =>
+      invoke<AdapterStatus[]>(IPC_CHANNELS.ADAPTER_STATUS),
+
+    list: (): Promise<AdapterStatus[]> =>
       invoke<AdapterStatus[]>(IPC_CHANNELS.ADAPTER_STATUS),
 
     enable: (id: string): Promise<{ id: string; enabled: boolean }> =>
@@ -268,8 +284,56 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<{ id: string; enabled: boolean }>(IPC_CHANNELS.ADAPTER_DISABLE, id),
   },
 
+  signature: {
+    generate: (config: unknown): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.SIGNATURE_GENERATE, config),
+
+    copy: (config?: unknown): Promise<{ copied: boolean; trustScore: number }> =>
+      invoke<{ copied: boolean; trustScore: number }>(IPC_CHANNELS.SIGNATURE_COPY, config),
+
+    getConfig: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.SIGNATURE_GET_CONFIG),
+
+    setConfig: (config: unknown): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.SIGNATURE_SET_CONFIG, config),
+  },
+
+  verification: {
+    getStats: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.VERIFY_GET_STATS),
+  },
+
+  crypto: {
+    getStatus: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.CRYPTO_GET_STATUS),
+
+    verifyAddress: (address: string, chain: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.CRYPTO_VERIFY_ADDRESS, { address, chain }),
+
+    verifyTransaction: (hash: string, chain: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.CRYPTO_VERIFY_TRANSACTION, { hash, chain }),
+
+    getAddressBook: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.CRYPTO_GET_ADDRESS_BOOK),
+
+    addTrustedAddress: (address: string, chain: string, label?: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.CRYPTO_ADD_TRUSTED_ADDRESS, { address, chain, label }),
+
+    removeTrustedAddress: (address: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.CRYPTO_REMOVE_TRUSTED_ADDRESS, address),
+
+    getAlerts: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.CRYPTO_GET_ALERTS),
+
+    getClipboardStatus: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.CRYPTO_CLIPBOARD_STATUS),
+  },
+
   app: {
     version: (): Promise<string> =>
+      invoke<string>(IPC_CHANNELS.APP_VERSION),
+
+    getVersion: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),
 
     quit: (): Promise<null> =>
@@ -277,5 +341,17 @@ contextBridge.exposeInMainWorld('qshield', {
 
     focusMain: (): Promise<null> =>
       invoke<null>(IPC_CHANNELS.APP_FOCUS_MAIN),
+
+    toggleMainWindow: (): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.APP_TOGGLE_MAIN),
+
+    toggleShieldOverlay: (): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.APP_TOGGLE_SHIELD),
+
+    setShieldPosition: (position: string): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.SHIELD_SET_POSITION, position),
+
+    setShieldOpacity: (opacity: number): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.SHIELD_SET_OPACITY, opacity),
   },
 });

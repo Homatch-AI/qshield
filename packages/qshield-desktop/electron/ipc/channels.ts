@@ -59,6 +59,8 @@ export const IPC_CHANNELS = {
   // ── Config ─────────────────────────────────────────────────────────────
   /** Read a config value by dot-notation key */
   CONFIG_GET: 'config:get',
+  /** Read all config values */
+  CONFIG_GET_ALL: 'config:get-all',
   /** Write a config value by dot-notation key (rate-limited: 10/min) */
   CONFIG_SET: 'config:set',
 
@@ -70,6 +72,38 @@ export const IPC_CHANNELS = {
   /** Disable a monitoring adapter by ID */
   ADAPTER_DISABLE: 'adapter:disable',
 
+  // ── Signature ─────────────────────────────────────────────────────────
+  /** Generate email signature HTML with current trust score */
+  SIGNATURE_GENERATE: 'signature:generate',
+  /** Generate and copy email signature HTML to system clipboard */
+  SIGNATURE_COPY: 'signature:copy',
+  /** Get saved signature preferences */
+  SIGNATURE_GET_CONFIG: 'signature:get-config',
+  /** Save signature preferences */
+  SIGNATURE_SET_CONFIG: 'signature:set-config',
+
+  // ── Verification ────────────────────────────────────────────────────────
+  /** Get signature verification stats (total generated, clicks, CTR) */
+  VERIFY_GET_STATS: 'verify:get-stats',
+
+  // ── Crypto ──────────────────────────────────────────────────────────────
+  /** Get crypto security overview status */
+  CRYPTO_GET_STATUS: 'crypto:get-status',
+  /** Verify a crypto address format, checksum, and scam database */
+  CRYPTO_VERIFY_ADDRESS: 'crypto:verify-address',
+  /** Verify a transaction hash format */
+  CRYPTO_VERIFY_TRANSACTION: 'crypto:verify-transaction',
+  /** Get the trusted address book */
+  CRYPTO_GET_ADDRESS_BOOK: 'crypto:get-address-book',
+  /** Add an address to the trusted address book */
+  CRYPTO_ADD_TRUSTED_ADDRESS: 'crypto:add-trusted-address',
+  /** Remove an address from the trusted address book */
+  CRYPTO_REMOVE_TRUSTED_ADDRESS: 'crypto:remove-trusted-address',
+  /** Get crypto-specific security alerts */
+  CRYPTO_GET_ALERTS: 'crypto:get-alerts',
+  /** Get clipboard guard status */
+  CRYPTO_CLIPBOARD_STATUS: 'crypto:clipboard-status',
+
   // ── App ────────────────────────────────────────────────────────────────
   /** Get the application version string */
   APP_VERSION: 'app:version',
@@ -77,6 +111,14 @@ export const IPC_CHANNELS = {
   APP_QUIT: 'app:quit',
   /** Focus the main window (used by shield overlay double-click) */
   APP_FOCUS_MAIN: 'app:focus-main',
+  /** Toggle the main window visibility (used by shield overlay double-click) */
+  APP_TOGGLE_MAIN: 'app:toggle-main-window',
+  /** Toggle the shield overlay window on/off */
+  APP_TOGGLE_SHIELD: 'app:toggle-shield-overlay',
+  /** Move the shield overlay to a new screen corner */
+  SHIELD_SET_POSITION: 'shield:set-position',
+  /** Set the shield overlay opacity (0.1–1.0) */
+  SHIELD_SET_OPACITY: 'shield:set-opacity',
 } as const;
 
 /** Union type of all valid IPC channel strings */

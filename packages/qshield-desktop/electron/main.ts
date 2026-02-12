@@ -15,13 +15,17 @@
  * - sandbox: true (always)
  * - All renderer communication via contextBridge + IPC invoke only
  */
-import { app, BrowserWindow, session, Tray, Menu, nativeImage, screen, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, session, Tray, Menu, nativeImage, screen, Notification } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import log from 'electron-log';
 import { registerIpcHandlers, type ServiceRegistry } from './ipc/handlers';
 import { ConfigManager, type WindowBounds, type ShieldOverlayConfig } from './services/config';
 import { StandaloneCertGenerator } from './services/standalone-cert';
+import { generateSignatureHTML, DEFAULT_SIGNATURE_CONFIG, type SignatureConfig } from './services/signature-generator';
+import { VerificationRecordService } from './services/verification-record';
+import { CryptoMonitorService } from './services/crypto-monitor';
+import { validateAddress, verifyTransactionHash, loadScamDatabase } from '@qshield/core';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +42,7 @@ let configManager: ConfigManager | null = null;
 let isQuitting = false;
 let currentTrustLevel: 'critical' | 'warning' | 'elevated' | 'normal' | 'verified' = 'normal';
 let currentTrustScore = 85;
+let services: ServiceRegistry | null = null;
 
 const isDev = !app.isPackaged;
 
@@ -350,6 +355,27 @@ function buildTrayMenu(): Electron.Menu {
       },
     },
     {
+      label: 'Copy Email Signature',
+      click: () => {
+        if (services) {
+          const result = services.signatureGenerator.generate(
+            configManager?.get('signatureConfig') ?? {},
+            currentTrustScore,
+          ) as { html: string };
+          clipboard.writeHTML(result.html);
+        } else {
+          const sigConfig = configManager?.get('signatureConfig') as SignatureConfig | undefined;
+          const merged = { ...DEFAULT_SIGNATURE_CONFIG, ...(sigConfig ?? {}) };
+          const result = generateSignatureHTML(merged, currentTrustScore);
+          clipboard.writeHTML(result.html);
+        }
+        new Notification({
+          title: 'QShield',
+          body: `QShield signature copied \u00B7 Trust Score: ${currentTrustScore}`,
+        }).show();
+      },
+    },
+    {
       label: 'Open Evidence Vault',
       click: () => {
         if (mainWindow) {
@@ -417,6 +443,28 @@ function updateTray(score: number, level: typeof currentTrustLevel): void {
 /** Create service registry for IPC handlers */
 function createServiceRegistry(config: ConfigManager): ServiceRegistry {
   const certGen = new StandaloneCertGenerator();
+  const verificationService = new VerificationRecordService();
+
+  // Initialize crypto monitoring service
+  const cryptoMonitor = new CryptoMonitorService((addresses) => {
+    config.set('trustedAddresses', addresses);
+  });
+  // Load persisted trusted addresses
+  const savedAddresses = config.get('trustedAddresses') as Array<{ address: string; chain: string; label?: string; trusted: boolean; addedAt: string }> | undefined;
+  if (savedAddresses && Array.isArray(savedAddresses)) {
+    cryptoMonitor.addressBook.load(savedAddresses as Parameters<typeof cryptoMonitor.addressBook.load>[0]);
+  }
+  // Load scam address database
+  try {
+    const scamPath = path.join(__dirname, '../../data/scam-addresses.json');
+    const scamData = require(scamPath) as string[];
+    loadScamDatabase(scamData);
+    log.info(`Loaded ${scamData.length} scam addresses`);
+  } catch {
+    log.warn('Could not load scam addresses database');
+  }
+  // Start crypto monitoring
+  cryptoMonitor.start();
 
   return {
     trustMonitor: {
@@ -481,12 +529,55 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
     },
     configManager: {
       get: (key: string) => config.get(key),
+      getAll: () => config.getAll(),
       set: (key: string, value: unknown) => config.set(key, value),
     },
     adapterManager: {
       getStatus: () => [],
       enable: (id: string) => ({ id, enabled: true }),
       disable: (id: string) => ({ id, enabled: false }),
+    },
+    signatureGenerator: {
+      generate: (sigConfig: unknown, trustScore: number) => {
+        const merged = { ...DEFAULT_SIGNATURE_CONFIG, ...(sigConfig as Partial<SignatureConfig>) };
+        const senderName = merged.senderName || 'QShield User';
+        const trustLevel = trustScore >= 90 ? 'verified' : trustScore >= 70 ? 'normal' : trustScore >= 50 ? 'elevated' : trustScore >= 30 ? 'warning' : 'critical';
+        const record = verificationService.createRecord({
+          senderName,
+          senderEmail: 'user@qshield.io',
+          trustScore,
+          trustLevel,
+        });
+        return generateSignatureHTML(merged, trustScore, record.verificationId, record.verifyUrl, record.referralId, 'user@qshield.io');
+      },
+      getConfig: () => {
+        const saved = config.get('signatureConfig') as SignatureConfig | undefined;
+        return saved ?? DEFAULT_SIGNATURE_CONFIG;
+      },
+      setConfig: (sigConfig: unknown) => {
+        config.set('signatureConfig', sigConfig);
+      },
+      getCurrentTrustScore: () => currentTrustScore,
+    },
+    verificationService: {
+      getStats: () => verificationService.getStats(),
+    },
+    cryptoService: {
+      getStatus: () => cryptoMonitor.getStatus(),
+      verifyAddress: (input: { address: string; chain: string }) =>
+        validateAddress(input.address, input.chain as Parameters<typeof validateAddress>[1]),
+      verifyTransaction: (input: { hash: string; chain: string }) =>
+        verifyTransactionHash(input.hash, input.chain as Parameters<typeof verifyTransactionHash>[1]),
+      getAddressBook: () => cryptoMonitor.addressBook.getAll(),
+      addTrustedAddress: (input: { address: string; chain: string; label?: string }) =>
+        cryptoMonitor.addressBook.add(
+          input.address,
+          input.chain as Parameters<typeof cryptoMonitor.addressBook.add>[1],
+          input.label,
+        ),
+      removeTrustedAddress: (address: string) => cryptoMonitor.addressBook.remove(address),
+      getAlerts: () => cryptoMonitor.getAlerts(),
+      getClipboardStatus: () => cryptoMonitor.getClipboardStatus(),
     },
   };
 }
@@ -598,8 +689,49 @@ app.whenReady().then(() => {
   setupCSP();
 
   // Register IPC handlers
-  const services = createServiceRegistry(configManager);
+  services = createServiceRegistry(configManager);
   registerIpcHandlers(services);
+
+  // Shield toggle handler — registered here because it needs access to shieldWindow
+  ipcMain.handle('app:toggle-shield-overlay', () => {
+    if (shieldWindow) {
+      shieldWindow.close();
+      shieldWindow = null;
+    } else {
+      shieldWindow = createShieldWindow();
+    }
+    return { success: true, data: null };
+  });
+
+  // Shield position handler — repositions overlay window immediately
+  ipcMain.handle('shield:set-position', (_event, position: string) => {
+    const validPositions = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
+    if (!validPositions.includes(position as typeof validPositions[number])) {
+      return { success: false, error: { message: 'Invalid position', code: 'INVALID_POSITION' } };
+    }
+    const anchor = position as ShieldOverlayConfig['anchor'];
+    // Persist to structured config
+    configManager!.set('shield.anchor', anchor);
+    // Reposition window immediately if it exists
+    if (shieldWindow) {
+      const shieldConfig = configManager!.getShieldConfig();
+      const pos = getShieldPosition({ ...shieldConfig, anchor });
+      shieldWindow.setPosition(pos.x, pos.y);
+    }
+    return { success: true, data: null };
+  });
+
+  // Shield opacity handler — sets overlay opacity immediately
+  ipcMain.handle('shield:set-opacity', (_event, opacity: number) => {
+    const clamped = Math.max(0.1, Math.min(1.0, opacity));
+    // Persist to structured config
+    configManager!.set('shield.opacity', clamped);
+    // Apply immediately if window exists
+    if (shieldWindow) {
+      shieldWindow.setOpacity(clamped);
+    }
+    return { success: true, data: null };
+  });
 
   // Create main window
   mainWindow = createMainWindow();

@@ -45,7 +45,7 @@ export function BreathingAnimation({ level, children, className = '' }: Breathin
 
       {/* Pulse ring */}
       <div
-        className="absolute inset-[-8px] rounded-full border-2"
+        className="absolute inset-[-6px] rounded-full border"
         style={{
           borderColor: color,
           animation: `breathing-ring var(--breathing-duration) ease-in-out infinite`,

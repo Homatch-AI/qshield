@@ -66,6 +66,7 @@ export const NAV_ITEMS = [
   { path: '/vault', label: 'Evidence Vault', icon: 'vault' },
   { path: '/certificates', label: 'Certificates', icon: 'certificate' },
   { path: '/alerts', label: 'Alerts', icon: 'bell' },
+  { path: '/crypto', label: 'Crypto Security', icon: 'shield-check' },
   { path: '/settings', label: 'Settings', icon: 'settings' },
 ] as const;
 
@@ -75,4 +76,5 @@ export const ADAPTER_LABELS: Record<string, string> = {
   email: 'Email Monitor',
   file: 'File Monitor',
   api: 'API Gateway',
+  crypto: 'Crypto Wallet',
 };
