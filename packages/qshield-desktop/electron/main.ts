@@ -60,7 +60,7 @@ if (!gotLock) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Get the preload script path (compiled to CJS with .cjs extension) */
+/** Get the preload script path (.cjs for Electron require() compatibility) */
 function getPreloadPath(): string {
   return path.join(__dirname, 'preload.cjs');
 }

@@ -1,8 +1,36 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import electron from 'vite-plugin-electron';
 import electronRenderer from 'vite-plugin-electron-renderer';
 import path from 'node:path';
+import fs from 'node:fs';
+
+/**
+ * Vite plugin that converts the preload ESM output to CJS and renames to .cjs.
+ * Needed because vite-plugin-electron always outputs ESM when package.json
+ * has "type": "module", but Electron loads preload scripts via require().
+ */
+function preloadToCjs(): Plugin {
+  return {
+    name: 'preload-to-cjs',
+    closeBundle() {
+      const preloadPath = path.resolve(__dirname, 'dist/electron/preload.js');
+      const cjsPath = path.resolve(__dirname, 'dist/electron/preload.cjs');
+      if (!fs.existsSync(preloadPath)) return;
+
+      let code = fs.readFileSync(preloadPath, 'utf-8');
+      // Convert ESM imports to CJS requires for electron
+      code = code.replace(
+        /import\s*\{([^}]+)\}\s*from\s*["']electron["'];?/g,
+        'const {$1} = require("electron");',
+      );
+      // Remove any export statements (preload doesn't export)
+      code = code.replace(/^export\s*\{[^}]*\};?\s*$/gm, '');
+      fs.writeFileSync(cjsPath, code, 'utf-8');
+      fs.unlinkSync(preloadPath);
+    },
+  };
+}
 
 export default defineConfig({
   plugins: [
@@ -27,20 +55,11 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist/electron',
-            lib: {
-              entry: 'electron/preload.ts',
-              formats: ['cjs'],
-              fileName: () => 'preload',
-            },
             rollupOptions: {
               external: ['electron'],
-              output: {
-                // Force .cjs extension so Node doesn't treat it as ESM
-                // (package.json has "type": "module")
-                entryFileNames: 'preload.cjs',
-              },
             },
           },
+          plugins: [preloadToCjs()],
         },
       },
     ]),
