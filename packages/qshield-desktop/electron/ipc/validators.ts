@@ -1,155 +1,212 @@
 /**
- * IPC input validation for all handlers.
- * All inputs from the renderer must be validated before processing.
+ * IPC input validation using zod schemas.
+ * All inputs from the renderer process MUST be validated before processing.
+ * Never trust data from the renderer — it could be tampered with via DevTools.
  */
+import { z, ZodError, type ZodSchema } from 'zod';
 
-export class ValidationError extends Error {
-  constructor(message: string) {
+// ── Error class ──────────────────────────────────────────────────────────────
+
+/** Structured validation error with machine-readable code and field path */
+export class IpcValidationError extends Error {
+  /** Machine-readable error code */
+  readonly code: string;
+  /** Dot-separated path to the invalid field, if applicable */
+  readonly fieldPath: string | undefined;
+  /** All validation issues (for multi-field errors) */
+  readonly issues: Array<{ path: string; message: string }>;
+
+  constructor(zodError: ZodError) {
+    const firstIssue = zodError.issues[0];
+    const fieldPath = firstIssue?.path.join('.') || undefined;
+    const message = firstIssue
+      ? `${fieldPath ? `${fieldPath}: ` : ''}${firstIssue.message}`
+      : 'Validation failed';
+
     super(message);
-    this.name = 'ValidationError';
+    this.name = 'IpcValidationError';
+    this.code = 'VALIDATION_ERROR';
+    this.fieldPath = fieldPath;
+    this.issues = zodError.issues.map((issue) => ({
+      path: issue.path.join('.'),
+      message: issue.message,
+    }));
   }
 }
 
-/** Validate that a value is a non-empty string */
-export function validateString(value: unknown, fieldName: string): string {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new ValidationError(`${fieldName} must be a non-empty string`);
-  }
-  return value.trim();
-}
+// ── Reusable primitives ──────────────────────────────────────────────────────
 
-/** Validate that a value is a UUID v4 */
-export function validateUuid(value: unknown, fieldName: string): string {
-  const str = validateString(value, fieldName);
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(str)) {
-    throw new ValidationError(`${fieldName} must be a valid UUID v4`);
-  }
-  return str;
-}
+const uuidV4 = z.string().uuid('Must be a valid UUID v4');
 
-/** Validate list options (pagination) */
-export function validateListOptions(value: unknown): {
-  page: number;
-  pageSize: number;
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-} {
-  if (typeof value !== 'object' || value === null) {
-    throw new ValidationError('List options must be an object');
-  }
+const nonEmptyString = z.string().trim().min(1, 'Must be a non-empty string');
 
-  const opts = value as Record<string, unknown>;
-  const page = typeof opts.page === 'number' && opts.page >= 1 ? Math.floor(opts.page) : 1;
-  const pageSize =
-    typeof opts.pageSize === 'number' && opts.pageSize >= 1 && opts.pageSize <= 100
-      ? Math.floor(opts.pageSize)
-      : 20;
+const adapterType = z.enum(['zoom', 'teams', 'email', 'file', 'api']);
 
-  const result: { page: number; pageSize: number; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {
-    page,
-    pageSize,
-  };
+const sortOrder = z.enum(['asc', 'desc']);
 
-  if (typeof opts.sortBy === 'string' && opts.sortBy.length > 0) {
-    // Only allow alphanumeric and underscore for sort field names
-    if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(opts.sortBy)) {
-      result.sortBy = opts.sortBy;
+const safeFieldName = z
+  .string()
+  .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, 'Field name must be alphanumeric with underscores');
+
+const configKey = z
+  .string()
+  .trim()
+  .regex(
+    /^[a-zA-Z][a-zA-Z0-9._-]*$/,
+    'Config key must start with a letter, containing only alphanumeric, dots, dashes, or underscores',
+  );
+
+const safeUrl = z.string().url('Must be a valid URL').refine(
+  (val) => {
+    try {
+      const u = new URL(val);
+      return ['http:', 'https:', 'ws:', 'wss:'].includes(u.protocol);
+    } catch {
+      return false;
     }
-  }
+  },
+  { message: 'URL must use http, https, ws, or wss protocol' },
+);
 
-  if (opts.sortOrder === 'asc' || opts.sortOrder === 'desc') {
-    result.sortOrder = opts.sortOrder;
-  }
+// ── Channel input schemas ────────────────────────────────────────────────────
 
-  return result;
+/** Schema for list/pagination options (evidence.list) */
+export const listOptionsSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  sortBy: safeFieldName.optional(),
+  sortOrder: sortOrder.optional(),
+  filter: z.record(z.unknown()).optional(),
+});
+export type ListOptionsInput = z.infer<typeof listOptionsSchema>;
+
+/** Schema for evidence ID parameter */
+export const evidenceIdSchema = uuidV4;
+
+/** Schema for search query string */
+export const searchQuerySchema = nonEmptyString.max(500, 'Search query must be 500 characters or fewer');
+
+/** Schema for evidence export IDs array */
+export const evidenceExportSchema = z
+  .array(nonEmptyString)
+  .min(1, 'At least one evidence ID is required')
+  .max(1000, 'Cannot export more than 1000 records at once');
+
+/** Schema for certificate generation options */
+export const certOptionsSchema = z.object({
+  sessionId: nonEmptyString,
+  evidenceIds: z.array(uuidV4).optional(),
+  includeAllEvidence: z.boolean().optional(),
+});
+export type CertOptionsInput = z.infer<typeof certOptionsSchema>;
+
+/** Schema for gateway URL */
+export const gatewayUrlSchema = safeUrl;
+
+/** Schema for alert ID */
+export const alertIdSchema = uuidV4;
+
+/** Schema for adapter ID */
+export const adapterIdSchema = adapterType;
+
+/** Schema for config key */
+export const configKeySchema = configKey;
+
+/** Schema for policy configuration */
+export const policyConfigSchema = z.object({
+  rules: z.array(
+    z.object({
+      id: nonEmptyString,
+      name: nonEmptyString,
+      condition: z.object({
+        signal: adapterType,
+        operator: z.enum(['lt', 'lte', 'gt', 'gte', 'eq']),
+        threshold: z.number().min(0).max(100),
+      }),
+      action: z.enum(['alert', 'escalate', 'freeze']),
+      severity: z.enum(['critical', 'high', 'medium', 'low']),
+      enabled: z.boolean(),
+    }),
+  ),
+  escalation: z.object({
+    channels: z.array(z.enum(['email', 'webhook', 'slack'])),
+    webhookUrl: safeUrl.optional(),
+    emailRecipients: z.array(z.string().email()).optional(),
+    cooldownMinutes: z.number().int().min(1).max(1440),
+  }),
+  autoFreeze: z.object({
+    enabled: z.boolean(),
+    trustScoreThreshold: z.number().min(0).max(100),
+    durationMinutes: z.number().int().min(1).max(1440),
+  }),
+});
+export type PolicyConfigInput = z.infer<typeof policyConfigSchema>;
+
+// ── Validator functions ──────────────────────────────────────────────────────
+
+/**
+ * Parse and validate input against a zod schema.
+ * @throws {IpcValidationError} if validation fails
+ */
+export function validate<T>(schema: ZodSchema<T>, input: unknown): T {
+  const result = schema.safeParse(input);
+  if (!result.success) {
+    throw new IpcValidationError(result.error);
+  }
+  return result.data;
+}
+
+/** Validate list/pagination options */
+export function validateListOptions(input: unknown): ListOptionsInput {
+  return validate(listOptionsSchema, input ?? {});
+}
+
+/** Validate a UUID string */
+export function validateUuid(input: unknown, _fieldName?: string): string {
+  return validate(uuidV4, input);
+}
+
+/** Validate a non-empty string */
+export function validateString(input: unknown, _fieldName?: string): string {
+  return validate(nonEmptyString, input);
+}
+
+/** Validate a search query */
+export function validateSearchQuery(input: unknown): string {
+  return validate(searchQuerySchema, input);
+}
+
+/** Validate evidence export IDs */
+export function validateExportIds(input: unknown): string[] {
+  return validate(evidenceExportSchema, input);
+}
+
+/** Validate certificate generation options */
+export function validateCertOptions(input: unknown): CertOptionsInput {
+  return validate(certOptionsSchema, input);
 }
 
 /** Validate a URL string */
-export function validateUrl(value: unknown, fieldName: string): string {
-  const str = validateString(value, fieldName);
-  try {
-    const url = new URL(str);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:' && url.protocol !== 'ws:' && url.protocol !== 'wss:') {
-      throw new ValidationError(`${fieldName} must use http, https, ws, or wss protocol`);
-    }
-    return str;
-  } catch {
-    throw new ValidationError(`${fieldName} must be a valid URL`);
-  }
+export function validateUrl(input: unknown, _fieldName?: string): string {
+  return validate(gatewayUrlSchema, input);
 }
 
-/** Validate a string array (e.g., evidence IDs for export) */
-export function validateStringArray(value: unknown, fieldName: string): string[] {
-  if (!Array.isArray(value)) {
-    throw new ValidationError(`${fieldName} must be an array`);
-  }
-  return value.map((item, i) => validateString(item, `${fieldName}[${i}]`));
+/** Validate an alert UUID */
+export function validateAlertId(input: unknown): string {
+  return validate(alertIdSchema, input);
 }
 
-/** Validate policy config structure */
-export function validatePolicyConfig(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) {
-    throw new ValidationError('Policy config must be an object');
-  }
-
-  const config = value as Record<string, unknown>;
-  if (!Array.isArray(config.rules)) {
-    throw new ValidationError('Policy config must have a rules array');
-  }
-  if (typeof config.escalation !== 'object' || config.escalation === null) {
-    throw new ValidationError('Policy config must have an escalation object');
-  }
-  if (typeof config.autoFreeze !== 'object' || config.autoFreeze === null) {
-    throw new ValidationError('Policy config must have an autoFreeze object');
-  }
-
-  return true;
+/** Validate an adapter ID */
+export function validateAdapterId(input: unknown): string {
+  return validate(adapterIdSchema, input);
 }
 
-/** Validate a config key (alphanumeric, dots, dashes) */
-export function validateConfigKey(value: unknown): string {
-  const str = validateString(value, 'config key');
-  if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(str)) {
-    throw new ValidationError('Config key must be alphanumeric with dots, dashes, or underscores');
-  }
-  return str;
+/** Validate a config key */
+export function validateConfigKey(input: unknown): string {
+  return validate(configKeySchema, input);
 }
 
-/** Validate adapter ID */
-export function validateAdapterId(value: unknown): string {
-  const str = validateString(value, 'adapter ID');
-  const validIds = ['zoom', 'teams', 'email', 'file', 'api'];
-  if (!validIds.includes(str)) {
-    throw new ValidationError(`Adapter ID must be one of: ${validIds.join(', ')}`);
-  }
-  return str;
-}
-
-/** Validate cert generation options */
-export function validateCertOptions(value: unknown): {
-  sessionId: string;
-  evidenceIds?: string[];
-  includeAllEvidence?: boolean;
-} {
-  if (typeof value !== 'object' || value === null) {
-    throw new ValidationError('Certificate options must be an object');
-  }
-
-  const opts = value as Record<string, unknown>;
-  const sessionId = validateString(opts.sessionId, 'sessionId');
-
-  const result: { sessionId: string; evidenceIds?: string[]; includeAllEvidence?: boolean } = {
-    sessionId,
-  };
-
-  if (Array.isArray(opts.evidenceIds)) {
-    result.evidenceIds = opts.evidenceIds.map((id, i) => validateUuid(id, `evidenceIds[${i}]`));
-  }
-
-  if (typeof opts.includeAllEvidence === 'boolean') {
-    result.includeAllEvidence = opts.includeAllEvidence;
-  }
-
-  return result;
+/** Validate a policy configuration object */
+export function validatePolicyConfig(input: unknown): PolicyConfigInput {
+  return validate(policyConfigSchema, input);
 }

@@ -2,10 +2,13 @@ import { useState } from 'react';
 import { useAlerts } from '@/hooks/useAlerts';
 import { AlertPanel } from '@/components/alerts/AlertPanel';
 import { AlertHistory } from '@/components/alerts/AlertHistory';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { SkeletonTable } from '@/components/shared/SkeletonLoader';
 
+/**
+ * Alert management page with Active/History tabs and count badges.
+ */
 export default function AlertsPage() {
-  const { alerts, activeAlerts, loading, dismiss } = useAlerts();
+  const { alerts, activeAlerts, loading, dismiss, acknowledge } = useAlerts();
   const [tab, setTab] = useState<'active' | 'history'>('active');
 
   return (
@@ -33,9 +36,7 @@ export default function AlertsPage() {
         <button
           onClick={() => setTab('active')}
           className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
-            tab === 'active'
-              ? 'text-sky-400'
-              : 'text-slate-400 hover:text-slate-200'
+            tab === 'active' ? 'text-sky-400' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           Active
@@ -51,9 +52,7 @@ export default function AlertsPage() {
         <button
           onClick={() => setTab('history')}
           className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
-            tab === 'history'
-              ? 'text-sky-400'
-              : 'text-slate-400 hover:text-slate-200'
+            tab === 'history' ? 'text-sky-400' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           History
@@ -66,11 +65,9 @@ export default function AlertsPage() {
 
       {/* Content */}
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <LoadingSpinner size="lg" />
-        </div>
+        <SkeletonTable rows={5} cols={4} />
       ) : tab === 'active' ? (
-        <AlertPanel alerts={activeAlerts} onDismiss={dismiss} />
+        <AlertPanel alerts={activeAlerts} onDismiss={dismiss} onAcknowledge={acknowledge} />
       ) : (
         <AlertHistory alerts={alerts} />
       )}

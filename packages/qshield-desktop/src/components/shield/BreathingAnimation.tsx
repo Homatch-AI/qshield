@@ -7,12 +7,17 @@ interface BreathingAnimationProps {
   className?: string;
 }
 
+/**
+ * CSS keyframe breathing animation. Speed mapped to trust level:
+ * verified=4s, normal=2.5s, elevated=1.5s, warning=1s, critical=0.8s.
+ * Glow color matches trust level (emerald to red).
+ */
 const breathingSpeed: Record<TrustLevel, string> = {
   verified: '4s',
-  normal: '3s',
-  elevated: '2.5s',
-  warning: '2s',
-  critical: '1.2s',
+  normal: '2.5s',
+  elevated: '1.5s',
+  warning: '1s',
+  critical: '0.8s',
 };
 
 export function BreathingAnimation({ level, children, className = '' }: BreathingAnimationProps) {
@@ -59,34 +64,16 @@ export function BreathingAnimation({ level, children, className = '' }: Breathin
 
       <style>{`
         @keyframes breathing-glow {
-          0%, 100% {
-            opacity: 0.15;
-            transform: scale(0.95);
-          }
-          50% {
-            opacity: 0.4;
-            transform: scale(1.05);
-          }
+          0%, 100% { opacity: 0.15; transform: scale(0.95); }
+          50% { opacity: 0.4; transform: scale(1.05); }
         }
-
         @keyframes breathing-ring {
-          0%, 100% {
-            opacity: 0.1;
-            transform: scale(0.98);
-          }
-          50% {
-            opacity: 0.3;
-            transform: scale(1.04);
-          }
+          0%, 100% { opacity: 0.1; transform: scale(0.98); }
+          50% { opacity: 0.3; transform: scale(1.04); }
         }
-
         @keyframes breathing-scale {
-          0%, 100% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.03);
-          }
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.03); }
         }
       `}</style>
     </div>

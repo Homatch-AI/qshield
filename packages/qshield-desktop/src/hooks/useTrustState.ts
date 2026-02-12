@@ -1,6 +1,10 @@
 import { useEffect } from 'react';
 import useTrustStore from '@/stores/trust-store';
 
+/**
+ * Hook to access trust state with automatic fetch and subscription.
+ * Also tracks connection status and session uptime.
+ */
 export function useTrustState() {
   const {
     score,
@@ -10,6 +14,8 @@ export function useTrustState() {
     sessionId,
     loading,
     error,
+    connected,
+    uptime,
     fetchState,
     subscribe,
     unsubscribe,
@@ -31,5 +37,7 @@ export function useTrustState() {
     sessionId,
     loading,
     error,
+    connected,
+    uptime,
   };
 }

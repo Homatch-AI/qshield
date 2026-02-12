@@ -1,6 +1,11 @@
 import { useEffect } from 'react';
 import useAlertStore from '@/stores/alert-store';
+import { useToastStore } from '@/components/shared/ToastContainer';
 
+/**
+ * Hook for alert data with active/dismissed filtering, toast integration,
+ * and auto-dismiss timers.
+ */
 export function useAlerts() {
   const {
     alerts,
@@ -8,9 +13,12 @@ export function useAlerts() {
     error,
     fetchAlerts,
     dismiss,
+    acknowledge,
     subscribe,
     unsubscribe,
   } = useAlertStore();
+
+  const pushToast = useToastStore((s) => s.push);
 
   useEffect(() => {
     fetchAlerts();
@@ -30,5 +38,7 @@ export function useAlerts() {
     loading,
     error,
     dismiss,
+    acknowledge,
+    pushToast,
   };
 }

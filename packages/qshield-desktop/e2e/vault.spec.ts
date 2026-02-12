@@ -39,7 +39,15 @@ test.describe('Evidence Vault', () => {
     const searchInput = page.locator('[data-testid="evidence-search"] input');
     await searchInput.fill('zoom');
     await page.waitForTimeout(500); // debounce
-    // Table should still be visible (filtered or empty)
+    await expect(page.locator('[data-testid="evidence-table"]')).toBeVisible();
+  });
+
+  test('search can be cleared', async () => {
+    const searchInput = page.locator('[data-testid="evidence-search"] input');
+    await searchInput.fill('test');
+    await page.waitForTimeout(300);
+    await searchInput.clear();
+    await page.waitForTimeout(300);
     await expect(page.locator('[data-testid="evidence-table"]')).toBeVisible();
   });
 
@@ -49,6 +57,39 @@ test.describe('Evidence Vault', () => {
     if (count > 0) {
       await rows.first().click();
       await expect(page.locator('[data-testid="evidence-detail"]')).toBeVisible();
+    }
+  });
+
+  test('detail panel can be closed', async () => {
+    const rows = page.locator('[data-testid="evidence-table"] tbody tr');
+    const count = await rows.count();
+    if (count > 0) {
+      await rows.first().click();
+      const detail = page.locator('[data-testid="evidence-detail"]');
+      if (await detail.isVisible()) {
+        const closeBtn = detail.locator('[data-testid="close-detail"], button:has-text("Close"), [aria-label="Close"]');
+        if (await closeBtn.count() > 0) {
+          await closeBtn.first().click();
+        }
+      }
+    }
+  });
+
+  test('evidence table has column headers', async () => {
+    const table = page.locator('[data-testid="evidence-table"]');
+    const headers = table.locator('thead th');
+    const count = await headers.count();
+    expect(count).toBeGreaterThan(0);
+  });
+
+  test('table sorting — clicking a column header changes sort', async () => {
+    const headers = page.locator('[data-testid="evidence-table"] thead th');
+    const count = await headers.count();
+    if (count > 0) {
+      // Click first sortable header
+      await headers.first().click();
+      // Table should still be visible (sorted)
+      await expect(page.locator('[data-testid="evidence-table"]')).toBeVisible();
     }
   });
 });

@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { CertificateList } from '@/components/certificates/CertificateList';
 import { CertificateExport } from '@/components/certificates/CertificateExport';
 
+/**
+ * Certificates page with list view and generate form toggle.
+ */
 export default function CertificatesPage() {
   const [showExport, setShowExport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);

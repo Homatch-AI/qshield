@@ -8,6 +8,7 @@ import {
   generateRandomHex,
   encryptAesGcm,
   decryptAesGcm,
+  rotateKey,
   hashEvidenceRecord,
   hmacSha256,
   type EncryptedData,
@@ -21,10 +22,13 @@ import type {
 } from '@qshield/core';
 
 // ---------------------------------------------------------------------------
-// SQL schema
+// SQL schema – versioned migrations
 // ---------------------------------------------------------------------------
 
-const SCHEMA_SQL = `
+/** Current schema version. Increment when adding migrations. */
+const CURRENT_SCHEMA_VERSION = 2;
+
+const MIGRATION_V1 = `
 CREATE TABLE IF NOT EXISTS evidence_records (
   id TEXT PRIMARY KEY,
   hash TEXT NOT NULL UNIQUE,
@@ -33,6 +37,8 @@ CREATE TABLE IF NOT EXISTS evidence_records (
   source TEXT NOT NULL,
   event_type TEXT NOT NULL,
   payload TEXT NOT NULL,
+  iv TEXT,
+  auth_tag TEXT,
   verified INTEGER DEFAULT 0,
   signature TEXT,
   created_at TEXT DEFAULT (datetime('now'))
@@ -81,6 +87,71 @@ CREATE TABLE IF NOT EXISTS app_metadata (
 );
 `;
 
+const MIGRATION_V2 = `
+-- Add IV and auth_tag columns if they don't exist (safe for re-runs)
+-- SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check via pragma
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  applied_at TEXT DEFAULT (datetime('now'))
+);
+`;
+
+// ---------------------------------------------------------------------------
+// Typed errors
+// ---------------------------------------------------------------------------
+
+/** Base error class for evidence store operations. */
+export class EvidenceStoreError extends Error {
+  constructor(message: string, public readonly code: string) {
+    super(message);
+    this.name = 'EvidenceStoreError';
+  }
+}
+
+/** Thrown when a record cannot be found. */
+export class RecordNotFoundError extends EvidenceStoreError {
+  constructor(id: string) {
+    super(`Record not found: ${id}`, 'RECORD_NOT_FOUND');
+    this.name = 'RecordNotFoundError';
+  }
+}
+
+/** Thrown when decryption fails. */
+export class DecryptionError extends EvidenceStoreError {
+  constructor(recordId: string, cause?: Error) {
+    super(`Failed to decrypt record ${recordId}: ${cause?.message ?? 'unknown error'}`, 'DECRYPTION_FAILED');
+    this.name = 'DecryptionError';
+  }
+}
+
+/** Thrown when the storage quota is exceeded. */
+export class QuotaExceededError extends EvidenceStoreError {
+  constructor(currentSizeBytes: number, maxSizeBytes: number) {
+    super(
+      `Storage quota exceeded: ${(currentSizeBytes / 1024 / 1024).toFixed(1)}MB / ${(maxSizeBytes / 1024 / 1024).toFixed(1)}MB`,
+      'QUOTA_EXCEEDED',
+    );
+    this.name = 'QuotaExceededError';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Store configuration
+// ---------------------------------------------------------------------------
+
+/** Configuration for the evidence store. */
+export interface EvidenceStoreConfig {
+  /** Maximum storage size in bytes (default: 500MB). */
+  maxStorageBytes: number;
+  /** Number of oldest records to prune when quota is exceeded. */
+  pruneCount: number;
+}
+
+const DEFAULT_CONFIG: EvidenceStoreConfig = {
+  maxStorageBytes: 500 * 1024 * 1024, // 500MB
+  pruneCount: 100,
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -88,15 +159,32 @@ CREATE TABLE IF NOT EXISTS app_metadata (
 /** Metadata keys stored in the app_metadata table. */
 const META_MASTER_SECRET = 'master_secret';
 const META_SALT = 'encryption_salt';
+const META_SCHEMA_VERSION = 'schema_version';
 
 // ---------------------------------------------------------------------------
 // EvidenceStore
 // ---------------------------------------------------------------------------
 
+/**
+ * Production SQLite-backed evidence store with encryption at rest.
+ *
+ * All evidence record payloads are encrypted using AES-256-GCM before
+ * storage. Each record has its own randomly generated IV stored in a
+ * separate column. Key derivation uses PBKDF2 with SHA-512.
+ *
+ * Features:
+ * - Per-record AES-256-GCM encryption with unique IVs
+ * - PBKDF2 key derivation (100k iterations, SHA-512)
+ * - Key rotation support (re-encrypts all records)
+ * - Storage quota enforcement with automatic pruning
+ * - Full-text search via SQLite FTS5
+ * - Database migration versioning
+ */
 export class EvidenceStore {
   private db: Database.Database;
   private encryptionKey: Buffer;
   private hmacKey: string;
+  private config: EvidenceStoreConfig;
 
   // Prepared statements – lazily created after schema init
   private stmtInsertRecord!: Statement;
@@ -111,8 +199,19 @@ export class EvidenceStore {
   private stmtListCerts!: Statement;
   private stmtGetMeta!: Statement;
   private stmtSetMeta!: Statement;
+  private stmtDbSize!: Statement;
+  private stmtPruneOldest!: Statement;
+  private stmtRecordCount!: Statement;
 
-  constructor(dbPath?: string) {
+  /**
+   * Create a new EvidenceStore instance.
+   *
+   * @param dbPath - Path to the SQLite database file (default: app userData)
+   * @param config - Optional store configuration overrides
+   */
+  constructor(dbPath?: string, config?: Partial<EvidenceStoreConfig>) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+
     const resolvedPath = dbPath ?? path.join(app.getPath('userData'), 'evidence.db');
     log.info(`EvidenceStore: opening database at ${resolvedPath}`);
 
@@ -122,8 +221,8 @@ export class EvidenceStore {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
 
-    // Create schema
-    this.db.exec(SCHEMA_SQL);
+    // Run migrations
+    this.runMigrations();
 
     // Derive encryption key from machine-specific master secret
     const { encryptionKey, hmacKey } = this.initCrypto();
@@ -137,9 +236,50 @@ export class EvidenceStore {
   }
 
   // -----------------------------------------------------------------------
+  // Schema migrations
+  // -----------------------------------------------------------------------
+
+  /**
+   * Run pending database migrations.
+   * Tracks applied versions in the app_metadata table.
+   */
+  private runMigrations(): void {
+    // Always run the base schema (CREATE IF NOT EXISTS is idempotent)
+    this.db.exec(MIGRATION_V1);
+    this.db.exec(MIGRATION_V2);
+
+    // Check current version
+    const versionStmt = this.db.prepare('SELECT value FROM app_metadata WHERE key = ?');
+    const row = versionStmt.get(META_SCHEMA_VERSION) as { value: string } | undefined;
+    const currentVersion = row ? parseInt(row.value, 10) : 0;
+
+    if (currentVersion < 2) {
+      // Check if iv column exists
+      const columns = this.db.pragma('table_info(evidence_records)') as Array<{ name: string }>;
+      const hasIv = columns.some((c) => c.name === 'iv');
+      if (!hasIv) {
+        this.db.exec('ALTER TABLE evidence_records ADD COLUMN iv TEXT');
+        this.db.exec('ALTER TABLE evidence_records ADD COLUMN auth_tag TEXT');
+        log.info('EvidenceStore: migrated to v2 — added iv and auth_tag columns');
+      }
+    }
+
+    // Update version
+    this.db.prepare(
+      `INSERT INTO app_metadata (key, value, updated_at)
+       VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).run(META_SCHEMA_VERSION, String(CURRENT_SCHEMA_VERSION));
+  }
+
+  // -----------------------------------------------------------------------
   // Crypto initialisation
   // -----------------------------------------------------------------------
 
+  /**
+   * Initialize encryption keys from stored or newly generated secrets.
+   * Uses PBKDF2 with SHA-512 for key derivation.
+   */
   private initCrypto(): { encryptionKey: Buffer; hmacKey: string } {
     // Prepare metadata helpers early (before the rest of prepareStatements)
     this.stmtGetMeta = this.db.prepare('SELECT value FROM app_metadata WHERE key = ?');
@@ -157,10 +297,10 @@ export class EvidenceStore {
       log.info('EvidenceStore: generated new master secret');
     }
 
-    // Retrieve or generate salt
+    // Retrieve or generate salt (16 bytes for PBKDF2)
     let saltHex = this.getMeta(META_SALT);
     if (!saltHex) {
-      const salt = generateSalt(32);
+      const salt = generateSalt(16);
       saltHex = salt.toString('hex');
       this.setMeta(META_SALT, saltHex);
       log.info('EvidenceStore: generated new encryption salt');
@@ -194,8 +334,8 @@ export class EvidenceStore {
 
   private prepareStatements(): void {
     this.stmtInsertRecord = this.db.prepare(
-      `INSERT INTO evidence_records (id, hash, previous_hash, timestamp, source, event_type, payload, verified, signature)
-       VALUES (@id, @hash, @previousHash, @timestamp, @source, @eventType, @payload, @verified, @signature)`,
+      `INSERT INTO evidence_records (id, hash, previous_hash, timestamp, source, event_type, payload, iv, auth_tag, verified, signature)
+       VALUES (@id, @hash, @previousHash, @timestamp, @source, @eventType, @payload, @iv, @authTag, @verified, @signature)`,
     );
 
     this.stmtInsertFts = this.db.prepare(
@@ -236,28 +376,174 @@ export class EvidenceStore {
     this.stmtListCerts = this.db.prepare(
       'SELECT * FROM certificates ORDER BY generated_at DESC',
     );
+
+    this.stmtDbSize = this.db.prepare(
+      'SELECT page_count * page_size AS size FROM pragma_page_count(), pragma_page_size()',
+    );
+
+    this.stmtPruneOldest = this.db.prepare(
+      'DELETE FROM evidence_records WHERE id IN (SELECT id FROM evidence_records ORDER BY timestamp ASC LIMIT ?)',
+    );
+
+    this.stmtRecordCount = this.db.prepare(
+      'SELECT COUNT(*) AS cnt FROM evidence_records',
+    );
   }
 
   // -----------------------------------------------------------------------
-  // Payload encryption / decryption
+  // Payload encryption / decryption (per-record IV)
   // -----------------------------------------------------------------------
 
-  private encryptPayload(payload: Record<string, unknown>): string {
+  /**
+   * Encrypt a payload for storage. Returns the encrypted components separately
+   * so the IV and auth tag can be stored in dedicated columns.
+   */
+  private encryptPayload(payload: Record<string, unknown>): { ciphertext: string; iv: string; authTag: string } {
     const plaintext = JSON.stringify(payload);
     const encrypted: EncryptedData = encryptAesGcm(plaintext, this.encryptionKey);
-    return JSON.stringify(encrypted);
+    return {
+      ciphertext: encrypted.ciphertext,
+      iv: encrypted.iv,
+      authTag: encrypted.authTag,
+    };
   }
 
-  private decryptPayload(encryptedJson: string): Record<string, unknown> {
+  /**
+   * Decrypt a payload from storage using per-record IV and auth tag.
+   * Falls back to legacy format (JSON-encoded EncryptedData in payload column).
+   */
+  private decryptPayload(
+    recordId: string,
+    ciphertext: string,
+    iv: string | null,
+    authTag: string | null,
+  ): Record<string, unknown> {
     try {
-      const encrypted: EncryptedData = JSON.parse(encryptedJson);
+      let encrypted: EncryptedData;
+
+      if (iv && authTag) {
+        // New format: IV and authTag in separate columns
+        encrypted = { ciphertext, iv, authTag };
+      } else {
+        // Legacy format: payload column contains JSON-encoded EncryptedData
+        encrypted = JSON.parse(ciphertext) as EncryptedData;
+      }
+
       const plaintext = decryptAesGcm(encrypted, this.encryptionKey);
       return JSON.parse(plaintext) as Record<string, unknown>;
     } catch (err) {
-      log.error('EvidenceStore: failed to decrypt payload', err);
-      // Return a sentinel so callers can detect the issue without crashing
-      return { _decryptionError: true };
+      log.error(`EvidenceStore: failed to decrypt payload for record ${recordId}`, err);
+      throw new DecryptionError(recordId, err instanceof Error ? err : undefined);
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Storage quota management
+  // -----------------------------------------------------------------------
+
+  /**
+   * Get the current database size in bytes.
+   * @returns The size of the database file in bytes
+   */
+  getStorageSize(): number {
+    const row = this.stmtDbSize.get() as { size: number } | undefined;
+    return row?.size ?? 0;
+  }
+
+  /**
+   * Get the total number of evidence records.
+   * @returns The count of evidence records
+   */
+  getRecordCount(): number {
+    const row = this.stmtRecordCount.get() as { cnt: number };
+    return row.cnt;
+  }
+
+  /**
+   * Enforce storage quota by pruning the oldest records if the database
+   * exceeds the configured maximum size.
+   * @returns Number of records pruned
+   */
+  enforceQuota(): number {
+    const currentSize = this.getStorageSize();
+    if (currentSize <= this.config.maxStorageBytes) return 0;
+
+    let totalPruned = 0;
+    // Prune in batches until under quota or no records left
+    while (this.getStorageSize() > this.config.maxStorageBytes && this.getRecordCount() > 0) {
+      const result = this.stmtPruneOldest.run(this.config.pruneCount);
+      totalPruned += result.changes;
+      if (result.changes === 0) break; // Safety: no more records to prune
+    }
+
+    if (totalPruned > 0) {
+      log.info(`EvidenceStore: pruned ${totalPruned} records to enforce storage quota`);
+    }
+
+    return totalPruned;
+  }
+
+  // -----------------------------------------------------------------------
+  // Key rotation
+  // -----------------------------------------------------------------------
+
+  /**
+   * Rotate the encryption key by re-encrypting all stored records.
+   *
+   * Generates a new master secret and salt, derives a new encryption key,
+   * then re-encrypts every record's payload in a single transaction.
+   * If any step fails, the entire operation is rolled back.
+   *
+   * @returns The number of records re-encrypted
+   */
+  rotateEncryptionKey(): number {
+    const oldKey = this.encryptionKey;
+
+    // Generate new credentials
+    const newMasterSecret = generateRandomHex(64);
+    const newSalt = generateSalt(16);
+    const newKey = deriveKey(newMasterSecret, newSalt);
+
+    // Collect all encrypted records
+    const rows = this.db.prepare('SELECT id, payload, iv, auth_tag FROM evidence_records').all() as Array<{
+      id: string;
+      payload: string;
+      iv: string | null;
+      auth_tag: string | null;
+    }>;
+
+    const reEncryptTx = this.db.transaction(() => {
+      const updateStmt = this.db.prepare(
+        'UPDATE evidence_records SET payload = ?, iv = ?, auth_tag = ? WHERE id = ?',
+      );
+
+      for (const row of rows) {
+        // Decrypt with old key
+        let encrypted: EncryptedData;
+        if (row.iv && row.auth_tag) {
+          encrypted = { ciphertext: row.payload, iv: row.iv, authTag: row.auth_tag };
+        } else {
+          encrypted = JSON.parse(row.payload) as EncryptedData;
+        }
+
+        // Re-encrypt with new key
+        const [reEncrypted] = rotateKey([encrypted], oldKey, newKey);
+        updateStmt.run(reEncrypted.ciphertext, reEncrypted.iv, reEncrypted.authTag, row.id);
+      }
+
+      // Update stored credentials
+      this.setMeta(META_MASTER_SECRET, newMasterSecret);
+      this.setMeta(META_SALT, newSalt.toString('hex'));
+    });
+
+    reEncryptTx();
+
+    // Update in-memory key
+    this.encryptionKey = newKey;
+    this.hmacKey = hmacSha256(newMasterSecret, 'qshield-hmac-key');
+
+    log.info(`EvidenceStore: rotated encryption key, re-encrypted ${rows.length} records`);
+    return rows.length;
   }
 
   // -----------------------------------------------------------------------
@@ -265,6 +551,13 @@ export class EvidenceStore {
   // -----------------------------------------------------------------------
 
   private rowToRecord(row: Record<string, unknown>): EvidenceRecord {
+    const payload = this.decryptPayload(
+      row.id as string,
+      row.payload as string,
+      (row.iv as string) ?? null,
+      (row.auth_tag as string) ?? null,
+    );
+
     return {
       id: row.id as string,
       hash: row.hash as string,
@@ -272,7 +565,7 @@ export class EvidenceStore {
       timestamp: row.timestamp as string,
       source: row.source as EvidenceRecord['source'],
       eventType: row.event_type as string,
-      payload: this.decryptPayload(row.payload as string),
+      payload,
       verified: (row.verified as number) === 1,
       signature: (row.signature as string) ?? undefined,
     };
@@ -311,10 +604,17 @@ export class EvidenceStore {
 
   /**
    * Insert a new evidence record.
-   * The payload is encrypted before storage and the FTS index is updated.
+   *
+   * The payload is encrypted with AES-256-GCM using a unique per-record IV
+   * before storage. The IV and auth tag are stored in dedicated columns.
+   * The FTS index is updated in the same transaction.
+   * Storage quota is enforced after insertion.
+   *
+   * @param record - The evidence record to store
+   * @throws {QuotaExceededError} If quota enforcement fails
    */
   addRecord(record: EvidenceRecord): void {
-    const encryptedPayload = this.encryptPayload(record.payload);
+    const { ciphertext, iv, authTag } = this.encryptPayload(record.payload);
 
     const insertTx = this.db.transaction(() => {
       this.stmtInsertRecord.run({
@@ -324,28 +624,35 @@ export class EvidenceStore {
         timestamp: record.timestamp,
         source: record.source,
         eventType: record.eventType,
-        payload: encryptedPayload,
+        payload: ciphertext,
+        iv,
+        authTag,
         verified: record.verified ? 1 : 0,
         signature: record.signature ?? null,
       });
 
-      // Mirror plaintext-safe fields into FTS (payload stored as encrypted blob
-      // here too – FTS on encrypted data is intentional so we can still match
-      // source / event_type; the payload column in FTS is the encrypted form).
+      // Mirror searchable fields into FTS (source and event_type are plaintext)
       this.stmtInsertFts.run({
         id: record.id,
         source: record.source,
         eventType: record.eventType,
-        payload: encryptedPayload,
+        payload: record.source + ' ' + record.eventType,
       });
     });
 
     insertTx();
+
+    // Enforce storage quota (prune oldest if exceeded)
+    this.enforceQuota();
+
     log.info(`EvidenceStore: added record ${record.id}`);
   }
 
   /**
    * Fetch a single record by ID, decrypting the payload.
+   *
+   * @param id - The UUID of the record to fetch
+   * @returns The decrypted evidence record, or null if not found
    */
   getRecord(id: string): EvidenceRecord | null {
     const row = this.stmtGetRecord.get(id) as Record<string, unknown> | undefined;
@@ -355,6 +662,12 @@ export class EvidenceStore {
 
   /**
    * Paginated list of evidence records with decryption.
+   *
+   * Supports filtering by source, event type, and verified status.
+   * Sort columns are whitelisted to prevent SQL injection.
+   *
+   * @param opts - Pagination, sorting, and filtering options
+   * @returns Paginated result with decrypted evidence records
    */
   listRecords(opts: ListOptions): ListResult<EvidenceRecord> {
     const { page, pageSize, sortBy, sortOrder, filter } = opts;
@@ -417,7 +730,11 @@ export class EvidenceStore {
 
   /**
    * Verify the hash chain integrity for a single record.
+   *
    * Re-computes the HMAC and verifies the previous-hash linkage.
+   *
+   * @param id - The UUID of the record to verify
+   * @returns Verification result with any errors
    */
   verifyRecord(id: string): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
@@ -464,6 +781,11 @@ export class EvidenceStore {
 
   /**
    * Full-text search across evidence records via FTS5.
+   *
+   * Search terms are quoted to prevent FTS5 syntax injection.
+   *
+   * @param query - The search query string
+   * @returns Paginated result of matching records
    */
   searchRecords(query: string): ListResult<EvidenceRecord> {
     // Sanitise the FTS query – wrap each term in double quotes to prevent
@@ -503,6 +825,9 @@ export class EvidenceStore {
 
   /**
    * Export multiple records by ID, decrypting payloads.
+   *
+   * @param ids - Array of record UUIDs to export
+   * @returns Array of decrypted evidence records
    */
   exportRecords(ids: string[]): EvidenceRecord[] {
     if (ids.length === 0) return [];
@@ -517,6 +842,8 @@ export class EvidenceStore {
 
   /**
    * Get the hash of the most recent evidence record (for chain linking).
+   *
+   * @returns The hash of the latest record, or null if the store is empty
    */
   getLastHash(): string | null {
     const row = this.stmtGetLastHash.get() as { hash: string } | undefined;
@@ -529,6 +856,8 @@ export class EvidenceStore {
 
   /**
    * Insert a new alert.
+   *
+   * @param alert - The alert to persist
    */
   addAlert(alert: Alert): void {
     this.stmtInsertAlert.run({
@@ -546,6 +875,8 @@ export class EvidenceStore {
 
   /**
    * List all non-dismissed alerts, most recent first.
+   *
+   * @returns Array of active (non-dismissed) alerts
    */
   listAlerts(): Alert[] {
     const rows = this.stmtListAlerts.all() as Record<string, unknown>[];
@@ -554,6 +885,8 @@ export class EvidenceStore {
 
   /**
    * Mark an alert as dismissed.
+   *
+   * @param id - The UUID of the alert to dismiss
    */
   dismissAlert(id: string): void {
     this.stmtDismissAlert.run(id);
@@ -566,6 +899,8 @@ export class EvidenceStore {
 
   /**
    * Insert a trust certificate record.
+   *
+   * @param cert - The certificate to persist
    */
   addCertificate(cert: TrustCertificate): void {
     this.stmtInsertCert.run({
@@ -584,6 +919,8 @@ export class EvidenceStore {
 
   /**
    * List all trust certificates, most recent first.
+   *
+   * @returns Array of trust certificates
    */
   listCertificates(): TrustCertificate[] {
     const rows = this.stmtListCerts.all() as Record<string, unknown>[];

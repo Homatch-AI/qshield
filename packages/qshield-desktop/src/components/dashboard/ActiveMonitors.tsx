@@ -1,18 +1,27 @@
 import { useCallback } from 'react';
 import type { AdapterStatus } from '@qshield/core';
 import { useIPC } from '@/hooks/useIPC';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { SkeletonCard } from '@/components/shared/SkeletonLoader';
 import { formatRelativeTime, formatAdapterName } from '@/lib/formatters';
 import { ADAPTER_LABELS } from '@/lib/constants';
+import { isIPCAvailable, mockAdapterStatuses } from '@/lib/mock-data';
 
+/**
+ * Card grid showing each adapter's status with color indicators and event counts.
+ */
 export function ActiveMonitors() {
-  const fetchAdapters = useCallback(() => window.qshield.adapters.list(), []);
+  const fetchAdapters = useCallback(async () => {
+    if (isIPCAvailable()) return window.qshield.adapters.list();
+    return mockAdapterStatuses();
+  }, []);
   const { data: adapters, loading } = useIPC(fetchAdapters);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <LoadingSpinner />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
       </div>
     );
   }
@@ -27,66 +36,78 @@ export function ActiveMonitors() {
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {adapters.map((adapter: AdapterStatus) => (
-        <div
-          key={adapter.id}
-          className="rounded-xl border border-slate-700 bg-slate-900 p-4 transition-colors hover:border-slate-600 hover:bg-slate-800/50"
-        >
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-2.5">
-              <div
-                className={`flex h-9 w-9 items-center justify-center rounded-lg ${
-                  adapter.connected
-                    ? 'bg-emerald-500/10 text-emerald-500'
-                    : 'bg-slate-700/50 text-slate-500'
-                }`}
-              >
-                <AdapterIcon type={adapter.id} />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-slate-100">
-                  {ADAPTER_LABELS[adapter.id] ?? formatAdapterName(adapter.id)}
-                </h3>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span
-                    className={`inline-block h-1.5 w-1.5 rounded-full ${
-                      adapter.connected ? 'bg-emerald-500' : 'bg-slate-600'
-                    }`}
-                  />
-                  <span
-                    className={`text-xs ${
-                      adapter.connected ? 'text-emerald-400' : 'text-slate-500'
-                    }`}
-                  >
-                    {adapter.connected ? 'Connected' : 'Disconnected'}
-                  </span>
+      {adapters.map((adapter: AdapterStatus) => {
+        const statusColor = adapter.error
+          ? 'text-red-400'
+          : adapter.connected
+          ? 'text-emerald-400'
+          : 'text-slate-500';
+        const statusDot = adapter.error
+          ? 'bg-red-500'
+          : adapter.connected
+          ? 'bg-emerald-500 animate-pulse'
+          : 'bg-slate-600';
+        const statusLabel = adapter.error
+          ? 'Error'
+          : adapter.connected
+          ? 'Running'
+          : adapter.enabled
+          ? 'Stopped'
+          : 'Disabled';
+
+        return (
+          <div
+            key={adapter.id}
+            className="rounded-xl border border-slate-700 bg-slate-900 p-4 transition-colors hover:border-slate-600 hover:bg-slate-800/50"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                    adapter.connected
+                      ? 'bg-emerald-500/10 text-emerald-500'
+                      : adapter.error
+                      ? 'bg-red-500/10 text-red-500'
+                      : 'bg-slate-700/50 text-slate-500'
+                  }`}
+                >
+                  <AdapterIcon type={adapter.id} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-slate-100">
+                    {ADAPTER_LABELS[adapter.id] ?? formatAdapterName(adapter.id)}
+                  </h3>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${statusDot}`} />
+                    <span className={`text-xs ${statusColor}`}>{statusLabel}</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="mt-3 flex items-center justify-between border-t border-slate-700/50 pt-3">
-            <div>
-              <span className="text-xs text-slate-500">Events</span>
-              <p className="text-sm font-semibold text-slate-200 tabular-nums">
-                {adapter.eventCount.toLocaleString()}
-              </p>
+            <div className="mt-3 flex items-center justify-between border-t border-slate-700/50 pt-3">
+              <div>
+                <span className="text-xs text-slate-500">Events</span>
+                <p className="text-sm font-semibold text-slate-200 tabular-nums">
+                  {adapter.eventCount.toLocaleString()}
+                </p>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-slate-500">Last Event</span>
+                <p className="text-sm text-slate-300">
+                  {adapter.lastEvent ? formatRelativeTime(adapter.lastEvent) : 'Never'}
+                </p>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-xs text-slate-500">Last Event</span>
-              <p className="text-sm text-slate-300">
-                {adapter.lastEvent ? formatRelativeTime(adapter.lastEvent) : 'Never'}
-              </p>
-            </div>
-          </div>
 
-          {adapter.error && (
-            <div className="mt-2 rounded-md bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400">
-              {adapter.error}
-            </div>
-          )}
-        </div>
-      ))}
+            {adapter.error && (
+              <div className="mt-2 rounded-md bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400">
+                {adapter.error}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

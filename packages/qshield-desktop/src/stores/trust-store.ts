@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { TrustState, TrustLevel, TrustSignal } from '@qshield/core';
+import { isIPCAvailable, mockTrustState, mockSignal } from '@/lib/mock-data';
 
 interface TrustStoreState {
   score: number;
@@ -9,7 +10,10 @@ interface TrustStoreState {
   sessionId: string | null;
   loading: boolean;
   error: string | null;
+  connected: boolean;
+  uptime: number;
   _unsubscribe: (() => void) | null;
+  _tickInterval: ReturnType<typeof setInterval> | null;
 }
 
 interface TrustStoreActions {
@@ -17,6 +21,8 @@ interface TrustStoreActions {
   setTrustState: (state: TrustState) => void;
   subscribe: () => void;
   unsubscribe: () => void;
+  startPeriodicUpdates: () => void;
+  stopPeriodicUpdates: () => void;
 }
 
 type TrustStore = TrustStoreState & TrustStoreActions;
@@ -29,12 +35,41 @@ const useTrustStore = create<TrustStore>((set, get) => ({
   sessionId: null,
   loading: false,
   error: null,
+  connected: false,
+  uptime: 0,
   _unsubscribe: null,
+  _tickInterval: null,
 
   fetchState: async () => {
     set({ loading: true, error: null });
     try {
-      const state = await window.qshield.trust.getState();
+      if (isIPCAvailable()) {
+        const state = await window.qshield.trust.getState();
+        set({
+          score: state.score,
+          level: state.level,
+          signals: state.signals,
+          lastUpdated: state.lastUpdated,
+          sessionId: state.sessionId,
+          loading: false,
+          connected: true,
+        });
+      } else {
+        // Use mock data when IPC unavailable
+        const state = mockTrustState();
+        set({
+          score: state.score,
+          level: state.level,
+          signals: state.signals,
+          lastUpdated: state.lastUpdated,
+          sessionId: state.sessionId,
+          loading: false,
+          connected: true,
+        });
+      }
+    } catch (err) {
+      // Fallback to mock data on error
+      const state = mockTrustState();
       set({
         score: state.score,
         level: state.level,
@@ -42,10 +77,7 @@ const useTrustStore = create<TrustStore>((set, get) => ({
         lastUpdated: state.lastUpdated,
         sessionId: state.sessionId,
         loading: false,
-      });
-    } catch (err) {
-      set({
-        loading: false,
+        connected: false,
         error: err instanceof Error ? err.message : 'Failed to fetch trust state',
       });
     }
@@ -65,10 +97,15 @@ const useTrustStore = create<TrustStore>((set, get) => ({
     const existing = get()._unsubscribe;
     if (existing) return;
 
-    const unsubscribe = window.qshield.trust.subscribe((state: TrustState) => {
-      get().setTrustState(state);
-    });
-    set({ _unsubscribe: unsubscribe });
+    if (isIPCAvailable()) {
+      const unsubscribe = window.qshield.trust.subscribe((state: TrustState) => {
+        get().setTrustState(state);
+      });
+      set({ _unsubscribe: unsubscribe });
+    }
+
+    // Start periodic updates for mock data or uptime tracking
+    get().startPeriodicUpdates();
   },
 
   unsubscribe: () => {
@@ -76,6 +113,51 @@ const useTrustStore = create<TrustStore>((set, get) => ({
     if (unsub) {
       unsub();
       set({ _unsubscribe: null });
+    }
+    get().stopPeriodicUpdates();
+  },
+
+  startPeriodicUpdates: () => {
+    if (get()._tickInterval) return;
+
+    const interval = setInterval(() => {
+      const { signals, score } = get();
+
+      // Increment uptime
+      set((s) => ({ uptime: s.uptime + 10 }));
+
+      // Simulate score drift and new signals in mock mode
+      if (!isIPCAvailable()) {
+        const drift = (Math.random() - 0.48) * 4;
+        const newScore = Math.max(0, Math.min(100, score + drift));
+        const newLevel: TrustLevel =
+          newScore >= 90 ? 'verified' :
+          newScore >= 70 ? 'normal' :
+          newScore >= 50 ? 'elevated' :
+          newScore >= 30 ? 'warning' : 'critical';
+
+        // Occasionally add a new signal
+        const newSignals = Math.random() > 0.6
+          ? [mockSignal({ timestamp: new Date().toISOString(), score: Math.round(newScore) }), ...signals].slice(0, 50)
+          : signals;
+
+        set({
+          score: Math.round(newScore * 10) / 10,
+          level: newLevel,
+          signals: newSignals,
+          lastUpdated: new Date().toISOString(),
+        });
+      }
+    }, 10_000);
+
+    set({ _tickInterval: interval });
+  },
+
+  stopPeriodicUpdates: () => {
+    const interval = get()._tickInterval;
+    if (interval) {
+      clearInterval(interval);
+      set({ _tickInterval: null });
     }
   },
 }));

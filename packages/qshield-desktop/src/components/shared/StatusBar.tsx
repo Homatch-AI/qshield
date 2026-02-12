@@ -4,20 +4,31 @@ import useTrustStore from '@/stores/trust-store';
 import { TRUST_LEVEL_COLORS } from '@/lib/constants';
 import { formatTrustScore } from '@/lib/formatters';
 import type { AdapterStatus } from '@qshield/core';
+import { isIPCAvailable, mockAdapterStatuses } from '@/lib/mock-data';
 
+/**
+ * Bottom status bar showing gateway connection, adapter counts, and trust score.
+ */
 export function StatusBar() {
   const score = useTrustStore((s) => s.score);
   const level = useTrustStore((s) => s.level);
+  const connected = useTrustStore((s) => s.connected);
 
-  const fetchGateway = useCallback(() => window.qshield.gateway.getStatus(), []);
-  const fetchAdapters = useCallback(() => window.qshield.adapters.list(), []);
+  const fetchGateway = useCallback(async () => {
+    if (isIPCAvailable()) return window.qshield.gateway.getStatus();
+    return { connected: true, url: 'http://localhost:3001' };
+  }, []);
+  const fetchAdapters = useCallback(async () => {
+    if (isIPCAvailable()) return window.qshield.adapters.list();
+    return mockAdapterStatuses();
+  }, []);
 
   const { data: gatewayStatus } = useIPC(fetchGateway);
   const { data: adapters } = useIPC(fetchAdapters);
 
   const activeAdapters = adapters?.filter((a: AdapterStatus) => a.connected).length ?? 0;
   const totalAdapters = adapters?.length ?? 0;
-  const gatewayConnected = gatewayStatus?.connected ?? false;
+  const gatewayConnected = gatewayStatus?.connected ?? connected;
   const colors = TRUST_LEVEL_COLORS[level];
 
   return (

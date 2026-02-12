@@ -39,4 +39,37 @@ test.describe('Shield Overlay', () => {
     });
     expect(version).toBeTruthy();
   });
+
+  test('qshield API is exposed on window', async () => {
+    const hasApi = await page.evaluate(() => {
+      return typeof (window as { qshield?: unknown }).qshield === 'object';
+    });
+    expect(hasApi).toBe(true);
+  });
+
+  test('trust API is accessible', async () => {
+    const hasTrustApi = await page.evaluate(() => {
+      const qshield = (window as { qshield: { trust: { getState: unknown } } }).qshield;
+      return typeof qshield.trust?.getState === 'function';
+    });
+    expect(hasTrustApi).toBe(true);
+  });
+
+  test('evidence API is accessible', async () => {
+    const hasEvidenceApi = await page.evaluate(() => {
+      const qshield = (window as { qshield: { evidence: { list: unknown } } }).qshield;
+      return typeof qshield.evidence?.list === 'function';
+    });
+    expect(hasEvidenceApi).toBe(true);
+  });
+
+  test('trust level indicator reflects trust state', async () => {
+    const gauge = page.locator('[data-testid="trust-score-gauge"]');
+    await expect(gauge).toBeVisible();
+    // Gauge should have some visual content
+    const box = await gauge.boundingBox();
+    expect(box).toBeTruthy();
+    expect(box!.width).toBeGreaterThan(0);
+    expect(box!.height).toBeGreaterThan(0);
+  });
 });

@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import useEvidenceStore from '@/stores/evidence-store';
 
+/**
+ * Hook for evidence vault data with pagination, search, sort, and selection.
+ */
 export function useEvidence() {
   const {
     items,
@@ -13,6 +16,9 @@ export function useEvidence() {
     selectedId,
     selectedRecord,
     searchQuery,
+    sortBy,
+    sortOrder,
+    selectedIds,
     fetchList,
     fetchOne,
     verify,
@@ -20,6 +26,10 @@ export function useEvidence() {
     exportRecords,
     setPage,
     setSelected,
+    setSort,
+    toggleSelection,
+    selectAll,
+    clearSelection,
   } = useEvidenceStore();
 
   useEffect(() => {
@@ -37,11 +47,18 @@ export function useEvidence() {
     selectedId,
     selectedRecord,
     searchQuery,
+    sortBy,
+    sortOrder,
+    selectedIds,
     getOne: fetchOne,
     verify,
     search,
     exportRecords,
     setPage,
     setSelected,
+    setSort,
+    toggleSelection,
+    selectAll,
+    clearSelection,
   };
 }
