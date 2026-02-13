@@ -104,6 +104,16 @@ export const IPC_CHANNELS = {
   /** Get clipboard guard status */
   CRYPTO_CLIPBOARD_STATUS: 'crypto:clipboard-status',
 
+  // ── License ──────────────────────────────────────────────────────────
+  /** Get the current license */
+  LICENSE_GET: 'license:get',
+  /** Set (activate) a license */
+  LICENSE_SET: 'license:set',
+  /** Clear the active license */
+  LICENSE_CLEAR: 'license:clear',
+  /** Check whether a feature is available under the current license */
+  LICENSE_CHECK_FEATURE: 'license:check-feature',
+
   // ── App ────────────────────────────────────────────────────────────────
   /** Get the application version string */
   APP_VERSION: 'app:version',

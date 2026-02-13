@@ -112,6 +112,13 @@ export interface ServiceRegistry {
     getAlerts: () => unknown;
     getClipboardStatus: () => unknown;
   };
+  licenseManager: {
+    getLicense: () => unknown;
+    setLicense: (license: unknown) => unknown;
+    clearLicense: () => unknown;
+    hasFeature: (feature: string) => boolean;
+    getEdition: () => string;
+  };
 }
 
 // ── Rate limiter ─────────────────────────────────────────────────────────────
@@ -477,6 +484,33 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
 
   wrapHandler(IPC_CHANNELS.CRYPTO_CLIPBOARD_STATUS, async () => {
     return ok(services.cryptoService.getClipboardStatus());
+  });
+
+  // ── License ────────────────────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.LICENSE_GET, async () => {
+    return ok(services.licenseManager.getLicense());
+  });
+
+  wrapHandler(IPC_CHANNELS.LICENSE_SET, async (_event, license) => {
+    if (!license || typeof license !== 'object') {
+      return fail('VALIDATION_ERROR', 'License object is required');
+    }
+    const result = services.licenseManager.setLicense(license);
+    return ok({ accepted: result, edition: services.licenseManager.getEdition() });
+  });
+
+  wrapHandler(IPC_CHANNELS.LICENSE_CLEAR, async () => {
+    services.licenseManager.clearLicense();
+    return ok(null);
+  });
+
+  wrapHandler(IPC_CHANNELS.LICENSE_CHECK_FEATURE, async (_event, feature) => {
+    const validFeature = validateString(feature, 'feature');
+    return ok({
+      feature: validFeature,
+      allowed: services.licenseManager.hasFeature(validFeature),
+      edition: services.licenseManager.getEdition(),
+    });
   });
 
   // ── App ──────────────────────────────────────────────────────────────

@@ -28,6 +28,7 @@ import { VerificationRecordService } from './services/verification-record';
 import { CryptoMonitorService } from './services/crypto-monitor';
 import { NotificationService } from './services/notification';
 import { validateAddress, verifyTransactionHash, loadScamDatabase } from '@qshield/core';
+import { LicenseManager } from './services/license-manager';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -713,6 +714,8 @@ function initSeedAlerts(): void {
 function createServiceRegistry(config: ConfigManager): ServiceRegistry {
   const certGen = new StandaloneCertGenerator();
   const verificationService = new VerificationRecordService();
+  const licMgr = new LicenseManager(config);
+  licMgr.loadLicense();
 
   // Initialize crypto monitoring service
   const cryptoMonitor = new CryptoMonitorService((addresses) => {
@@ -905,6 +908,13 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       removeTrustedAddress: (address: string) => cryptoMonitor.addressBook.remove(address),
       getAlerts: () => cryptoMonitor.getAlerts(),
       getClipboardStatus: () => cryptoMonitor.getClipboardStatus(),
+    },
+    licenseManager: {
+      getLicense: () => licMgr.getLicense(),
+      setLicense: (license: unknown) => licMgr.setLicense(license as Parameters<typeof licMgr.setLicense>[0]),
+      clearLicense: () => licMgr.clearLicense(),
+      hasFeature: (feature: string) => licMgr.hasFeature(feature as Parameters<typeof licMgr.hasFeature>[0]),
+      getEdition: () => licMgr.getEdition(),
     },
   };
 }

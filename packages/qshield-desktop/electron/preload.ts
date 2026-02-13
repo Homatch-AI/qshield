@@ -329,6 +329,20 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<unknown>(IPC_CHANNELS.CRYPTO_CLIPBOARD_STATUS),
   },
 
+  license: {
+    get: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.LICENSE_GET),
+
+    set: (license: unknown): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.LICENSE_SET, license),
+
+    clear: (): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.LICENSE_CLEAR),
+
+    checkFeature: (feature: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.LICENSE_CHECK_FEATURE, feature),
+  },
+
   app: {
     version: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),
