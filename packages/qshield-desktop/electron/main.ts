@@ -569,6 +569,94 @@ function initTrustSignals(): void {
   }
 }
 
+// ── Seed certificates ────────────────────────────────────────────────────────
+
+interface SeedCert {
+  id: string;
+  sessionId: string;
+  generatedAt: string;
+  trustScore: number;
+  trustLevel: string;
+  evidenceCount: number;
+  evidenceHashes: string[];
+  signatureChain: string;
+  pdfPath: string;
+}
+
+const seedCertificates: SeedCert[] = [];
+
+function initSeedCertificates(): void {
+  if (seedCertificates.length > 0) return;
+  const levels = ['verified', 'normal', 'elevated', 'normal', 'verified'] as const;
+  const scores = [92, 78, 58, 74, 95];
+  for (let i = 0; i < 5; i++) {
+    const id = randomUUID();
+    const sessionId = randomUUID();
+    const evCount = 12 + Math.floor(Math.random() * 25);
+    const hashes: string[] = [];
+    for (let h = 0; h < 3; h++) hashes.push(createHmac('sha256', 'cert').update(`${id}-${h}`).digest('hex'));
+    seedCertificates.push({
+      id,
+      sessionId,
+      generatedAt: new Date(Date.now() - i * 86_400_000).toISOString(),
+      trustScore: scores[i],
+      trustLevel: levels[i],
+      evidenceCount: evCount,
+      evidenceHashes: hashes,
+      signatureChain: createHmac('sha256', 'chain').update(id).digest('hex'),
+      pdfPath: '', // no pre-rendered PDF; export handler generates on-the-fly
+    });
+  }
+}
+
+// ── Seed alerts ──────────────────────────────────────────────────────────────
+
+interface SeedAlert {
+  id: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  source: string;
+  timestamp: string;
+  dismissed: boolean;
+  sourceMetadata?: Record<string, unknown>;
+}
+
+const seedAlerts: SeedAlert[] = [];
+const dismissedAlertIds = new Set<string>();
+
+const ALERT_DEFS: Array<{ title: string; description: string; severity: SeedAlert['severity']; source: string }> = [
+  { title: 'Trust Score Below Threshold', description: 'Trust score dropped below the configured threshold of 40. Immediate review recommended.', severity: 'critical', source: 'api' },
+  { title: 'Unusual File Access Pattern', description: 'Detected unusual file access patterns that deviate from normal behavior baseline.', severity: 'high', source: 'file' },
+  { title: 'External Domain Communication', description: 'Communication initiated with an unrecognized external domain. Review sender reputation.', severity: 'medium', source: 'email' },
+  { title: 'Screen Sharing to Unknown Participant', description: 'Screen was shared with a participant from an unverified domain during a video call.', severity: 'high', source: 'zoom' },
+  { title: 'Multiple Failed Authentication Attempts', description: 'Multiple failed authentication attempts detected from the same session.', severity: 'critical', source: 'api' },
+  { title: 'Data Exfiltration Risk Detected', description: 'Potential data exfiltration detected: large file transfer to external endpoint.', severity: 'high', source: 'file' },
+  { title: 'Policy Violation: File Copy to External Drive', description: 'A file was copied to an external storage device, violating data protection policy.', severity: 'medium', source: 'file' },
+  { title: 'Anomalous API Request Volume', description: 'API request volume exceeds normal baseline by 300%. Potential automated access.', severity: 'low', source: 'api' },
+  { title: 'Unverified Meeting Participant', description: 'An unverified participant joined a meeting containing sensitive content.', severity: 'medium', source: 'teams' },
+  { title: 'Confidential Document Accessed Outside Hours', description: 'A classified document was accessed outside of authorized working hours.', severity: 'high', source: 'file' },
+  { title: 'DKIM Signature Verification Failed', description: 'Incoming email failed DKIM signature verification. Possible spoofing attempt.', severity: 'medium', source: 'email' },
+  { title: 'Clipboard Crypto Address Swap Detected', description: 'A cryptocurrency address in the clipboard was replaced by a potentially malicious address.', severity: 'critical', source: 'crypto' },
+];
+
+function initSeedAlerts(): void {
+  if (seedAlerts.length > 0) return;
+  for (let i = 0; i < ALERT_DEFS.length; i++) {
+    const def = ALERT_DEFS[i];
+    seedAlerts.push({
+      id: randomUUID(),
+      severity: def.severity,
+      title: def.title,
+      description: def.description,
+      source: def.source,
+      timestamp: new Date(Date.now() - i * 30 * 60_000 - Math.floor(Math.random() * 30 * 60_000)).toISOString(),
+      dismissed: i >= 7, // first 7 active, rest dismissed/historical
+    });
+  }
+  seedAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
 // ── Service registry ─────────────────────────────────────────────────────────
 
 /** Create service registry for IPC handlers */
@@ -670,7 +758,12 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
           trustScore: currentTrustScore,
           trustLevel: currentTrustLevel,
         }),
-      list: () => certGen.list(),
+      list: () => {
+        initSeedCertificates();
+        // Combine real generated certs (newest first) with seed data
+        const real = certGen.list();
+        return [...real, ...seedCertificates.filter((sc) => !real.some((r) => r.id === sc.id))];
+      },
       getPdfPath: (id: string) => certGen.getPdfPath(id),
     },
     gatewayClient: {
@@ -690,8 +783,19 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       updatePolicy: (policyConfig: unknown) => policyConfig,
     },
     alertService: {
-      list: () => [],
-      dismiss: (id: string) => ({ id, dismissed: true }),
+      list: () => {
+        initSeedAlerts();
+        return seedAlerts.map((a) => ({
+          ...a,
+          dismissed: a.dismissed || dismissedAlertIds.has(a.id),
+        }));
+      },
+      dismiss: (id: string) => {
+        dismissedAlertIds.add(id);
+        const alert = seedAlerts.find((a) => a.id === id);
+        if (alert) alert.dismissed = true;
+        return { id, dismissed: true };
+      },
     },
     configManager: {
       get: (key: string) => config.get(key),
