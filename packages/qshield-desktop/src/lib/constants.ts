@@ -60,15 +60,22 @@ export const PAGINATION_DEFAULTS = {
   initialPage: 1,
 } as const;
 
-export const NAV_ITEMS = [
+export interface NavItem {
+  path: string;
+  label: string;
+  icon: string;
+  requiredFeature?: string;
+}
+
+export const NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Dashboard', icon: 'gauge' },
   { path: '/timeline', label: 'Timeline', icon: 'clock' },
-  { path: '/vault', label: 'Evidence Vault', icon: 'vault' },
-  { path: '/certificates', label: 'Certificates', icon: 'certificate' },
-  { path: '/alerts', label: 'Alerts', icon: 'bell' },
-  { path: '/crypto', label: 'Crypto Security', icon: 'shield-check' },
+  { path: '/vault', label: 'Evidence Vault', icon: 'vault', requiredFeature: 'evidence_vault' },
+  { path: '/certificates', label: 'Certificates', icon: 'certificate', requiredFeature: 'trust_certificates' },
+  { path: '/alerts', label: 'Alerts', icon: 'bell', requiredFeature: 'enterprise_alerting' },
+  { path: '/crypto', label: 'Crypto Security', icon: 'shield-check', requiredFeature: 'advanced_analytics' },
   { path: '/settings', label: 'Settings', icon: 'settings' },
-] as const;
+];
 
 export const ADAPTER_LABELS: Record<string, string> = {
   zoom: 'Zoom',

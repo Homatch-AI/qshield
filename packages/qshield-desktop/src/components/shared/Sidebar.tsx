@@ -3,6 +3,8 @@ import { NavLink } from 'react-router-dom';
 import { NAV_ITEMS } from '@/lib/constants';
 import useTrustStore from '@/stores/trust-store';
 import useAlertStore from '@/stores/alert-store';
+import useLicenseStore from '@/stores/license-store';
+import { UpgradeModal } from './UpgradeModal';
 
 function NavIcon({ icon, className = '' }: { icon: string; className?: string }) {
   const iconPaths: Record<string, React.ReactNode> = {
@@ -65,9 +67,12 @@ function NavIcon({ icon, className = '' }: { icon: string; className?: string })
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
   const score = useTrustStore((s) => s.score);
   const level = useTrustStore((s) => s.level);
   const activeAlertCount = useAlertStore((s) => s.alerts.filter((a) => !a.dismissed).length);
+  const hasFeature = useLicenseStore((s) => s.hasFeature);
 
   return (
     <aside
@@ -95,31 +100,49 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-1">
-          {NAV_ITEMS.map((item) => (
-            <li key={item.path}>
-              <NavLink
-                to={item.path}
-                end={item.path === '/'}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-sky-500/10 text-sky-500'
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
-                  }`
-                }
-              >
-                <NavIcon icon={item.icon} className="shrink-0" />
-                {!collapsed && (
-                  <span className="truncate">{item.label}</span>
+          {NAV_ITEMS.map((item) => {
+            const locked = item.requiredFeature != null && !hasFeature(item.requiredFeature as Parameters<typeof hasFeature>[0]);
+            return (
+              <li key={item.path}>
+                {locked ? (
+                  <div
+                    onClick={() => { setUpgradeFeature(item.requiredFeature); setUpgradeOpen(true); }}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-slate-400 opacity-50 cursor-not-allowed hover:bg-slate-800/50"
+                  >
+                    <NavIcon icon={item.icon} className="shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="truncate">{item.label}</span>
+                        <span className="ml-auto text-[9px] font-bold uppercase bg-sky-500/20 text-sky-400 px-1.5 rounded-full">PRO</span>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <NavLink
+                    to={item.path}
+                    end={item.path === '/'}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                        isActive
+                          ? 'bg-sky-500/10 text-sky-500'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                      }`
+                    }
+                  >
+                    <NavIcon icon={item.icon} className="shrink-0" />
+                    {!collapsed && (
+                      <span className="truncate">{item.label}</span>
+                    )}
+                    {!collapsed && item.icon === 'bell' && activeAlertCount > 0 && (
+                      <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500/20 px-1.5 text-[10px] font-bold text-red-400">
+                        {activeAlertCount}
+                      </span>
+                    )}
+                  </NavLink>
                 )}
-                {!collapsed && item.icon === 'bell' && activeAlertCount > 0 && (
-                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500/20 px-1.5 text-[10px] font-bold text-red-400">
-                    {activeAlertCount}
-                  </span>
-                )}
-              </NavLink>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       </nav>
 
@@ -183,6 +206,8 @@ export function Sidebar() {
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
         </svg>
       </button>
+
+      <UpgradeModal isOpen={upgradeOpen} onClose={() => setUpgradeOpen(false)} requiredFeature={upgradeFeature} />
     </aside>
   );
 }
