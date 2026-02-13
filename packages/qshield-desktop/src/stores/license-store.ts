@@ -1,7 +1,47 @@
 import { create } from 'zustand';
-import type { QShieldEdition, Feature } from '@qshield/core';
-import { EDITION_FEATURES } from '@qshield/core';
 import { isIPCAvailable } from '@/lib/mock-data';
+
+/**
+ * Edition types and features inlined to avoid pulling Node.js-only
+ * modules from @qshield/core into the browser bundle.
+ */
+type QShieldEdition = 'personal' | 'business' | 'enterprise';
+type Feature =
+  | 'overlay_shield'
+  | 'evidence_vault'
+  | 'zoom_monitor'
+  | 'teams_monitor'
+  | 'email_monitor'
+  | 'policy_engine'
+  | 'siem_export'
+  | 'enterprise_alerting'
+  | 'trust_certificates'
+  | 'advanced_analytics';
+
+const EDITION_FEATURES: Record<QShieldEdition, Feature[]> = {
+  personal: ['overlay_shield'],
+  business: [
+    'overlay_shield',
+    'evidence_vault',
+    'zoom_monitor',
+    'teams_monitor',
+    'email_monitor',
+    'policy_engine',
+    'trust_certificates',
+  ],
+  enterprise: [
+    'overlay_shield',
+    'evidence_vault',
+    'zoom_monitor',
+    'teams_monitor',
+    'email_monitor',
+    'policy_engine',
+    'siem_export',
+    'enterprise_alerting',
+    'trust_certificates',
+    'advanced_analytics',
+  ],
+};
 
 interface LicenseStoreState {
   edition: QShieldEdition;
