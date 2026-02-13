@@ -212,7 +212,7 @@ function getShieldPosition(shieldConfig: ShieldOverlayConfig): { x: number; y: n
 /** Create the shield overlay window (always-on-top draggable floating widget) */
 function createShieldWindow(): BrowserWindow {
   const shieldConfig = configManager?.getShieldConfig();
-  const position = getShieldPosition(shieldConfig ?? { enabled: true, anchor: 'bottom-right', margin: 20, opacity: 1.0 });
+  const position = getShieldPosition(shieldConfig ?? { enabled: true, anchor: 'top-right', margin: 20, opacity: 1.0 });
 
   const win = new BrowserWindow({
     width: 80,

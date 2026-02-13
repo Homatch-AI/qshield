@@ -92,7 +92,7 @@ const defaults: AppConfig = {
   },
   shield: {
     enabled: true,
-    anchor: 'bottom-right',
+    anchor: 'top-right',
     margin: 20,
     opacity: 1.0,
   },
