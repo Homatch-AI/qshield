@@ -853,7 +853,14 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       set: (key: string, value: unknown) => config.set(key, value),
     },
     adapterManager: {
-      getStatus: () => [],
+      getStatus: () => [
+        { id: 'zoom', name: 'Zoom Monitor', enabled: true, connected: true, lastEvent: new Date(Date.now() - 2 * 60_000).toISOString(), eventCount: 1247 },
+        { id: 'teams', name: 'Microsoft Teams', enabled: true, connected: true, lastEvent: new Date(Date.now() - 5 * 60_000).toISOString(), eventCount: 893 },
+        { id: 'email', name: 'Email Monitor', enabled: true, connected: true, lastEvent: new Date(Date.now() - 1 * 60_000).toISOString(), eventCount: 2156 },
+        { id: 'file', name: 'File System Watcher', enabled: true, connected: true, lastEvent: new Date(Date.now() - 3 * 60_000).toISOString(), eventCount: 3421 },
+        { id: 'api', name: 'API Gateway', enabled: true, connected: true, lastEvent: new Date(Date.now() - 30_000).toISOString(), eventCount: 5890 },
+        { id: 'crypto', name: 'Crypto Monitor', enabled: true, connected: true, lastEvent: new Date(Date.now() - 10 * 60_000).toISOString(), eventCount: 342 },
+      ],
       enable: (id: string) => ({ id, enabled: true }),
       disable: (id: string) => ({ id, enabled: false }),
     },
