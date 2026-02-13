@@ -3,8 +3,10 @@
  * Provides address format validation, EIP-55 checksum verification,
  * scam database lookups, and transaction hash validation.
  */
-import { createHash } from 'crypto';
+import jsSha3 from 'js-sha3';
 import type { CryptoChain, TransactionCheck } from './types';
+
+const { keccak_256 } = jsSha3;
 
 // ── Address format patterns ──────────────────────────────────────────────────
 
@@ -101,12 +103,15 @@ export function toEIP55Checksum(address: string): string {
 }
 
 /**
- * Simple keccak256 using Node.js crypto (sha3-256).
+ * Keccak-256 hash (pre-NIST, as used by Ethereum's EIP-55).
+ * Uses js-sha3 for the original Keccak-256 algorithm, which differs
+ * from the finalized SHA3-256 (NIST FIPS 202) in its padding.
+ *
  * @param input - The string to hash
  * @returns hex-encoded hash string
  */
 function keccak256(input: string): string {
-  return createHash('sha3-256').update(input).digest('hex');
+  return keccak_256(input);
 }
 
 // ── Address validation ───────────────────────────────────────────────────────

@@ -122,13 +122,17 @@ const useEvidenceStore = create<EvidenceStore>((set, get) => ({
     try {
       if (isIPCAvailable()) {
         const result = await window.qshield.evidence.verify(id);
+        const message = result.valid
+          ? 'HMAC-SHA256 hash chain verified successfully.'
+          : (result.errors?.[0] ?? 'Verification failed');
         if (result.valid) {
-          const { items } = get();
+          const { items, selectedRecord } = get();
           set({
             items: items.map((item) => (item.id === id ? { ...item, verified: true } : item)),
+            selectedRecord: selectedRecord?.id === id ? { ...selectedRecord, verified: true } : selectedRecord,
           });
         }
-        return result;
+        return { valid: result.valid, message };
       } else {
         // Mock verification - always succeeds
         const { items } = get();
@@ -158,9 +162,9 @@ const useEvidenceStore = create<EvidenceStore>((set, get) => ({
       if (isIPCAvailable()) {
         const results = await window.qshield.evidence.search(query);
         set({
-          items: results,
-          total: results.length,
-          hasMore: false,
+          items: results.items,
+          total: results.total,
+          hasMore: results.hasMore,
           loading: false,
         });
       } else {

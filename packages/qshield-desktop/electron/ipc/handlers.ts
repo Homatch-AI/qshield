@@ -3,8 +3,7 @@
  * Every handler validates input, logs calls with timing, and returns structured results.
  */
 import { ipcMain, app, clipboard, dialog, BrowserWindow } from 'electron';
-import { copyFile, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { copyFile } from 'node:fs/promises';
 import log from 'electron-log';
 import { IPC_CHANNELS } from './channels';
 import {
@@ -255,202 +254,48 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
   // ── Certificates ─────────────────────────────────────────────────────
   wrapHandler(IPC_CHANNELS.CERT_GENERATE, async (_event, opts) => {
     const validOpts = validateCertOptions(opts);
-    log.info('CERT_GENERATE: starting PDF generation');
+    log.info('CERT_GENERATE: starting PDF generation via StandaloneCertGenerator');
 
-    // Pull real session data from services
-    const trustState = services.trustMonitor.getState() as {
-      score: number;
-      level: string;
-      signals: Array<{ source: string; score: number; weight: number; timestamp: string }>;
+    // Delegate to StandaloneCertGenerator — generates PDF on disk + tracks in internal list
+    const cert = await services.certGenerator.generate(validOpts) as {
+      id: string;
       sessionId: string;
+      generatedAt: string;
+      trustScore: number;
+      trustLevel: string;
+      evidenceCount: number;
+      pdfPath: string;
     };
-    const evidenceResult = services.evidenceStore.list({ page: 1, pageSize: 100 }) as {
-      items: Array<{ id: string; hash: string; source: string; eventType: string; timestamp: string; verified: boolean }>;
-      total: number;
+    log.info(`CERT_GENERATE: cert ${cert.id} generated, PDF at ${cert.pdfPath}`);
+
+    // Show save dialog so user can choose where to save a copy
+    const visibleWindows = BrowserWindow.getAllWindows().filter((w) => w.isVisible() && !w.isDestroyed());
+    const parentWin = visibleWindows[0];
+    const dialogOpts: Electron.SaveDialogOptions = {
+      title: 'Save Trust Certificate',
+      defaultPath: `QShield-Trust-Certificate-${cert.sessionId.slice(0, 8)}.pdf`,
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
     };
-    const alerts = services.alertService.list() as Array<{ severity: string; title: string }>;
+    const result = parentWin
+      ? await dialog.showSaveDialog(parentWin, dialogOpts)
+      : await dialog.showSaveDialog(dialogOpts);
 
-    const trustScore = trustState.score ?? 85;
-    const trustLevel = trustState.level ?? 'normal';
-    const sessionId = validOpts.sessionId || trustState.sessionId || randomUUID();
-    const levelLabel = trustLevel.charAt(0).toUpperCase() + trustLevel.slice(1);
-
-    // Use real evidence or generate realistic mock if store is empty
-    let evidenceRecords = evidenceResult.items;
-    if (!evidenceRecords || evidenceRecords.length === 0) {
-      const sources = ['zoom', 'teams', 'email', 'file', 'api'];
-      const eventTypes: Record<string, string[]> = {
-        zoom: ['meeting.started', 'participant.joined', 'screen.shared', 'encryption.verified'],
-        teams: ['call.started', 'message.sent', 'presence.changed', 'file.shared'],
-        email: ['email.received', 'email.sent', 'dkim.verified', 'spf.pass'],
-        file: ['file.created', 'file.modified', 'file.accessed', 'file.moved'],
-        api: ['auth.success', 'request.inbound', 'rate.limited', 'auth.failure'],
-      };
-      const count = 15 + Math.floor(Math.random() * 20);
-      evidenceRecords = [];
-      for (let i = 0; i < count; i++) {
-        const src = sources[i % sources.length];
-        const chars = '0123456789abcdef';
-        let hash = '';
-        for (let j = 0; j < 64; j++) hash += chars[Math.floor(Math.random() * 16)];
-        evidenceRecords.push({
-          id: randomUUID(),
-          hash,
-          source: src,
-          eventType: eventTypes[src][i % eventTypes[src].length],
-          timestamp: new Date(Date.now() - (count - i) * 600_000).toISOString(),
-          verified: Math.random() > 0.15,
-        });
-      }
+    if (!result.canceled && result.filePath) {
+      await copyFile(cert.pdfPath, result.filePath);
+      log.info(`CERT_GENERATE: PDF exported to ${result.filePath}`);
+    } else {
+      log.info('CERT_GENERATE: user cancelled save dialog');
     }
 
-    // Per-adapter trust scores (from signals or derived)
-    const adapterScores: Record<string, number> = { zoom: 92, teams: 88, email: 95, file: 78, api: 90 };
-    for (const sig of trustState.signals ?? []) {
-      adapterScores[sig.source] = Math.round(sig.score);
-    }
-
-    // Source counts for summary
-    const sourceCounts: Record<string, number> = {};
-    for (const e of evidenceRecords) {
-      sourceCounts[e.source] = (sourceCounts[e.source] || 0) + 1;
-    }
-    const verifiedCount = evidenceRecords.filter((e) => e.verified).length;
-    const alertCount = alerts.length;
-
-    // Build evidence rows HTML
-    const maxRows = Math.min(evidenceRecords.length, 15);
-    const evidenceRowsHtml = evidenceRecords.slice(0, maxRows).map((rec, i) => {
-      const bg = i % 2 === 0 ? 'background:#f8fafc;' : '';
-      const ts = new Date(rec.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const statusColor = rec.verified ? '#16a34a' : '#f59e0b';
-      const statusText = rec.verified ? 'Verified' : 'Pending';
-      return `<tr style="${bg}">
-        <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#475569;">${rec.hash.slice(0, 16)}\u2026</td>
-        <td style="padding:6px 8px;font-size:11px;color:#334155;text-transform:uppercase;font-weight:600;">${rec.source}</td>
-        <td style="padding:6px 8px;font-size:11px;color:#475569;">${rec.eventType}</td>
-        <td style="padding:6px 8px;font-size:11px;color:#64748b;">${ts}</td>
-        <td style="padding:6px 8px;font-size:11px;color:${statusColor};font-weight:600;">${statusText}</td>
-      </tr>`;
-    }).join('');
-    const remaining = evidenceRecords.length - maxRows;
-
-    // Build certificate HTML
-    const certHash = 'sha256:' + [...Array(32)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
-    const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; padding: 50px 60px; color: #1a1a2e; line-height: 1.5; }
-  .header { text-align: center; margin-bottom: 36px; }
-  .logo { font-size: 28px; font-weight: 800; color: #0ea5e9; }
-  .subtitle { color: #64748b; margin-top: 6px; font-size: 13px; }
-  .score-box { text-align: center; margin: 36px 0; padding: 28px; background: #f0f9ff; border-radius: 12px; border: 1px solid #bae6fd; }
-  .score { font-size: 56px; font-weight: 800; color: #0ea5e9; }
-  .level { font-size: 16px; color: #10b981; font-weight: 600; margin-top: 6px; }
-  .section { margin: 28px 0; }
-  .section-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; color: #0f172a; }
-  .detail-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
-  .detail-label { color: #64748b; }
-  .detail-value { font-weight: 600; color: #0f172a; }
-  .detail-value.mono { font-family: monospace; font-size: 12px; }
-  .evidence-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
-  .evidence-table th { text-align: left; padding: 8px; background: #f1f5f9; border-bottom: 2px solid #e2e8f0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 700; }
-  .evidence-table td { border-bottom: 1px solid #f1f5f9; }
-  .ev-more { text-align: center; font-size: 11px; color: #94a3b8; padding: 8px 0; font-style: italic; }
-  .adapter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .adapter-row { display: flex; justify-content: space-between; padding: 6px 12px; background: #f8fafc; border-radius: 6px; font-size: 13px; }
-  .adapter-name { color: #475569; text-transform: capitalize; }
-  .adapter-score { font-weight: 700; color: #0ea5e9; }
-  .footer { text-align: center; margin-top: 40px; color: #94a3b8; font-size: 10px; border-top: 1px solid #e2e8f0; padding-top: 16px; }
-  .chain-valid { display: inline-block; background: #dcfce7; color: #15803d; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-top: 8px; }
-</style></head><body>
-  <div class="header">
-    <div class="logo">\u{1F6E1}\uFE0F QShield Trust Certificate</div>
-    <div class="subtitle">Enterprise Trust Monitoring &amp; Verification</div>
-  </div>
-  <div class="score-box">
-    <div class="score">${trustScore}</div>
-    <div class="level">Trust Level: ${levelLabel}</div>
-  </div>
-  <div class="section">
-    <div class="section-title">Session Details</div>
-    <div class="detail-row"><span class="detail-label">Session ID</span><span class="detail-value mono">${sessionId}</span></div>
-    <div class="detail-row"><span class="detail-label">Generated</span><span class="detail-value">${new Date().toLocaleString()}</span></div>
-    <div class="detail-row"><span class="detail-label">Active Adapters</span><span class="detail-value">${Object.keys(sourceCounts).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ')}</span></div>
-    <div class="detail-row"><span class="detail-label">Evidence Records</span><span class="detail-value">${evidenceRecords.length} total &middot; ${verifiedCount} verified</span></div>
-    <div class="detail-row"><span class="detail-label">Alerts Triggered</span><span class="detail-value">${alertCount}</span></div>
-    <div class="detail-row"><span class="detail-label">Policy Violations</span><span class="detail-value">0</span></div>
-  </div>
-  <div class="section">
-    <div class="section-title">Trust Score Breakdown</div>
-    <div class="adapter-grid">
-      ${Object.entries(adapterScores).map(([name, score]) =>
-        `<div class="adapter-row"><span class="adapter-name">${name}</span><span class="adapter-score">${score}/100</span></div>`
-      ).join('')}
-    </div>
-  </div>
-  <div class="section">
-    <div class="section-title">Evidence Chain (${Math.min(evidenceRecords.length, maxRows)} of ${evidenceRecords.length} Records)</div>
-    <table class="evidence-table">
-      <thead><tr><th>Hash</th><th>Source</th><th>Event</th><th>Time</th><th>Status</th></tr></thead>
-      <tbody>${evidenceRowsHtml}${remaining > 0 ? `<tr><td colspan="5" class="ev-more">+ ${remaining} additional records in evidence chain</td></tr>` : ''}</tbody>
-    </table>
-  </div>
-  <div class="section">
-    <div class="section-title">Verification</div>
-    <div class="detail-row"><span class="detail-label">Certificate Hash</span><span class="detail-value mono">${certHash}</span></div>
-    <div class="detail-row"><span class="detail-label">Signature Chain</span><span class="detail-value"><span class="chain-valid">\u2713 Verified</span></span></div>
-  </div>
-  <div class="footer">
-    Generated by QShield Desktop v${app.getVersion()} &middot; ${new Date().toISOString()}<br>
-    This certificate is cryptographically signed and can be verified at verify.qshield.io
-  </div>
-</body></html>`;
-
-    // Render PDF via Electron's native printToPDF
-    const win = new BrowserWindow({ show: false, width: 800, height: 1100, webPreferences: { nodeIntegration: false, contextIsolation: true } });
-    try {
-      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      const pdfBuffer = await win.webContents.printToPDF({
-        printBackground: true,
-        pageSize: 'A4',
-        margins: { top: 0, bottom: 0, left: 0, right: 0 },
-      });
-      log.info(`CERT_GENERATE: PDF rendered, ${pdfBuffer.length} bytes`);
-
-      // Show save dialog
-      const visibleWindows = BrowserWindow.getAllWindows().filter((w) => w.isVisible() && !w.isDestroyed());
-      const parentWin = visibleWindows[0];
-      const dialogOpts: Electron.SaveDialogOptions = {
-        defaultPath: `QShield-Trust-Certificate-${sessionId.slice(0, 8)}.pdf`,
-        filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
-      };
-      const result = parentWin
-        ? await dialog.showSaveDialog(parentWin, dialogOpts)
-        : await dialog.showSaveDialog(dialogOpts);
-
-      if (result.canceled || !result.filePath) {
-        log.info('CERT_GENERATE: user cancelled save dialog');
-        return ok({ saved: false, id: null });
-      }
-
-      await writeFile(result.filePath, pdfBuffer);
-      log.info(`CERT_GENERATE: PDF saved to ${result.filePath}`);
-
-      return ok({
-        saved: true,
-        path: result.filePath,
-        id: randomUUID(),
-        sessionId,
-        trustScore,
-        trustLevel,
-        generatedAt: new Date().toISOString(),
-        evidenceCount: evidenceRecords.length,
-      });
-    } finally {
-      win.destroy();
-    }
+    return ok({
+      id: cert.id,
+      sessionId: cert.sessionId,
+      generatedAt: cert.generatedAt,
+      trustScore: cert.trustScore,
+      trustLevel: cert.trustLevel,
+      evidenceCount: cert.evidenceCount,
+      pdfPath: cert.pdfPath,
+    });
   });
 
   wrapHandler(IPC_CHANNELS.CERT_LIST, async () => {

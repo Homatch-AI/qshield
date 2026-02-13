@@ -17,6 +17,7 @@
  */
 import { app, BrowserWindow, clipboard, ipcMain, session, Tray, Menu, nativeImage, screen, Notification } from 'electron';
 import path from 'node:path';
+import { createHmac, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import log from 'electron-log';
 import { registerIpcHandlers, type ServiceRegistry } from './ipc/handlers';
@@ -31,6 +32,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 log.initialize();
+
+// Prevent EPIPE crashes from electron-log console transport.
+// Occurs when stdout/stderr pipe is closed (terminal disconnect, piped process exit).
+if (!app.isPackaged) {
+  // Dev: keep console transport but swallow EPIPE
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EPIPE') return;
+      throw err;
+    });
+  }
+} else {
+  // Production: disable console transport entirely (file transport still active)
+  log.transports.console.level = false;
+}
+
 log.info('QShield Desktop starting...');
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -438,6 +455,70 @@ function updateTray(score: number, level: typeof currentTrustLevel): void {
   }
 }
 
+// ── Evidence data with HMAC-SHA256 hash chain ───────────────────────────────
+
+const HMAC_KEY = 'qshield-evidence-v1';
+
+function computeEvidenceHash(data: string, previousHash: string | null): string {
+  const hmac = createHmac('sha256', HMAC_KEY);
+  hmac.update(previousHash ?? 'genesis');
+  hmac.update(data);
+  return hmac.digest('hex');
+}
+
+interface EvidenceRow {
+  id: string;
+  hash: string;
+  previousHash: string | null;
+  timestamp: string;
+  source: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  verified: boolean;
+  signature?: string;
+}
+
+const evidenceRecords: EvidenceRow[] = [];
+
+function initEvidenceRecords(): void {
+  if (evidenceRecords.length > 0) return;
+  const sources = ['zoom', 'teams', 'email', 'file', 'api'];
+  const eventTypes: Record<string, string[]> = {
+    zoom: ['meeting.started', 'participant.joined', 'screen.shared', 'encryption.verified'],
+    teams: ['call.started', 'message.sent', 'presence.changed', 'file.shared'],
+    email: ['email.received', 'email.sent', 'dkim.verified', 'spf.pass'],
+    file: ['file.created', 'file.modified', 'file.accessed', 'file.moved'],
+    api: ['auth.success', 'request.inbound', 'rate.limited', 'auth.failure'],
+  };
+  let prevHash: string | null = null;
+  for (let i = 0; i < 30; i++) {
+    const id = randomUUID();
+    const src = sources[i % sources.length];
+    const evt = eventTypes[src][i % eventTypes[src].length];
+    const ts = new Date(Date.now() - (30 - i) * 600_000).toISOString();
+    const data = JSON.stringify({ id, source: src, eventType: evt, timestamp: ts });
+    const hash = computeEvidenceHash(data, prevHash);
+    evidenceRecords.push({
+      id,
+      hash,
+      previousHash: prevHash,
+      timestamp: ts,
+      source: src,
+      eventType: evt,
+      payload: {
+        description: `${evt} from ${src} adapter`,
+        sessionId: 'default',
+        confidence: +(Math.random() * 100).toFixed(1),
+        ip: `192.168.1.${Math.floor(Math.random() * 254) + 1}`,
+      },
+      verified: false,
+    });
+    prevHash = hash;
+  }
+  // Reverse so newest first
+  evidenceRecords.reverse();
+}
+
 // ── Service registry ─────────────────────────────────────────────────────────
 
 /** Create service registry for IPC handlers */
@@ -482,19 +563,54 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       unsubscribe: () => log.info('Trust subscription stopped'),
     },
     evidenceStore: {
-      list: () => ({ items: [], total: 0, page: 1, pageSize: 20, hasMore: false }),
-      get: (id: string) => ({
-        id,
-        hash: '',
-        previousHash: null,
-        timestamp: new Date().toISOString(),
-        source: 'zoom',
-        eventType: '',
-        payload: {},
-        verified: false,
-      }),
-      verify: () => ({ valid: true, errors: [] }),
-      search: () => ({ items: [], total: 0, page: 1, pageSize: 20, hasMore: false }),
+      list: (opts: { page?: number; pageSize?: number }) => {
+        initEvidenceRecords();
+        const page = opts?.page ?? 1;
+        const pageSize = opts?.pageSize ?? 20;
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        return {
+          items: evidenceRecords.slice(start, end),
+          total: evidenceRecords.length,
+          page,
+          pageSize,
+          hasMore: end < evidenceRecords.length,
+        };
+      },
+      get: (id: string) => {
+        initEvidenceRecords();
+        return evidenceRecords.find((r) => r.id === id) ?? null;
+      },
+      verify: (id: string) => {
+        initEvidenceRecords();
+        const record = evidenceRecords.find((r) => r.id === id);
+        if (!record) return { valid: false, errors: ['Record not found'] };
+        // Recompute HMAC-SHA256 hash and compare
+        const data = JSON.stringify({
+          id: record.id,
+          source: record.source,
+          eventType: record.eventType,
+          timestamp: record.timestamp,
+        });
+        const expected = computeEvidenceHash(data, record.previousHash);
+        if (expected !== record.hash) {
+          return { valid: false, errors: ['HMAC-SHA256 hash chain integrity check failed'] };
+        }
+        record.verified = true;
+        return { valid: true, errors: [] };
+      },
+      search: (query: string) => {
+        initEvidenceRecords();
+        const q = query.toLowerCase();
+        const items = evidenceRecords.filter(
+          (r) =>
+            r.hash.toLowerCase().includes(q) ||
+            r.source.toLowerCase().includes(q) ||
+            r.eventType.toLowerCase().includes(q) ||
+            r.id.toLowerCase().includes(q),
+        );
+        return { items, total: items.length, page: 1, pageSize: items.length, hasMore: false };
+      },
       export: () => ({ ok: true }),
     },
     certGenerator: {

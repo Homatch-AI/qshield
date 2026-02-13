@@ -19,8 +19,8 @@ interface QShieldTrustAPI {
 interface QShieldEvidenceAPI {
   list(options: ListOptions): Promise<ListResult<EvidenceRecord>>;
   getOne(id: string): Promise<EvidenceRecord>;
-  verify(id: string): Promise<{ valid: boolean; message: string }>;
-  search(query: string): Promise<EvidenceRecord[]>;
+  verify(id: string): Promise<{ valid: boolean; errors: string[] }>;
+  search(query: string): Promise<ListResult<EvidenceRecord>>;
   export(ids: string[]): Promise<{ path: string }>;
 }
 

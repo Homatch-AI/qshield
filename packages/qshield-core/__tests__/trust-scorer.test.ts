@@ -147,24 +147,26 @@ describe('computeTrustScore', () => {
     expect(computeTrustScore([makeSignal('zoom', 100)], undefined, NOW)).toBe(100);
   });
 
-  it('computes weighted average for all five sources at max', () => {
+  it('computes weighted average for all six sources at max', () => {
     const signals = [
       makeSignal('zoom', 100),
       makeSignal('teams', 100),
       makeSignal('email', 100),
       makeSignal('file', 100),
       makeSignal('api', 100),
+      makeSignal('crypto', 100),
     ];
     expect(computeTrustScore(signals, undefined, NOW)).toBe(100);
   });
 
-  it('computes weighted average for all five sources at zero', () => {
+  it('computes weighted average for all six sources at zero', () => {
     const signals = [
       makeSignal('zoom', 0),
       makeSignal('teams', 0),
       makeSignal('email', 0),
       makeSignal('file', 0),
       makeSignal('api', 0),
+      makeSignal('crypto', 0),
     ];
     expect(computeTrustScore(signals, undefined, NOW)).toBe(0);
   });
@@ -251,7 +253,7 @@ describe('computeTrustScore', () => {
   });
 
   it('handles 100 signals across multiple sources', () => {
-    const sources: TrustSignal['source'][] = ['zoom', 'teams', 'email', 'file', 'api'];
+    const sources: TrustSignal['source'][] = ['zoom', 'teams', 'email', 'file', 'api', 'crypto'];
     const signals: TrustSignal[] = [];
     for (let i = 0; i < 100; i++) {
       const source = sources[i % sources.length];
@@ -438,5 +440,6 @@ describe('DEFAULT_TRUST_SCORER_CONFIG', () => {
     expect(DEFAULT_TRUST_SCORER_CONFIG.weights.email).toBeDefined();
     expect(DEFAULT_TRUST_SCORER_CONFIG.weights.file).toBeDefined();
     expect(DEFAULT_TRUST_SCORER_CONFIG.weights.api).toBeDefined();
+    expect(DEFAULT_TRUST_SCORER_CONFIG.weights.crypto).toBeDefined();
   });
 });
