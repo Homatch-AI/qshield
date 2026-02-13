@@ -194,7 +194,7 @@ function getShieldPosition(shieldConfig: ShieldOverlayConfig): { x: number; y: n
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
   const overlaySize = 80;
-  const margin = shieldConfig.margin;
+  const margin = shieldConfig.margin ?? 20;
 
   switch (shieldConfig.anchor) {
     case 'top-left':
