@@ -1065,8 +1065,8 @@ app.whenReady().then(() => {
     // Reposition window immediately if it exists
     if (shieldWindow) {
       const shieldConfig = configManager!.getShieldConfig();
-      const pos = getShieldPosition({ ...shieldConfig, anchor });
-      shieldWindow.setPosition(pos.x, pos.y);
+      const pos = getShieldPosition({ ...shieldConfig, anchor, margin: shieldConfig.margin ?? 20 });
+      shieldWindow.setPosition(Math.round(pos.x), Math.round(pos.y));
     }
     return { success: true, data: null };
   });

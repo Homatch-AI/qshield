@@ -19,7 +19,7 @@ export default function Settings() {
   const [notificationThreshold, setNotificationThreshold] = useState('medium');
   const [shieldOverlay, setShieldOverlay] = useState(true);
   const [shieldOpacity, setShieldOpacity] = useState(85);
-  const [shieldPosition, setShieldPosition] = useState('bottom-right');
+  const [shieldPosition, setShieldPosition] = useState('top-right');
   const [storagePath, setStoragePath] = useState('');
   const [storageQuota, setStorageQuota] = useState(500);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -37,7 +37,7 @@ export default function Settings() {
       setNotificationThreshold((config.notificationSeverityThreshold as string) ?? 'medium');
       setShieldOverlay((config['shield.enabled'] as boolean) ?? (config.shieldOverlay as boolean) ?? true);
       setShieldOpacity((((config['shield.opacity'] as number) ?? (config.shieldOpacity as number) ?? 0.85)) * 100);
-      setShieldPosition((config['shield.anchor'] as string) ?? (config.shieldPosition as string) ?? 'bottom-right');
+      setShieldPosition((config['shield.anchor'] as string) ?? (config.shieldPosition as string) ?? 'top-right');
       setStoragePath((config.storagePath as string) ?? '');
       setStorageQuota((config.storageQuotaMB as number) ?? 500);
     }
