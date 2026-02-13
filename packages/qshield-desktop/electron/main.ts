@@ -517,6 +517,56 @@ function initEvidenceRecords(): void {
   }
   // Reverse so newest first
   evidenceRecords.reverse();
+
+  // Generate trust signals from evidence records for the timeline
+  initTrustSignals();
+}
+
+// ── Trust signals derived from evidence ──────────────────────────────────────
+
+interface TrustSignalRow {
+  source: string;
+  score: number;
+  weight: number;
+  timestamp: string;
+  metadata: Record<string, unknown>;
+}
+
+const trustSignals: TrustSignalRow[] = [];
+
+/** Weight mapping per adapter source */
+const SOURCE_WEIGHTS: Record<string, number> = {
+  zoom: 0.25, teams: 0.20, email: 0.20, file: 0.15, api: 0.20,
+};
+
+/** Score mapping per event type — higher = more positive trust impact */
+const EVENT_SCORES: Record<string, number> = {
+  'meeting.started': 82, 'participant.joined': 75, 'screen.shared': 70, 'encryption.verified': 95,
+  'call.started': 80, 'message.sent': 72, 'presence.changed': 65, 'file.shared': 68,
+  'email.received': 60, 'email.sent': 70, 'dkim.verified': 92, 'spf.pass': 90,
+  'file.created': 55, 'file.modified': 50, 'file.accessed': 45, 'file.moved': 48,
+  'auth.success': 88, 'request.inbound': 60, 'rate.limited': 25, 'auth.failure': 15,
+};
+
+function initTrustSignals(): void {
+  if (trustSignals.length > 0) return;
+  for (const rec of evidenceRecords) {
+    const score = EVENT_SCORES[rec.eventType] ?? 60;
+    const weight = SOURCE_WEIGHTS[rec.source] ?? 0.15;
+    trustSignals.push({
+      source: rec.source,
+      score,
+      weight,
+      timestamp: rec.timestamp,
+      metadata: {
+        eventType: rec.eventType,
+        evidenceId: rec.id,
+        description: `${rec.eventType} from ${rec.source} adapter`,
+        hash: rec.hash.slice(0, 16),
+        confidence: rec.payload.confidence,
+      },
+    });
+  }
 }
 
 // ── Service registry ─────────────────────────────────────────────────────────
@@ -550,14 +600,14 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
   return {
     trustMonitor: {
       getState: () => {
-        const state = {
+        initEvidenceRecords(); // ensure signals are populated
+        return {
           score: currentTrustScore,
           level: currentTrustLevel,
-          signals: [],
+          signals: trustSignals,
           lastUpdated: new Date().toISOString(),
           sessionId: 'default',
         };
-        return state;
       },
       subscribe: () => log.info('Trust subscription started'),
       unsubscribe: () => log.info('Trust subscription stopped'),
