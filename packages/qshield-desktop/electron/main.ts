@@ -1009,6 +1009,9 @@ app.whenReady().then(() => {
   // Initialize config
   configManager = new ConfigManager();
 
+  // Force shield to top-right on every startup
+  configManager.set('shield.anchor', 'top-right');
+
   // Check for crash recovery
   checkCrashRecovery(configManager);
 
