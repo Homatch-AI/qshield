@@ -4,3 +4,6 @@ export * from './crypto';
 export * from './evidence';
 export * from './policy-rules';
 export * from './crypto-verifier';
+export * from './license-types';
+export * from './license-validator';
+export * from './feature-gate';
