@@ -1,0 +1,19 @@
+{
+  "license_id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+  "edition": "business",
+  "expires_at": "2027-02-13T00:00:00Z",
+  "features": [
+    "overlay_shield",
+    "evidence_vault",
+    "zoom_monitor",
+    "teams_monitor",
+    "email_monitor",
+    "policy_engine",
+    "trust_certificates"
+  ],
+  "limits": {
+    "max_devices": 10,
+    "evidence_retention_days": 365
+  },
+  "signature": "mock-sig-business"
+}
