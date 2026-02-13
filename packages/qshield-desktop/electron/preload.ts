@@ -353,5 +353,12 @@ contextBridge.exposeInMainWorld('qshield', {
 
     setShieldOpacity: (opacity: number): Promise<null> =>
       invoke<null>(IPC_CHANNELS.SHIELD_SET_OPACITY, opacity),
+
+    showAlerts: (): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.APP_SHOW_ALERTS),
+
+    onNavigate: (callback: (route: string) => void): void => {
+      ipcRenderer.on('navigate', (_event: Electron.IpcRendererEvent, route: string) => callback(route));
+    },
   },
 });

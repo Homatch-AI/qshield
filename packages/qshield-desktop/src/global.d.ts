@@ -112,6 +112,8 @@ interface QShieldAppAPI {
   toggleMainWindow(): Promise<void>;
   setShieldPosition(position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'): Promise<void>;
   setShieldOpacity(opacity: number): Promise<void>;
+  showAlerts(): Promise<void>;
+  onNavigate(callback: (route: string) => void): void;
 }
 
 interface QShieldVerificationAPI {

@@ -26,6 +26,7 @@ import { StandaloneCertGenerator } from './services/standalone-cert';
 import { generateSignatureHTML, DEFAULT_SIGNATURE_CONFIG, type SignatureConfig } from './services/signature-generator';
 import { VerificationRecordService } from './services/verification-record';
 import { CryptoMonitorService } from './services/crypto-monitor';
+import { NotificationService } from './services/notification';
 import { validateAddress, verifyTransactionHash, loadScamDatabase } from '@qshield/core';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1024,6 +1025,16 @@ app.whenReady().then(() => {
     return { success: true, data: null };
   });
 
+  ipcMain.handle('app:show-alerts', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('navigate', '/alerts');
+    }
+    return { success: true, data: null };
+  });
+
   // Shield toggle handler — registered here because it needs access to shieldWindow
   ipcMain.handle('app:toggle-shield-overlay', () => {
     if (shieldWindow) {
@@ -1076,6 +1087,30 @@ app.whenReady().then(() => {
 
   // Create tray
   createTray();
+
+  // ── Alert broadcast + simulation ────────────────────────────────────────
+  const notificationService = new NotificationService('medium');
+
+  /** Broadcast an alert to all renderer windows and show OS notification */
+  function broadcastAlert(alert: SeedAlert): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('event:alert-received', alert);
+      }
+    }
+    notificationService.notify(alert as unknown as import('@qshield/core').Alert, '/alerts');
+    log.info(`[AlertSim] Broadcast alert: ${alert.title}`);
+  }
+
+  // Simulate periodic alerts every 45 seconds (picks a random active alert)
+  setInterval(() => {
+    initSeedAlerts();
+    const active = seedAlerts.filter((a) => !a.dismissed && !dismissedAlertIds.has(a.id));
+    if (active.length > 0) {
+      const alert = active[Math.floor(Math.random() * active.length)];
+      broadcastAlert(alert);
+    }
+  }, 45_000);
 
   log.info('QShield Desktop initialized');
 });
