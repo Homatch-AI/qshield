@@ -178,6 +178,13 @@ interface QShieldCryptoAPI {
   }>;
 }
 
+interface QShieldLicenseAPI {
+  get(): Promise<unknown>;
+  set(license: unknown): Promise<unknown>;
+  clear(): Promise<void>;
+  checkFeature(feature: string): Promise<unknown>;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -190,6 +197,7 @@ interface QShieldAPI {
   signature: QShieldSignatureAPI;
   verification: QShieldVerificationAPI;
   crypto: QShieldCryptoAPI;
+  license: QShieldLicenseAPI;
   app: QShieldAppAPI;
 }
 
