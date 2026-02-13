@@ -625,19 +625,67 @@ interface SeedAlert {
 const seedAlerts: SeedAlert[] = [];
 const dismissedAlertIds = new Set<string>();
 
-const ALERT_DEFS: Array<{ title: string; description: string; severity: SeedAlert['severity']; source: string }> = [
-  { title: 'Trust Score Below Threshold', description: 'Trust score dropped below the configured threshold of 40. Immediate review recommended.', severity: 'critical', source: 'api' },
-  { title: 'Unusual File Access Pattern', description: 'Detected unusual file access patterns that deviate from normal behavior baseline.', severity: 'high', source: 'file' },
-  { title: 'External Domain Communication', description: 'Communication initiated with an unrecognized external domain. Review sender reputation.', severity: 'medium', source: 'email' },
-  { title: 'Screen Sharing to Unknown Participant', description: 'Screen was shared with a participant from an unverified domain during a video call.', severity: 'high', source: 'zoom' },
-  { title: 'Multiple Failed Authentication Attempts', description: 'Multiple failed authentication attempts detected from the same session.', severity: 'critical', source: 'api' },
-  { title: 'Data Exfiltration Risk Detected', description: 'Potential data exfiltration detected: large file transfer to external endpoint.', severity: 'high', source: 'file' },
-  { title: 'Policy Violation: File Copy to External Drive', description: 'A file was copied to an external storage device, violating data protection policy.', severity: 'medium', source: 'file' },
-  { title: 'Anomalous API Request Volume', description: 'API request volume exceeds normal baseline by 300%. Potential automated access.', severity: 'low', source: 'api' },
-  { title: 'Unverified Meeting Participant', description: 'An unverified participant joined a meeting containing sensitive content.', severity: 'medium', source: 'teams' },
-  { title: 'Confidential Document Accessed Outside Hours', description: 'A classified document was accessed outside of authorized working hours.', severity: 'high', source: 'file' },
-  { title: 'DKIM Signature Verification Failed', description: 'Incoming email failed DKIM signature verification. Possible spoofing attempt.', severity: 'medium', source: 'email' },
-  { title: 'Clipboard Crypto Address Swap Detected', description: 'A cryptocurrency address in the clipboard was replaced by a potentially malicious address.', severity: 'critical', source: 'crypto' },
+const ALERT_DEFS: Array<{ title: string; description: string; severity: SeedAlert['severity']; source: string; sourceMetadata: Record<string, unknown> }> = [
+  {
+    title: 'Trust Score Below Threshold', severity: 'critical', source: 'api',
+    description: 'Trust score dropped below the configured threshold of 40. Immediate review recommended.',
+    sourceMetadata: { endpoint: '/api/v1/auth/session', method: 'POST', statusCode: 401, requestIp: '203.0.113.42', policyViolated: 'minimum-trust-score' },
+  },
+  {
+    title: 'Unusual File Access Pattern', severity: 'high', source: 'file',
+    description: 'Detected unusual file access patterns that deviate from normal behavior baseline.',
+    sourceMetadata: { fileName: 'employee-database.csv', filePath: '/shared/confidential/hr/', fileSize: 10485760, fileHash: 'a3f2c8d91e4b7056...', operation: 'bulk-read' },
+  },
+  {
+    title: 'External Domain Communication', severity: 'medium', source: 'email',
+    description: 'Communication initiated with an unrecognized external domain. Review sender reputation.',
+    sourceMetadata: { sender: 'noreply@suspicious-service.xyz', recipient: 'finance@company.com', subject: 'Urgent: Invoice #38291 Attached', headers: { 'X-SPF': 'softfail', 'DKIM-Signature': 'none', 'Return-Path': 'bounce@suspicious-service.xyz' } },
+  },
+  {
+    title: 'Screen Sharing to Unknown Participant', severity: 'high', source: 'zoom',
+    description: 'Screen was shared with a participant from an unverified domain during a video call.',
+    sourceMetadata: { meetingId: '847-291-5530', meetingTitle: 'Q4 Revenue Review — Confidential', participants: ['john@company.com', 'sarah@company.com', 'unknown.user@external-domain.io'], triggerReason: 'Screen shared while unverified participant present' },
+  },
+  {
+    title: 'Multiple Failed Authentication Attempts', severity: 'critical', source: 'api',
+    description: 'Multiple failed authentication attempts detected from the same session.',
+    sourceMetadata: { endpoint: '/api/v1/auth/login', method: 'POST', statusCode: 403, requestIp: '198.51.100.17', policyViolated: 'max-auth-failures' },
+  },
+  {
+    title: 'Data Exfiltration Risk Detected', severity: 'high', source: 'file',
+    description: 'Potential data exfiltration detected: large file transfer to external endpoint.',
+    sourceMetadata: { fileName: 'source-code-archive.tar.gz', filePath: '/Users/employee/Desktop/', fileSize: 104857600, fileHash: 'e7b1d4f09a3c2856...', operation: 'upload-to-cloud' },
+  },
+  {
+    title: 'Policy Violation: File Copy to External Drive', severity: 'medium', source: 'file',
+    description: 'A file was copied to an external storage device, violating data protection policy.',
+    sourceMetadata: { fileName: 'credentials-backup.zip', filePath: '/Users/employee/Documents/secrets/', fileSize: 524288, fileHash: 'c4a82f1d6e390b75...', operation: 'copy-to-external' },
+  },
+  {
+    title: 'Anomalous API Request Volume', severity: 'low', source: 'api',
+    description: 'API request volume exceeds normal baseline by 300%. Potential automated access.',
+    sourceMetadata: { endpoint: '/api/v1/data/export', method: 'GET', statusCode: 200, requestIp: '192.168.1.105' },
+  },
+  {
+    title: 'Unverified Meeting Participant', severity: 'medium', source: 'teams',
+    description: 'An unverified participant joined a meeting containing sensitive content.',
+    sourceMetadata: { meetingId: 'teams-9f3a2c71', meetingTitle: 'Engineering Standup — Internal Only', participants: ['alice@company.com', 'bob@company.com', 'contractor@temp-agency.net'], triggerReason: 'External participant joined internal-only meeting' },
+  },
+  {
+    title: 'Confidential Document Accessed Outside Hours', severity: 'high', source: 'file',
+    description: 'A classified document was accessed outside of authorized working hours.',
+    sourceMetadata: { fileName: 'quarterly-report-final.xlsx', filePath: '/shared/confidential/reports/', fileSize: 2457600, fileHash: 'f9d0a3b72c815e46...', operation: 'open-read' },
+  },
+  {
+    title: 'DKIM Signature Verification Failed', severity: 'medium', source: 'email',
+    description: 'Incoming email failed DKIM signature verification. Possible spoofing attempt.',
+    sourceMetadata: { sender: 'phishing@spoofed-bank.net', recipient: 'admin@company.com', subject: 'ACTION REQUIRED: Verify Account', headers: { 'X-SPF': 'fail', 'DKIM-Signature': 'invalid', 'Return-Path': 'mailer@untrusted.net' } },
+  },
+  {
+    title: 'Clipboard Crypto Address Swap Detected', severity: 'critical', source: 'crypto',
+    description: 'A cryptocurrency address in the clipboard was replaced by a potentially malicious address.',
+    sourceMetadata: { walletAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D', chain: 'ethereum', riskLevel: 'critical' },
+  },
 ];
 
 function initSeedAlerts(): void {
@@ -652,6 +700,7 @@ function initSeedAlerts(): void {
       source: def.source,
       timestamp: new Date(Date.now() - i * 30 * 60_000 - Math.floor(Math.random() * 30 * 60_000)).toISOString(),
       dismissed: i >= 7, // first 7 active, rest dismissed/historical
+      sourceMetadata: def.sourceMetadata,
     });
   }
   seedAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());

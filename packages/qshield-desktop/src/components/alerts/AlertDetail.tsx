@@ -62,6 +62,7 @@ export function AlertDetail({ alert, onClose, onViewEvidence }: AlertDetailProps
             {alert.source === 'zoom' && <MeetingDetails meta={meta} platform="Zoom" />}
             {alert.source === 'teams' && <MeetingDetails meta={meta} platform="Teams" />}
             {alert.source === 'api' && <ApiDetails meta={meta} />}
+            {alert.source === 'crypto' && <CryptoDetails meta={meta} />}
           </div>
         </div>
       )}
@@ -189,6 +190,50 @@ function MeetingDetails({ meta, platform }: { meta: AlertSourceMetadata; platfor
           label="Trigger"
           value={
             <span className="text-amber-400">{meta.triggerReason}</span>
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+function CryptoDetails({ meta }: { meta: AlertSourceMetadata }) {
+  const riskColor =
+    meta.riskLevel === 'critical' ? 'text-red-400' :
+    meta.riskLevel === 'high' ? 'text-orange-400' :
+    'text-amber-400';
+
+  return (
+    <div className="divide-y divide-slate-700/30">
+      {meta.walletAddress && (
+        <DetailRow
+          label="Address"
+          value={<span className="font-mono">{meta.walletAddress}</span>}
+        />
+      )}
+      {meta.chain && (
+        <DetailRow
+          label="Chain"
+          value={
+            <span className="inline-flex items-center rounded-full bg-slate-700/50 border border-slate-600/30 px-2 py-0.5 text-[10px] font-bold text-slate-300 uppercase">
+              {meta.chain}
+            </span>
+          }
+        />
+      )}
+      {meta.transactionHash && (
+        <DetailRow
+          label="Tx Hash"
+          value={<span className="font-mono text-[11px]">{meta.transactionHash}</span>}
+        />
+      )}
+      {meta.riskLevel && (
+        <DetailRow
+          label="Risk Level"
+          value={
+            <span className={`inline-flex items-center rounded-full bg-red-500/10 border border-red-500/20 px-2 py-0.5 text-[10px] font-bold uppercase ${riskColor}`}>
+              {meta.riskLevel}
+            </span>
           }
         />
       )}
