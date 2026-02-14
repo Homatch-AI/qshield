@@ -1,5 +1,5 @@
 import type { Feature, QShieldEdition, QShieldLicense, EditionLimits } from './license-types';
-import { EDITION_FEATURES, EDITION_LIMITS } from './license-types';
+import { EDITION_LIMITS } from './license-types';
 import { verifyLicenseSignature, isLicenseExpired } from './license-validator';
 
 /**

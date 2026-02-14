@@ -69,11 +69,11 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Dashboard', icon: 'gauge' },
-  { path: '/timeline', label: 'Timeline', icon: 'clock' },
-  { path: '/vault', label: 'Evidence Vault', icon: 'vault', requiredFeature: 'evidence_vault' },
-  { path: '/certificates', label: 'Certificates', icon: 'certificate', requiredFeature: 'trust_certificates' },
-  { path: '/alerts', label: 'Alerts', icon: 'bell', requiredFeature: 'enterprise_alerting' },
-  { path: '/crypto', label: 'Crypto Security', icon: 'shield-check', requiredFeature: 'crypto_guard' },
+  { path: '/timeline', label: 'Timeline', icon: 'clock', requiredFeature: 'timeline_24h' },
+  { path: '/vault', label: 'Evidence Vault', icon: 'vault', requiredFeature: 'evidence_full' },
+  { path: '/certificates', label: 'Certificates', icon: 'certificate', requiredFeature: 'cert_basic' },
+  { path: '/alerts', label: 'Alerts', icon: 'bell', requiredFeature: 'alerts_full' },
+  { path: '/crypto', label: 'Crypto Security', icon: 'shield-check', requiredFeature: 'crypto_basic' },
   { path: '/settings', label: 'Settings', icon: 'settings' },
 ];
 

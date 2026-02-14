@@ -3,15 +3,23 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { NAV_ITEMS } from '@/lib/constants';
 import useTrustStore from '@/stores/trust-store';
 import useAlertStore from '@/stores/alert-store';
-import useLicenseStore from '@/stores/license-store';
+import useLicenseStore, { getRequiredEdition, EDITION_LABELS } from '@/stores/license-store';
+import type { Feature, QShieldEdition } from '@/stores/license-store';
 import useAuthStore from '@/stores/auth-store';
 import { UpgradeModal } from './UpgradeModal';
 
 const SIDEBAR_EDITION_COLORS: Record<string, string> = {
-  free: 'text-zinc-500',
-  personal: 'text-slate-500',
-  business: 'text-sky-400',
-  enterprise: 'text-purple-400',
+  free: 'text-slate-500',
+  personal: 'text-sky-400',
+  business: 'text-purple-400',
+  enterprise: 'text-amber-400',
+};
+
+const BADGE_COLORS: Record<QShieldEdition, string> = {
+  free: 'bg-slate-500/20 text-slate-400',
+  personal: 'bg-sky-500/20 text-sky-400',
+  business: 'bg-purple-500/20 text-purple-400',
+  enterprise: 'bg-amber-500/20 text-amber-400',
 };
 
 function NavIcon({ icon, className = '' }: { icon: string; className?: string }) {
@@ -115,18 +123,25 @@ export function Sidebar() {
             return (
               <li key={item.path}>
                 {locked ? (
-                  <div
-                    onClick={() => { setUpgradeFeature(item.requiredFeature); setUpgradeOpen(true); }}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-slate-400 opacity-50 cursor-not-allowed hover:bg-slate-800/50"
-                  >
-                    <NavIcon icon={item.icon} className="shrink-0" />
-                    {!collapsed && (
-                      <>
-                        <span className="truncate">{item.label}</span>
-                        <span className="ml-auto text-[9px] font-bold uppercase bg-sky-500/20 text-sky-400 px-1.5 rounded-full">PRO</span>
-                      </>
-                    )}
-                  </div>
+                  (() => {
+                    const reqEdition = getRequiredEdition(item.requiredFeature as Feature);
+                    const badgeLabel = EDITION_LABELS[reqEdition]?.toUpperCase() ?? 'PRO';
+                    const badgeColor = BADGE_COLORS[reqEdition] ?? 'bg-sky-500/20 text-sky-400';
+                    return (
+                      <div
+                        onClick={() => { setUpgradeFeature(item.requiredFeature); setUpgradeOpen(true); }}
+                        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-slate-400 opacity-50 cursor-not-allowed hover:bg-slate-800/50"
+                      >
+                        <NavIcon icon={item.icon} className="shrink-0" />
+                        {!collapsed && (
+                          <>
+                            <span className="truncate">{item.label}</span>
+                            <span className={`ml-auto text-[9px] font-bold uppercase ${badgeColor} px-1.5 rounded-full`}>{badgeLabel}</span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()
                 ) : (
                   <NavLink
                     to={item.path}

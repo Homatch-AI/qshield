@@ -7,127 +7,107 @@ import { isIPCAvailable } from '@/lib/mock-data';
  */
 type QShieldEdition = 'free' | 'personal' | 'business' | 'enterprise';
 type Feature =
-  // Monitoring (11)
-  | 'dashboard'
-  | 'trust_score'
-  | 'overlay_shield'
+  // Shield
+  | 'shield_basic'
+  | 'shield_breathing'
+  // Email verification (viral engine)
+  | 'verify_send'
+  | 'verify_tls_check'
+  | 'verify_routing_check'
+  | 'verify_intercept_scan'
+  | 'verify_custom_badge'
+  | 'verify_remove_branding'
+  | 'verify_analytics'
+  | 'verify_bulk_api'
+  | 'verify_custom_domain'
+  // Timeline
+  | 'timeline_24h'
+  | 'timeline_full'
+  // Evidence
+  | 'evidence_preview'
+  | 'evidence_full'
+  | 'evidence_export'
+  | 'evidence_api_export'
+  // Crypto
+  | 'crypto_basic'
+  | 'crypto_monitor'
+  | 'crypto_analytics'
+  // Monitoring adapters
   | 'zoom_monitor'
   | 'teams_monitor'
   | 'email_monitor'
-  | 'slack_monitor'
-  | 'gdrive_monitor'
-  | 'browser_monitor'
-  | 'screen_monitor'
-  | 'clipboard_monitor'
-  // Security (8)
-  | 'crypto_guard'
-  | 'phishing_detection'
-  | 'dlp_scanning'
-  | 'device_trust'
-  | 'network_monitor'
-  | 'usb_monitor'
-  | 'evidence_vault'
-  | 'trust_certificates'
-  // Reporting (5)
-  | 'custom_reports'
-  | 'compliance_dashboard'
-  | 'scheduled_reports'
-  | 'audit_trail'
-  | 'advanced_analytics'
-  // Integration (5)
-  | 'api_access'
-  | 'webhook_notifications'
-  | 'sso_integration'
-  | 'ldap_sync'
-  | 'siem_export'
-  // Management (6)
+  | 'file_monitor'
+  | 'api_monitor'
+  // Certificates
+  | 'cert_basic'
+  | 'cert_pro'
+  | 'email_signature'
+  // Policy & alerts
+  | 'alerts_basic'
+  | 'alerts_full'
   | 'policy_engine'
-  | 'enterprise_alerting'
-  | 'multi_tenant'
-  | 'role_based_access'
-  | 'remote_wipe'
-  | 'custom_branding';
+  | 'auto_freeze'
+  | 'escalation_rules'
+  | 'policy_templates'
+  // Compliance & enterprise
+  | 'siem_export'
+  | 'audit_log'
+  | 'compliance_dashboard'
+  | 'sso_scim'
+  | 'org_dashboard'
+  | 'soc_routing'
+  | 'insurance_readiness';
+
+const EDITION_ORDER: QShieldEdition[] = ['free', 'personal', 'business', 'enterprise'];
+
+const FREE_FEATURES: Feature[] = [
+  'shield_basic', 'verify_send', 'email_signature',
+  'timeline_24h', 'evidence_preview', 'alerts_basic',
+];
+
+const PERSONAL_FEATURES: Feature[] = [
+  ...FREE_FEATURES,
+  'shield_breathing', 'verify_tls_check', 'verify_routing_check',
+  'verify_custom_badge', 'verify_remove_branding',
+  'timeline_full', 'evidence_full', 'cert_basic', 'crypto_basic',
+];
+
+const BUSINESS_FEATURES: Feature[] = [
+  ...PERSONAL_FEATURES,
+  'verify_intercept_scan', 'verify_analytics', 'verify_bulk_api',
+  'zoom_monitor', 'teams_monitor', 'email_monitor',
+  'evidence_export', 'alerts_full', 'policy_engine', 'auto_freeze',
+  'audit_log', 'crypto_monitor',
+];
+
+const ENTERPRISE_FEATURES: Feature[] = [
+  ...BUSINESS_FEATURES,
+  'verify_custom_domain', 'file_monitor', 'api_monitor',
+  'evidence_api_export', 'cert_pro', 'escalation_rules', 'policy_templates',
+  'siem_export', 'compliance_dashboard', 'sso_scim', 'org_dashboard',
+  'soc_routing', 'insurance_readiness', 'crypto_analytics',
+];
 
 const EDITION_FEATURES: Record<QShieldEdition, Feature[]> = {
-  free: [
-    'dashboard',
-    'trust_score',
-    'overlay_shield',
-    'clipboard_monitor',
-  ],
-  personal: [
-    'dashboard',
-    'trust_score',
-    'overlay_shield',
-    'clipboard_monitor',
-    'zoom_monitor',
-    'teams_monitor',
-    'email_monitor',
-    'crypto_guard',
-    'phishing_detection',
-    'evidence_vault',
-  ],
-  business: [
-    'dashboard',
-    'trust_score',
-    'overlay_shield',
-    'clipboard_monitor',
-    'zoom_monitor',
-    'teams_monitor',
-    'email_monitor',
-    'crypto_guard',
-    'phishing_detection',
-    'evidence_vault',
-    'slack_monitor',
-    'gdrive_monitor',
-    'browser_monitor',
-    'screen_monitor',
-    'dlp_scanning',
-    'device_trust',
-    'network_monitor',
-    'usb_monitor',
-    'trust_certificates',
-    'custom_reports',
-    'policy_engine',
-    'api_access',
-  ],
-  enterprise: [
-    'dashboard',
-    'trust_score',
-    'overlay_shield',
-    'clipboard_monitor',
-    'zoom_monitor',
-    'teams_monitor',
-    'email_monitor',
-    'crypto_guard',
-    'phishing_detection',
-    'evidence_vault',
-    'slack_monitor',
-    'gdrive_monitor',
-    'browser_monitor',
-    'screen_monitor',
-    'dlp_scanning',
-    'device_trust',
-    'network_monitor',
-    'usb_monitor',
-    'trust_certificates',
-    'custom_reports',
-    'policy_engine',
-    'api_access',
-    'compliance_dashboard',
-    'scheduled_reports',
-    'audit_trail',
-    'advanced_analytics',
-    'webhook_notifications',
-    'sso_integration',
-    'ldap_sync',
-    'siem_export',
-    'enterprise_alerting',
-    'multi_tenant',
-    'role_based_access',
-    'remote_wipe',
-    'custom_branding',
-  ],
+  free: FREE_FEATURES,
+  personal: PERSONAL_FEATURES,
+  business: BUSINESS_FEATURES,
+  enterprise: ENTERPRISE_FEATURES,
+};
+
+/** Get the minimum edition required for a feature. */
+function getRequiredEdition(feature: Feature): QShieldEdition {
+  for (const edition of EDITION_ORDER) {
+    if (EDITION_FEATURES[edition].includes(feature)) return edition;
+  }
+  return 'enterprise';
+}
+
+const EDITION_LABELS: Record<QShieldEdition, string> = {
+  free: 'Free',
+  personal: 'Personal',
+  business: 'Business',
+  enterprise: 'Enterprise',
 };
 
 interface LicenseStoreState {
@@ -177,4 +157,6 @@ const useLicenseStore = create<LicenseStore>((set, get) => ({
   },
 }));
 
+export { getRequiredEdition, EDITION_LABELS, EDITION_FEATURES, EDITION_ORDER };
+export type { Feature, QShieldEdition };
 export default useLicenseStore;

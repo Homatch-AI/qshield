@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { Feature } from '@qshield/core';
 import { useFeature } from '@/hooks/useFeature';
+import { getRequiredEdition, EDITION_LABELS } from '@/stores/license-store';
+import type { Feature as LicenseFeature } from '@/stores/license-store';
 import { UpgradeModal } from './UpgradeModal';
 
 interface FeatureGuardProps {
@@ -9,24 +11,17 @@ interface FeatureGuardProps {
   fallback?: React.ReactNode;
 }
 
-/** Edition label for display — shows which plan unlocks the gated feature. */
-const EDITION_LABEL: Record<string, string> = {
-  free: 'Personal',
-  personal: 'Business',
-  business: 'Enterprise',
-  enterprise: 'Enterprise',
-};
-
 /** Render children only if the feature is enabled, otherwise show a locked fallback. */
 export function FeatureGuard({ feature, children, fallback }: FeatureGuardProps) {
-  const { enabled, edition } = useFeature(feature);
+  const { enabled } = useFeature(feature);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   if (enabled) return <>{children}</>;
 
   if (fallback) return <>{fallback}</>;
 
-  const requiredEdition = EDITION_LABEL[edition] ?? 'Business';
+  const requiredEdition = getRequiredEdition(feature as LicenseFeature);
+  const editionLabel = EDITION_LABELS[requiredEdition] ?? 'Business';
 
   return (
     <>
@@ -38,7 +33,7 @@ export function FeatureGuard({ feature, children, fallback }: FeatureGuardProps)
         </div>
         <h3 className="text-sm font-semibold text-slate-200">Feature Locked</h3>
         <p className="mt-1 text-xs text-slate-400">
-          This feature requires the <span className="font-medium text-sky-400">{requiredEdition}</span> plan
+          Requires <span className="font-medium text-sky-400">{editionLabel}</span> plan
         </p>
         <button
           onClick={() => setUpgradeOpen(true)}

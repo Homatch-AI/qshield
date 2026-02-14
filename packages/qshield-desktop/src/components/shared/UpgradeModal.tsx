@@ -1,133 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { openUpgradeUrl } from '@/lib/upgrade-urls';
-/**
- * Types and features inlined to avoid pulling Node.js-only
- * modules from @qshield/core into the browser bundle.
- */
-type QShieldEdition = 'free' | 'personal' | 'business' | 'enterprise';
-type Feature =
-  // Monitoring (11)
-  | 'dashboard'
-  | 'trust_score'
-  | 'overlay_shield'
-  | 'zoom_monitor'
-  | 'teams_monitor'
-  | 'email_monitor'
-  | 'slack_monitor'
-  | 'gdrive_monitor'
-  | 'browser_monitor'
-  | 'screen_monitor'
-  | 'clipboard_monitor'
-  // Security (8)
-  | 'crypto_guard'
-  | 'phishing_detection'
-  | 'dlp_scanning'
-  | 'device_trust'
-  | 'network_monitor'
-  | 'usb_monitor'
-  | 'evidence_vault'
-  | 'trust_certificates'
-  // Reporting (5)
-  | 'custom_reports'
-  | 'compliance_dashboard'
-  | 'scheduled_reports'
-  | 'audit_trail'
-  | 'advanced_analytics'
-  // Integration (5)
-  | 'api_access'
-  | 'webhook_notifications'
-  | 'sso_integration'
-  | 'ldap_sync'
-  | 'siem_export'
-  // Management (6)
-  | 'policy_engine'
-  | 'enterprise_alerting'
-  | 'multi_tenant'
-  | 'role_based_access'
-  | 'remote_wipe'
-  | 'custom_branding';
-
-const EDITION_FEATURES: Record<QShieldEdition, Feature[]> = {
-  free: [
-    'dashboard',
-    'trust_score',
-    'overlay_shield',
-    'clipboard_monitor',
-  ],
-  personal: [
-    'dashboard',
-    'trust_score',
-    'overlay_shield',
-    'clipboard_monitor',
-    'zoom_monitor',
-    'teams_monitor',
-    'email_monitor',
-    'crypto_guard',
-    'phishing_detection',
-    'evidence_vault',
-  ],
-  business: [
-    'dashboard',
-    'trust_score',
-    'overlay_shield',
-    'clipboard_monitor',
-    'zoom_monitor',
-    'teams_monitor',
-    'email_monitor',
-    'crypto_guard',
-    'phishing_detection',
-    'evidence_vault',
-    'slack_monitor',
-    'gdrive_monitor',
-    'browser_monitor',
-    'screen_monitor',
-    'dlp_scanning',
-    'device_trust',
-    'network_monitor',
-    'usb_monitor',
-    'trust_certificates',
-    'custom_reports',
-    'policy_engine',
-    'api_access',
-  ],
-  enterprise: [
-    'dashboard',
-    'trust_score',
-    'overlay_shield',
-    'clipboard_monitor',
-    'zoom_monitor',
-    'teams_monitor',
-    'email_monitor',
-    'crypto_guard',
-    'phishing_detection',
-    'evidence_vault',
-    'slack_monitor',
-    'gdrive_monitor',
-    'browser_monitor',
-    'screen_monitor',
-    'dlp_scanning',
-    'device_trust',
-    'network_monitor',
-    'usb_monitor',
-    'trust_certificates',
-    'custom_reports',
-    'policy_engine',
-    'api_access',
-    'compliance_dashboard',
-    'scheduled_reports',
-    'audit_trail',
-    'advanced_analytics',
-    'webhook_notifications',
-    'sso_integration',
-    'ldap_sync',
-    'siem_export',
-    'enterprise_alerting',
-    'multi_tenant',
-    'role_based_access',
-    'remote_wipe',
-    'custom_branding',
-  ],
-};
+import {
+  getRequiredEdition,
+  EDITION_LABELS,
+  EDITION_FEATURES,
+} from '@/stores/license-store';
+import type { Feature } from '@/stores/license-store';
 
 interface UpgradeModalProps {
   isOpen: boolean;
@@ -137,90 +15,82 @@ interface UpgradeModalProps {
 
 /** Human-readable feature labels. */
 const FEATURE_LABELS: Record<Feature, string> = {
+  // Shield
+  shield_basic: 'Shield (Basic)',
+  shield_breathing: 'Shield (Breathing)',
+  // Email verification
+  verify_send: 'Email Verification',
+  verify_tls_check: 'TLS Check',
+  verify_routing_check: 'Routing Check',
+  verify_intercept_scan: 'Intercept Scan',
+  verify_custom_badge: 'Custom Badge',
+  verify_remove_branding: 'Remove Branding',
+  verify_analytics: 'Verification Analytics',
+  verify_bulk_api: 'Bulk API',
+  verify_custom_domain: 'Custom Domain',
+  // Timeline
+  timeline_24h: 'Timeline (24h)',
+  timeline_full: 'Timeline (Full)',
+  // Evidence
+  evidence_preview: 'Evidence Preview',
+  evidence_full: 'Evidence Vault',
+  evidence_export: 'Evidence Export',
+  evidence_api_export: 'Evidence API Export',
+  // Crypto
+  crypto_basic: 'Crypto Guard',
+  crypto_monitor: 'Crypto Monitor',
+  crypto_analytics: 'Crypto Analytics',
   // Monitoring
-  dashboard: 'Dashboard',
-  trust_score: 'Trust Score',
-  overlay_shield: 'Shield Overlay',
   zoom_monitor: 'Zoom Monitor',
   teams_monitor: 'Teams Monitor',
   email_monitor: 'Email Monitor',
-  slack_monitor: 'Slack Monitor',
-  gdrive_monitor: 'Google Drive Monitor',
-  browser_monitor: 'Browser Monitor',
-  screen_monitor: 'Screen Monitor',
-  clipboard_monitor: 'Clipboard Monitor',
-  // Security
-  crypto_guard: 'Crypto Guard',
-  phishing_detection: 'Phishing Detection',
-  dlp_scanning: 'DLP Scanning',
-  device_trust: 'Device Trust',
-  network_monitor: 'Network Monitor',
-  usb_monitor: 'USB Monitor',
-  evidence_vault: 'Evidence Vault',
-  trust_certificates: 'Trust Certificates',
-  // Reporting
-  custom_reports: 'Custom Reports',
-  compliance_dashboard: 'Compliance Dashboard',
-  scheduled_reports: 'Scheduled Reports',
-  audit_trail: 'Audit Trail',
-  advanced_analytics: 'Advanced Analytics',
-  // Integration
-  api_access: 'API Access',
-  webhook_notifications: 'Webhook Notifications',
-  sso_integration: 'SSO Integration',
-  ldap_sync: 'LDAP Sync',
-  siem_export: 'SIEM Export',
-  // Management
+  file_monitor: 'File Monitor',
+  api_monitor: 'API Monitor',
+  // Certificates
+  cert_basic: 'Trust Certificates',
+  cert_pro: 'Certificates (Pro)',
+  email_signature: 'Email Signature',
+  // Policy & alerts
+  alerts_basic: 'Alerts (Basic)',
+  alerts_full: 'Alerts (Full)',
   policy_engine: 'Policy Engine',
-  enterprise_alerting: 'Enterprise Alerting',
-  multi_tenant: 'Multi-Tenant',
-  role_based_access: 'Role-Based Access',
-  remote_wipe: 'Remote Wipe',
-  custom_branding: 'Custom Branding',
+  auto_freeze: 'Auto Freeze',
+  escalation_rules: 'Escalation Rules',
+  policy_templates: 'Policy Templates',
+  // Compliance & enterprise
+  siem_export: 'SIEM Export',
+  audit_log: 'Audit Log',
+  compliance_dashboard: 'Compliance Dashboard',
+  sso_scim: 'SSO / SCIM',
+  org_dashboard: 'Org Dashboard',
+  soc_routing: 'SOC Routing',
+  insurance_readiness: 'Insurance Readiness',
 };
 
-/** All features in display order. */
-const ALL_FEATURES: Feature[] = [
+/** Features grouped for display in the comparison table. */
+const DISPLAY_FEATURES: Feature[] = [
+  // Shield
+  'shield_basic', 'shield_breathing',
+  // Email verification
+  'verify_send', 'verify_tls_check', 'verify_routing_check',
+  'verify_intercept_scan', 'verify_custom_badge', 'verify_remove_branding',
+  'verify_analytics', 'verify_bulk_api', 'verify_custom_domain',
+  // Timeline
+  'timeline_24h', 'timeline_full',
+  // Evidence
+  'evidence_preview', 'evidence_full', 'evidence_export', 'evidence_api_export',
+  // Crypto
+  'crypto_basic', 'crypto_monitor', 'crypto_analytics',
   // Monitoring
-  'dashboard',
-  'trust_score',
-  'overlay_shield',
-  'clipboard_monitor',
-  'zoom_monitor',
-  'teams_monitor',
-  'email_monitor',
-  'slack_monitor',
-  'gdrive_monitor',
-  'browser_monitor',
-  'screen_monitor',
-  // Security
-  'crypto_guard',
-  'phishing_detection',
-  'dlp_scanning',
-  'device_trust',
-  'network_monitor',
-  'usb_monitor',
-  'evidence_vault',
-  'trust_certificates',
-  // Reporting
-  'custom_reports',
-  'compliance_dashboard',
-  'scheduled_reports',
-  'audit_trail',
-  'advanced_analytics',
-  // Integration
-  'api_access',
-  'webhook_notifications',
-  'sso_integration',
-  'ldap_sync',
-  'siem_export',
-  // Management
-  'policy_engine',
-  'enterprise_alerting',
-  'multi_tenant',
-  'role_based_access',
-  'remote_wipe',
-  'custom_branding',
+  'zoom_monitor', 'teams_monitor', 'email_monitor', 'file_monitor', 'api_monitor',
+  // Certificates
+  'cert_basic', 'cert_pro', 'email_signature',
+  // Policy & alerts
+  'alerts_basic', 'alerts_full', 'policy_engine', 'auto_freeze',
+  'escalation_rules', 'policy_templates',
+  // Compliance & enterprise
+  'siem_export', 'audit_log', 'compliance_dashboard', 'sso_scim',
+  'org_dashboard', 'soc_routing', 'insurance_readiness',
 ];
 
 function CheckIcon() {
@@ -255,6 +125,13 @@ export function UpgradeModal({ isOpen, onClose, requiredFeature }: UpgradeModalP
   const businessFeatures = new Set(EDITION_FEATURES.business);
   const enterpriseFeatures = new Set(EDITION_FEATURES.enterprise);
 
+  const requiredEdition = requiredFeature
+    ? getRequiredEdition(requiredFeature as Feature)
+    : undefined;
+  const requiredLabel = requiredEdition
+    ? EDITION_LABELS[requiredEdition]
+    : undefined;
+
   return (
     <div
       ref={overlayRef}
@@ -268,7 +145,10 @@ export function UpgradeModal({ isOpen, onClose, requiredFeature }: UpgradeModalP
             <h2 className="text-lg font-semibold text-slate-100">Upgrade QShield</h2>
             {requiredFeature && (
               <p className="text-xs text-slate-400 mt-0.5">
-                Unlock <span className="text-sky-400">{FEATURE_LABELS[requiredFeature as Feature] ?? requiredFeature}</span> and more
+                <span className="text-sky-400">{FEATURE_LABELS[requiredFeature as Feature] ?? requiredFeature}</span>
+                {requiredLabel && (
+                  <> requires <span className="font-medium text-sky-400">{requiredLabel}</span> plan</>
+                )}
               </p>
             )}
           </div>
@@ -295,7 +175,7 @@ export function UpgradeModal({ isOpen, onClose, requiredFeature }: UpgradeModalP
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {ALL_FEATURES.map((feature) => (
+              {DISPLAY_FEATURES.map((feature) => (
                 <tr
                   key={feature}
                   className={feature === requiredFeature ? 'bg-sky-500/5' : ''}
