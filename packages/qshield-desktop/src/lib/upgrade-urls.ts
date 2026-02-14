@@ -1,4 +1,5 @@
 export const UPGRADE_URLS = {
+  free_to_personal: 'https://qshield.io/upgrade?from=free&to=personal&ref=desktop',
   personal_to_business: 'https://qshield.io/upgrade?from=personal&to=business&ref=desktop',
   business_to_enterprise: 'https://qshield.io/upgrade?from=business&to=enterprise&ref=desktop',
   contact_sales: 'mailto:sales@qshield.io?subject=QShield%20Enterprise%20Inquiry',

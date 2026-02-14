@@ -4,8 +4,8 @@ import { verifyLicenseSignature, isLicenseExpired } from './license-validator';
 /**
  * Runtime feature gate backed by a QShield license.
  *
- * When no license is set the gate behaves as the "personal" edition:
- * all gated features are disabled.
+ * When no license is set the gate behaves as the "free" edition:
+ * only baseline features are available.
  */
 export class FeatureGate {
   private license: QShieldLicense | null = null;
@@ -19,7 +19,7 @@ export class FeatureGate {
     this.license = license;
   }
 
-  /** Remove the active license and revert to personal edition. */
+  /** Remove the active license and revert to free edition. */
   clearLicense(): void {
     this.license = null;
   }
@@ -35,9 +35,9 @@ export class FeatureGate {
     return this.license.features.includes(feature);
   }
 
-  /** Return the current edition, or "personal" when unlicensed. */
+  /** Return the current edition, or "free" when unlicensed. */
   edition(): QShieldEdition {
-    if (!this.license) return 'personal';
+    if (!this.license) return 'free';
     return this.license.edition;
   }
 

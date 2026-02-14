@@ -7,6 +7,7 @@ import {
   featureGate,
   verifyLicenseSignature,
   isLicenseExpired,
+  EDITION_FEATURES,
   type Feature,
   type QShieldEdition,
   type QShieldLicense,
@@ -70,23 +71,20 @@ export class LicenseManager {
    * Load a mock license for a given edition (dev/testing only).
    * Bypasses signature verification and injects directly into the feature gate.
    */
-  loadMockLicense(edition: 'personal' | 'business' | 'enterprise'): void {
+  loadMockLicense(edition: QShieldEdition): void {
     const { randomUUID } = require('node:crypto') as typeof import('node:crypto');
-    const featureMap: Record<string, Feature[]> = {
-      personal: ['overlay_shield'],
-      business: ['overlay_shield', 'evidence_vault', 'zoom_monitor', 'teams_monitor', 'email_monitor', 'policy_engine', 'trust_certificates'],
-      enterprise: ['overlay_shield', 'evidence_vault', 'zoom_monitor', 'teams_monitor', 'email_monitor', 'policy_engine', 'siem_export', 'enterprise_alerting', 'trust_certificates', 'advanced_analytics'],
-    };
-    const limitsMap: Record<string, QShieldLicense['limits']> = {
-      personal: { evidence_retention_days: 30 },
-      business: { max_devices: 10, evidence_retention_days: 365 },
-      enterprise: { evidence_retention_days: -1 },
+    const features = EDITION_FEATURES[edition];
+    const limitsMap: Record<QShieldEdition, QShieldLicense['limits']> = {
+      free: { max_devices: 1, evidence_retention_days: 7, max_certificates_per_month: 1 },
+      personal: { max_devices: 2, evidence_retention_days: 30, max_certificates_per_month: 3 },
+      business: { max_devices: 10, evidence_retention_days: 365, max_certificates_per_month: 50 },
+      enterprise: { max_devices: -1, evidence_retention_days: -1, max_certificates_per_month: -1 },
     };
     const license: QShieldLicense = {
       license_id: randomUUID(),
       edition,
       expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      features: featureMap[edition],
+      features,
       limits: limitsMap[edition],
       signature: `mock-dev-${edition}`,
     };
@@ -95,7 +93,7 @@ export class LicenseManager {
     log.info(`[LicenseManager] Mock ${edition} license loaded`);
   }
 
-  /** Get the current edition (falls back to "personal"). */
+  /** Get the current edition (falls back to "free"). */
   getEdition(): QShieldEdition {
     return featureGate.edition();
   }

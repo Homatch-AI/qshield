@@ -4,38 +4,46 @@ import { openUpgradeUrl } from '@/lib/upgrade-urls';
 import { DevEditionSwitcher } from './DevEditionSwitcher';
 
 const EDITION_BADGES: Record<string, { bg: string; text: string }> = {
+  free: { bg: 'bg-zinc-600/20', text: 'text-zinc-400' },
   personal: { bg: 'bg-slate-600/20', text: 'text-slate-400' },
   business: { bg: 'bg-sky-500/20', text: 'text-sky-400' },
   enterprise: { bg: 'bg-purple-500/20', text: 'text-purple-400' },
 };
 
 const EDITION_LIMITS: Record<string, { retention: string; certs: string; devices: string }> = {
+  free: { retention: '7 days', certs: '1 / month', devices: '1 of 1' },
   personal: { retention: '30 days', certs: '3 / month', devices: '1 of 2' },
   business: { retention: '365 days', certs: '50 / month', devices: '5 of 10' },
   enterprise: { retention: 'Unlimited', certs: 'Unlimited', devices: 'Unlimited' },
 };
 
 const EDITION_METER: Record<string, { retention: number; certs: number; devices: number }> = {
+  free: { retention: 70, certs: 50, devices: 100 },
   personal: { retention: 40, certs: 66, devices: 50 },
   business: { retention: 20, certs: 10, devices: 50 },
   enterprise: { retention: 100, certs: 100, devices: 100 },
 };
 
 const PLAN_FEATURES: Record<string, { name: string; price: string; features: string[] }> = {
+  free: {
+    name: 'Free',
+    price: '$0/mo',
+    features: ['Dashboard', 'Trust Score', 'Shield Overlay', 'Clipboard Monitor', '7-day retention'],
+  },
   personal: {
     name: 'Personal',
     price: '$9/mo',
-    features: ['Shield Overlay', 'Basic Trust Scoring', 'Dashboard', '30-day retention', '3 certificates/month'],
+    features: ['Communication Monitors', 'Crypto Guard', 'Phishing Detection', 'Evidence Vault', '30-day retention'],
   },
   business: {
     name: 'Business',
     price: '$29/seat/mo',
-    features: ['Evidence Vault', 'Trust Certificates', 'All Monitors', 'Policy Engine', '365-day retention'],
+    features: ['All Monitors', 'Trust Certificates', 'Policy Engine', 'DLP Scanning', 'API Access', '365-day retention'],
   },
   enterprise: {
     name: 'Enterprise',
     price: 'Custom',
-    features: ['SIEM Export', 'Enterprise Alerting', 'Advanced Analytics', 'Unlimited retention', 'Unlimited everything'],
+    features: ['SIEM Export', 'Enterprise Alerting', 'Advanced Analytics', 'SSO & LDAP', 'Unlimited everything'],
   },
 };
 
@@ -67,21 +75,22 @@ function PlanCard({
 }) {
   const info = PLAN_FEATURES[plan];
   const isCurrent = plan === currentEdition;
-  const badge = EDITION_BADGES[plan] ?? EDITION_BADGES.personal;
+  const badge = EDITION_BADGES[plan] ?? EDITION_BADGES.free;
+
+  const editionOrder = ['free', 'personal', 'business', 'enterprise'];
+  const currentIdx = editionOrder.indexOf(currentEdition);
+  const planIdx = editionOrder.indexOf(plan);
+  const showUpgrade = planIdx > currentIdx;
 
   const handleUpgrade = () => {
     if (plan === 'enterprise') {
       openUpgradeUrl('contact_sales');
-    } else if (currentEdition === 'personal' && plan === 'business') {
+    } else if (plan === 'business') {
       openUpgradeUrl('personal_to_business');
-    } else {
-      openUpgradeUrl('business_to_enterprise');
+    } else if (plan === 'personal') {
+      openUpgradeUrl('free_to_personal');
     }
   };
-
-  const showUpgrade =
-    (currentEdition === 'personal' && (plan === 'business' || plan === 'enterprise')) ||
-    (currentEdition === 'business' && plan === 'enterprise');
 
   return (
     <div
@@ -143,9 +152,9 @@ export default function AccountPage() {
   if (!user) return null;
 
   const currentEdition = user.edition ?? edition;
-  const badge = EDITION_BADGES[currentEdition] ?? EDITION_BADGES.personal;
-  const limits = EDITION_LIMITS[currentEdition] ?? EDITION_LIMITS.personal;
-  const meters = EDITION_METER[currentEdition] ?? EDITION_METER.personal;
+  const badge = EDITION_BADGES[currentEdition] ?? EDITION_BADGES.free;
+  const limits = EDITION_LIMITS[currentEdition] ?? EDITION_LIMITS.free;
+  const meters = EDITION_METER[currentEdition] ?? EDITION_METER.free;
   const initial = (user.name || user.email)[0].toUpperCase();
   const createdAt = (user as { createdAt?: string }).createdAt;
   const memberSince = createdAt
@@ -203,7 +212,8 @@ export default function AccountPage() {
       {/* Plan Comparison & Upgrade */}
       <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6">
         <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Upgrade Your Plan</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <PlanCard plan="free" currentEdition={currentEdition} />
           <PlanCard plan="personal" currentEdition={currentEdition} />
           <PlanCard plan="business" currentEdition={currentEdition} />
           <PlanCard plan="enterprise" currentEdition={currentEdition} />

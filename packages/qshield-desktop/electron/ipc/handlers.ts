@@ -575,11 +575,11 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     return ok(restored);
   });
 
-  const validEditions = ['personal', 'business', 'enterprise'];
+  const validEditions = ['free', 'personal', 'business', 'enterprise'];
 
   wrapHandler(IPC_CHANNELS.AUTH_SWITCH_EDITION, async (_event, edition) => {
     if (typeof edition !== 'string' || !validEditions.includes(edition)) {
-      return fail('VALIDATION_ERROR', 'Edition must be "personal", "business", or "enterprise"');
+      return fail('VALIDATION_ERROR', 'Edition must be "free", "personal", "business", or "enterprise"');
     }
     const session = await services.authService.switchEdition(edition);
     services.licenseManager.loadMockLicense(edition);
@@ -588,7 +588,7 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
 
   wrapHandler(IPC_CHANNELS.LICENSE_LOAD_MOCK, async (_event, edition) => {
     if (typeof edition !== 'string' || !validEditions.includes(edition)) {
-      return fail('VALIDATION_ERROR', 'Edition must be "personal", "business", or "enterprise"');
+      return fail('VALIDATION_ERROR', 'Edition must be "free", "personal", "business", or "enterprise"');
     }
     services.licenseManager.loadMockLicense(edition);
     return ok(null);

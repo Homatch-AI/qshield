@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import useAuthStore from '@/stores/auth-store';
 
-const EDITIONS = ['personal', 'business', 'enterprise'] as const;
+const EDITIONS = ['free', 'personal', 'business', 'enterprise'] as const;
 
 export function DevEditionSwitcher() {
   if (!import.meta.env.DEV) return null;

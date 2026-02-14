@@ -5,24 +5,28 @@ import { UpgradeModal } from '@/components/shared/UpgradeModal';
 import { openUpgradeUrl } from '@/lib/upgrade-urls';
 
 const EDITION_BADGES: Record<string, { bg: string; text: string }> = {
+  free: { bg: 'bg-zinc-600/20', text: 'text-zinc-400' },
   personal: { bg: 'bg-slate-600/20', text: 'text-slate-400' },
   business: { bg: 'bg-sky-500/20', text: 'text-sky-400' },
   enterprise: { bg: 'bg-purple-500/20', text: 'text-purple-400' },
 };
 
 const EDITION_FEATURES: Record<string, string[]> = {
-  personal: ['Shield Overlay', 'Basic Trust Scoring', 'Dashboard'],
-  business: ['Evidence Vault', 'Trust Certificates', 'All Monitors', 'Policy Engine'],
+  free: ['Dashboard', 'Trust Score', 'Shield Overlay', 'Clipboard Monitor'],
+  personal: ['Communication Monitors', 'Crypto Guard', 'Phishing Detection', 'Evidence Vault'],
+  business: ['All Monitors', 'Trust Certificates', 'Policy Engine', 'DLP Scanning', 'API Access'],
   enterprise: ['SIEM Export', 'Enterprise Alerting', 'Advanced Analytics', 'Unlimited Everything'],
 };
 
 const EDITION_LIMITS: Record<string, { retention: string; certs: string; devices: string }> = {
+  free: { retention: '7 days', certs: '1 / month', devices: '1 of 1' },
   personal: { retention: '30 days', certs: '3 / month', devices: '1 of 2' },
   business: { retention: '365 days', certs: '50 / month', devices: '5 of 10' },
   enterprise: { retention: 'Unlimited', certs: 'Unlimited', devices: 'Unlimited' },
 };
 
 const EDITION_METER: Record<string, { retention: number; certs: number; devices: number }> = {
+  free: { retention: 70, certs: 50, devices: 100 },
   personal: { retention: 40, certs: 66, devices: 50 },
   business: { retention: 20, certs: 10, devices: 50 },
   enterprise: { retention: 100, certs: 100, devices: 100 },
@@ -53,10 +57,10 @@ export function SubscriptionSection() {
   const edition = useLicenseStore((s) => s.edition);
 
   const currentEdition = user?.edition ?? edition;
-  const badge = EDITION_BADGES[currentEdition] ?? EDITION_BADGES.personal;
-  const features = EDITION_FEATURES[currentEdition] ?? EDITION_FEATURES.personal;
-  const limits = EDITION_LIMITS[currentEdition] ?? EDITION_LIMITS.personal;
-  const meters = EDITION_METER[currentEdition] ?? EDITION_METER.personal;
+  const badge = EDITION_BADGES[currentEdition] ?? EDITION_BADGES.free;
+  const features = EDITION_FEATURES[currentEdition] ?? EDITION_FEATURES.free;
+  const limits = EDITION_LIMITS[currentEdition] ?? EDITION_LIMITS.free;
+  const meters = EDITION_METER[currentEdition] ?? EDITION_METER.free;
   const isEnterprise = currentEdition === 'enterprise';
 
   return (

@@ -1,0 +1,26 @@
+{
+  "license_id": "lic-personal-00000000-0000-0000-0000-000000000001",
+  "edition": "personal",
+  "expires_at": "2099-12-31T23:59:59.000Z",
+  "features": [
+    "dashboard",
+    "trust_score",
+    "overlay_shield",
+    "clipboard_monitor",
+    "zoom_monitor",
+    "teams_monitor",
+    "email_monitor",
+    "crypto_guard",
+    "phishing_detection",
+    "evidence_vault"
+  ],
+  "limits": {
+    "max_devices": 2,
+    "evidence_retention_days": 30,
+    "max_certificates_per_month": 3,
+    "max_users": 1,
+    "max_monitors": 5,
+    "max_policies": 0
+  },
+  "signature": "mock-personal"
+}

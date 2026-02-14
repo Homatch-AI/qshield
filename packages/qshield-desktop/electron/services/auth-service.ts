@@ -76,7 +76,7 @@ export class AuthService {
         id: randomUUID(),
         email,
         name: email.split('@')[0],
-        edition: 'personal',
+        edition: 'free',
         createdAt: new Date(now).toISOString(),
       },
       accessToken: `mock_access_${randomUUID()}`,
@@ -124,7 +124,7 @@ export class AuthService {
         id: randomUUID(),
         email,
         name: name.trim(),
-        edition: 'personal',
+        edition: 'free',
         createdAt: new Date(now).toISOString(),
       },
       accessToken: `mock_access_${randomUUID()}`,
@@ -211,7 +211,7 @@ export class AuthService {
    * Switch the current user's edition (dev/testing only).
    * Updates the persisted session with the new edition.
    */
-  async switchEdition(edition: 'personal' | 'business' | 'enterprise'): Promise<AuthSession> {
+  async switchEdition(edition: 'free' | 'personal' | 'business' | 'enterprise'): Promise<AuthSession> {
     const session = this.config.get('auth.session') as AuthSession | null;
     if (!session) {
       throw new Error('Not authenticated');
