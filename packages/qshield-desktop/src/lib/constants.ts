@@ -65,14 +65,16 @@ export interface NavItem {
   label: string;
   icon: string;
   requiredFeature?: string;
+  /** If set, show the item as locked (paywalled) when user has this feature but not requiredFeature. Without this, items are hidden entirely when locked. */
+  visibleFrom?: string;
 }
 
 export const NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Dashboard', icon: 'gauge' },
   { path: '/timeline', label: 'Timeline', icon: 'clock', requiredFeature: 'timeline_24h' },
-  { path: '/vault', label: 'Evidence Vault', icon: 'vault', requiredFeature: 'evidence_full' },
+  { path: '/vault', label: 'Evidence Vault', icon: 'vault', requiredFeature: 'evidence_full', visibleFrom: 'evidence_preview' },
   { path: '/certificates', label: 'Certificates', icon: 'certificate', requiredFeature: 'cert_basic' },
-  { path: '/alerts', label: 'Alerts', icon: 'bell', requiredFeature: 'alerts_full' },
+  { path: '/alerts', label: 'Alerts', icon: 'bell', requiredFeature: 'alerts_full', visibleFrom: 'alerts_basic' },
   { path: '/crypto', label: 'Crypto Security', icon: 'shield-check', requiredFeature: 'crypto_basic' },
   { path: '/settings', label: 'Settings', icon: 'settings' },
 ];

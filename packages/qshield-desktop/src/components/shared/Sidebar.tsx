@@ -7,15 +7,16 @@ import useLicenseStore, { getRequiredEdition, EDITION_LABELS } from '@/stores/li
 import type { Feature, QShieldEdition } from '@/stores/license-store';
 import useAuthStore from '@/stores/auth-store';
 import { UpgradeModal } from './UpgradeModal';
+import { AuthModal } from '@/components/auth/AuthModal';
 
-const SIDEBAR_EDITION_COLORS: Record<string, string> = {
-  free: 'text-slate-500',
-  personal: 'text-sky-400',
-  business: 'text-purple-400',
-  enterprise: 'text-amber-400',
+const EDITION_BADGE_STYLES: Record<QShieldEdition, string> = {
+  free: 'bg-slate-600/20 text-slate-400',
+  personal: 'bg-sky-500/20 text-sky-400',
+  business: 'bg-purple-500/20 text-purple-400',
+  enterprise: 'bg-amber-500/20 text-amber-400',
 };
 
-const BADGE_COLORS: Record<QShieldEdition, string> = {
+const NAV_BADGE_COLORS: Record<QShieldEdition, string> = {
   free: 'bg-slate-500/20 text-slate-400',
   personal: 'bg-sky-500/20 text-sky-400',
   business: 'bg-purple-500/20 text-purple-400',
@@ -59,6 +60,13 @@ function NavIcon({ icon, className = '' }: { icon: string; className?: string })
         d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"
       />
     ),
+    'shield-check': (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
+      />
+    ),
     settings: (
       <path
         strokeLinecap="round"
@@ -85,11 +93,14 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState<'signin' | 'signup'>('signin');
   const score = useTrustStore((s) => s.score);
   const level = useTrustStore((s) => s.level);
   const activeAlertCount = useAlertStore((s) => s.alerts.filter((a) => !a.dismissed).length);
   const hasFeature = useLicenseStore((s) => s.hasFeature);
   const user = useAuthStore((s) => s.user);
+  const authenticated = useAuthStore((s) => s.authenticated);
   const navigate = useNavigate();
 
   return (
@@ -119,30 +130,10 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-1">
           {NAV_ITEMS.map((item) => {
-            const locked = item.requiredFeature != null && !hasFeature(item.requiredFeature as Parameters<typeof hasFeature>[0]);
-            return (
-              <li key={item.path}>
-                {locked ? (
-                  (() => {
-                    const reqEdition = getRequiredEdition(item.requiredFeature as Feature);
-                    const badgeLabel = EDITION_LABELS[reqEdition]?.toUpperCase() ?? 'PRO';
-                    const badgeColor = BADGE_COLORS[reqEdition] ?? 'bg-sky-500/20 text-sky-400';
-                    return (
-                      <div
-                        onClick={() => { setUpgradeFeature(item.requiredFeature); setUpgradeOpen(true); }}
-                        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-slate-400 opacity-50 cursor-not-allowed hover:bg-slate-800/50"
-                      >
-                        <NavIcon icon={item.icon} className="shrink-0" />
-                        {!collapsed && (
-                          <>
-                            <span className="truncate">{item.label}</span>
-                            <span className={`ml-auto text-[9px] font-bold uppercase ${badgeColor} px-1.5 rounded-full`}>{badgeLabel}</span>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()
-                ) : (
+            // No requiredFeature → always show as active NavLink
+            if (!item.requiredFeature) {
+              return (
+                <li key={item.path}>
                   <NavLink
                     to={item.path}
                     end={item.path === '/'}
@@ -155,18 +146,66 @@ export function Sidebar() {
                     }
                   >
                     <NavIcon icon={item.icon} className="shrink-0" />
-                    {!collapsed && (
-                      <span className="truncate">{item.label}</span>
-                    )}
+                    {!collapsed && <span className="truncate">{item.label}</span>}
+                  </NavLink>
+                </li>
+              );
+            }
+
+            const hasRequired = hasFeature(item.requiredFeature as Parameters<typeof hasFeature>[0]);
+
+            // User has the required feature → show as active NavLink
+            if (hasRequired) {
+              return (
+                <li key={item.path}>
+                  <NavLink
+                    to={item.path}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                        isActive
+                          ? 'bg-sky-500/10 text-sky-500'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                      }`
+                    }
+                  >
+                    <NavIcon icon={item.icon} className="shrink-0" />
+                    {!collapsed && <span className="truncate">{item.label}</span>}
                     {!collapsed && item.icon === 'bell' && activeAlertCount > 0 && (
                       <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500/20 px-1.5 text-[10px] font-bold text-red-400">
                         {activeAlertCount}
                       </span>
                     )}
                   </NavLink>
-                )}
-              </li>
-            );
+                </li>
+              );
+            }
+
+            // Has visibleFrom and user has it → show as locked (paywalled)
+            const hasVisible = item.visibleFrom && hasFeature(item.visibleFrom as Parameters<typeof hasFeature>[0]);
+            if (hasVisible) {
+              const reqEdition = getRequiredEdition(item.requiredFeature as Feature);
+              const badgeLabel = EDITION_LABELS[reqEdition]?.toUpperCase() ?? 'PRO';
+              const badgeColor = NAV_BADGE_COLORS[reqEdition] ?? 'bg-sky-500/20 text-sky-400';
+              return (
+                <li key={item.path}>
+                  <div
+                    onClick={() => { setUpgradeFeature(item.requiredFeature); setUpgradeOpen(true); }}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-slate-400 opacity-50 cursor-pointer hover:bg-slate-800/50"
+                  >
+                    <NavIcon icon={item.icon} className="shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="truncate">{item.label}</span>
+                        <span className={`ml-auto text-[9px] font-bold uppercase ${badgeColor} px-1.5 rounded-full`}>{badgeLabel}</span>
+                      </>
+                    )}
+                  </div>
+                </li>
+              );
+            }
+
+            // No visibleFrom or user doesn't have it → hide entirely
+            return null;
           })}
         </ul>
       </nav>
@@ -215,8 +254,8 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* User Account */}
-      {user && (
+      {/* User Account / Sign In */}
+      {authenticated && user ? (
         <div className="border-t border-slate-700 p-2">
           <div
             onClick={() => navigate('/account')}
@@ -228,12 +267,41 @@ export function Sidebar() {
             {!collapsed && (
               <div className="flex-1 min-w-0">
                 <span className="block text-sm text-slate-300 truncate leading-tight">{user.name}</span>
-                <span className={`block text-[10px] uppercase tracking-wider ${SIDEBAR_EDITION_COLORS[user.edition] ?? 'text-slate-500'}`}>
-                  {user.edition}
+                <span className={`inline-block text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full mt-0.5 ${EDITION_BADGE_STYLES[user.edition as QShieldEdition] ?? EDITION_BADGE_STYLES.free}`}>
+                  {(user.edition ?? 'free').toUpperCase()}
                 </span>
               </div>
             )}
           </div>
+        </div>
+      ) : (
+        <div className="border-t border-slate-700 p-2">
+          {collapsed ? (
+            <button
+              onClick={() => { setAuthModalTab('signin'); setAuthModalOpen(true); }}
+              className="flex w-full items-center justify-center rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+              aria-label="Sign In"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
+              </svg>
+            </button>
+          ) : (
+            <div className="space-y-1.5 px-1">
+              <button
+                onClick={() => { setAuthModalTab('signin'); setAuthModalOpen(true); }}
+                className="flex w-full items-center justify-center rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-slate-100 transition-colors"
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => { setAuthModalTab('signup'); setAuthModalOpen(true); }}
+                className="flex w-full items-center justify-center rounded-lg bg-sky-500/10 px-3 py-1.5 text-sm text-sky-400 hover:bg-sky-500/20 transition-colors"
+              >
+                Create Free Account
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -255,6 +323,7 @@ export function Sidebar() {
       </button>
 
       <UpgradeModal isOpen={upgradeOpen} onClose={() => setUpgradeOpen(false)} requiredFeature={upgradeFeature} />
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} defaultTab={authModalTab} />
     </aside>
   );
 }

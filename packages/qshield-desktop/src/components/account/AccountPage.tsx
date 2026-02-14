@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import useAuthStore from '@/stores/auth-store';
 import useLicenseStore from '@/stores/license-store';
 import { openUpgradeUrl } from '@/lib/upgrade-urls';
+import { AuthModal } from '@/components/auth/AuthModal';
 import { DevEditionSwitcher } from './DevEditionSwitcher';
 
 const EDITION_BADGES: Record<string, { bg: string; text: string }> = {
@@ -146,10 +148,48 @@ function PlanCard({
 
 export default function AccountPage() {
   const user = useAuthStore((s) => s.user);
+  const authenticated = useAuthStore((s) => s.authenticated);
   const logout = useAuthStore((s) => s.logout);
   const edition = useLicenseStore((s) => s.edition);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authTab, setAuthTab] = useState<'signin' | 'signup'>('signin');
 
-  if (!user) return null;
+  if (!authenticated || !user) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">
+        <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-8 max-w-md w-full text-center">
+          {/* Shield icon */}
+          <svg
+            className="mx-auto h-12 w-12 text-sky-500 mb-4"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5zm0 2.18l7 3.82v5c0 4.52-3.13 8.69-7 9.93C8.13 21.69 5 17.52 5 13V8l7-3.82z" />
+            <path d="M12 7a3 3 0 100 6 3 3 0 000-6zm0 2a1 1 0 110 2 1 1 0 010-2z" />
+          </svg>
+          <h2 className="text-xl font-semibold text-slate-100 mb-2">Sign in to manage your account</h2>
+          <p className="text-sm text-slate-400 mb-6">
+            Create a free account to unlock email verification, certificates, and more.
+          </p>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => { setAuthTab('signin'); setAuthOpen(true); }}
+              className="w-full rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-sky-600"
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => { setAuthTab('signup'); setAuthOpen(true); }}
+              className="w-full rounded-lg border border-slate-600 px-4 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:border-slate-500"
+            >
+              Create Free Account
+            </button>
+          </div>
+        </div>
+        <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} defaultTab={authTab} />
+      </div>
+    );
+  }
 
   const currentEdition = user.edition ?? edition;
   const badge = EDITION_BADGES[currentEdition] ?? EDITION_BADGES.free;
@@ -162,7 +202,7 @@ export default function AccountPage() {
     : 'Recently';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold text-slate-100">Account</h1>
 
       <DevEditionSwitcher />
