@@ -73,7 +73,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/vault', label: 'Evidence Vault', icon: 'vault', requiredFeature: 'evidence_vault' },
   { path: '/certificates', label: 'Certificates', icon: 'certificate', requiredFeature: 'trust_certificates' },
   { path: '/alerts', label: 'Alerts', icon: 'bell', requiredFeature: 'enterprise_alerting' },
-  { path: '/crypto', label: 'Crypto Security', icon: 'shield-check', requiredFeature: 'advanced_analytics' },
+  { path: '/crypto', label: 'Crypto Security', icon: 'shield-check', requiredFeature: 'crypto_guard' },
   { path: '/settings', label: 'Settings', icon: 'settings' },
 ];
 

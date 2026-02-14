@@ -9,8 +9,9 @@ interface FeatureGuardProps {
   fallback?: React.ReactNode;
 }
 
-/** Edition label for display. */
+/** Edition label for display — shows which plan unlocks the gated feature. */
 const EDITION_LABEL: Record<string, string> = {
+  free: 'Personal',
   personal: 'Business',
   business: 'Enterprise',
   enterprise: 'Enterprise',

@@ -8,6 +8,7 @@ import useAuthStore from '@/stores/auth-store';
 import { UpgradeModal } from './UpgradeModal';
 
 const SIDEBAR_EDITION_COLORS: Record<string, string> = {
+  free: 'text-zinc-500',
   personal: 'text-slate-500',
   business: 'text-sky-400',
   enterprise: 'text-purple-400',
