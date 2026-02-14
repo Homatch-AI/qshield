@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { verifyLicenseSignature, isLicenseExpired } from '../src/license-validator';
+import { EDITION_FEATURES, EDITION_LIMITS } from '../src/license-types';
 import type { QShieldLicense } from '../src/license-types';
 
 /** Helper: create a valid license with sensible defaults. */
@@ -8,7 +9,8 @@ function makeLicense(overrides?: Partial<QShieldLicense>): QShieldLicense {
     license_id: 'lic-001',
     edition: 'business',
     expires_at: new Date(Date.now() + 86_400_000).toISOString(),
-    features: ['overlay_shield'],
+    features: EDITION_FEATURES.business,
+    limits: EDITION_LIMITS.business,
     signature: 'sig-placeholder',
     ...overrides,
   };

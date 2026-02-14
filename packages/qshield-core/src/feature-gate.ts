@@ -1,59 +1,98 @@
-import type { Feature, QShieldEdition, QShieldLicense } from './license-types';
+import type { Feature, QShieldEdition, QShieldLicense, EditionLimits } from './license-types';
+import { EDITION_FEATURES, EDITION_LIMITS } from './license-types';
 import { verifyLicenseSignature, isLicenseExpired } from './license-validator';
+
+/**
+ * Features available to unregistered users (no license at all).
+ * Unregistered users see the static shield and trust score.
+ */
+const UNREGISTERED_FEATURES: Feature[] = ['shield_basic'];
 
 /**
  * Runtime feature gate backed by a QShield license.
  *
- * When no license is set the gate behaves as the "free" edition:
- * only baseline features are available.
+ * When no license is set the gate behaves as "unregistered":
+ * only shield_basic is available. When a free license is set,
+ * all free-tier features become available.
  */
 export class FeatureGate {
   private license: QShieldLicense | null = null;
 
   /**
    * Activate a license after signature verification.
-   * If the signature is invalid the license is not stored.
+   *
+   * @param license - The license to activate
+   * @returns True if the license was accepted, false if signature is invalid
    */
-  setLicense(license: QShieldLicense): void {
-    if (!verifyLicenseSignature(license)) return;
+  setLicense(license: QShieldLicense): boolean {
+    if (!verifyLicenseSignature(license)) return false;
     this.license = license;
+    return true;
   }
 
-  /** Remove the active license and revert to free edition. */
+  /** Remove the active license and revert to unregistered state. */
   clearLicense(): void {
     this.license = null;
   }
 
   /**
    * Check whether a specific feature is available.
-   * Returns false when there is no license, the license is expired,
-   * or the feature is not included in the license.
+   *
+   * - No license (unregistered): only UNREGISTERED_FEATURES are available
+   * - Expired license: falls back to unregistered features
+   * - Valid license: checks against the license's feature list
+   *
+   * @param feature - The feature to check
+   * @returns True if the feature is available
    */
   has(feature: Feature): boolean {
-    if (!this.license) return false;
-    if (isLicenseExpired(this.license)) return false;
+    if (!this.license || isLicenseExpired(this.license)) {
+      return UNREGISTERED_FEATURES.includes(feature);
+    }
     return this.license.features.includes(feature);
   }
 
-  /** Return the current edition, or "free" when unlicensed. */
+  /** Return the current edition, or 'free' when unlicensed or expired. */
   edition(): QShieldEdition {
-    if (!this.license) return 'free';
+    if (!this.license || isLicenseExpired(this.license)) return 'free';
     return this.license.edition;
   }
 
+  /** Return the current edition limits. Falls back to free limits. */
+  limits(): EditionLimits {
+    if (!this.license || isLicenseExpired(this.license)) return EDITION_LIMITS.free;
+    return this.license.limits;
+  }
+
   /**
-   * Read a numeric limit from the license.
-   * Returns undefined when the license is absent or the key is not set.
+   * Read a specific limit value.
+   *
+   * @param key - The limit key to read
+   * @returns The limit value, or the free-tier default if unlicensed
    */
-  limit(key: string): number | undefined {
-    if (!this.license?.limits) return undefined;
-    return (this.license.limits as Record<string, number | undefined>)[key];
+  limit(key: keyof EditionLimits): number {
+    return this.limits()[key];
+  }
+
+  /**
+   * Check if a limit is unlimited (-1 sentinel).
+   *
+   * @param key - The limit key to check
+   * @returns True if the limit value is -1
+   */
+  isUnlimited(key: keyof EditionLimits): boolean {
+    return this.limit(key) === -1;
   }
 
   /** True when a license is set and has not expired. */
   isActive(): boolean {
     if (!this.license) return false;
     return !isLicenseExpired(this.license);
+  }
+
+  /** Return the current license, or null if none is set. */
+  getLicense(): QShieldLicense | null {
+    return this.license;
   }
 }
 

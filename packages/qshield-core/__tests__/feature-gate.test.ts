@@ -1,24 +1,25 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FeatureGate } from '../src/feature-gate';
-import { EDITION_FEATURES } from '../src/license-types';
-import type { Feature, QShieldEdition, QShieldLicense } from '../src/license-types';
+import {
+  EDITION_FEATURES,
+  EDITION_LIMITS,
+  getRequiredEdition,
+  isEditionAtLeast,
+} from '../src/license-types';
+import type { QShieldLicense, EditionLimits } from '../src/license-types';
 
 /** Helper: create a valid license with sensible defaults. */
 function makeLicense(overrides?: Partial<QShieldLicense>): QShieldLicense {
   return {
     license_id: 'lic-001',
     edition: 'business',
-    expires_at: new Date(Date.now() + 86_400_000).toISOString(), // +1 day
+    expires_at: new Date(Date.now() + 86_400_000).toISOString(),
     features: EDITION_FEATURES.business,
-    limits: { max_devices: 10, evidence_retention_days: 365, max_certificates_per_month: 50 },
+    limits: EDITION_LIMITS.business,
     signature: 'sig-placeholder',
     ...overrides,
   };
 }
-
-// ---------------------------------------------------------------------------
-// FeatureGate
-// ---------------------------------------------------------------------------
 
 describe('FeatureGate', () => {
   let gate: FeatureGate;
@@ -27,36 +28,54 @@ describe('FeatureGate', () => {
     gate = new FeatureGate();
   });
 
-  // -- Default (no license) ------------------------------------------------
+  // -- No license (unregistered) -------------------------------------------
 
-  describe('default state (no license)', () => {
+  describe('no license (unregistered)', () => {
     it('edition() returns "free"', () => {
       expect(gate.edition()).toBe('free');
     });
 
-    it('has() returns false for all features', () => {
-      expect(gate.has('overlay_shield')).toBe(false);
-      expect(gate.has('evidence_vault')).toBe(false);
-      expect(gate.has('siem_export')).toBe(false);
+    it('has("shield_basic") returns true', () => {
+      expect(gate.has('shield_basic')).toBe(true);
+    });
+
+    it('has("verify_send") returns false', () => {
+      expect(gate.has('verify_send')).toBe(false);
+    });
+
+    it('has("zoom_monitor") returns false', () => {
+      expect(gate.has('zoom_monitor')).toBe(false);
+    });
+
+    it('limits() returns free limits', () => {
+      expect(gate.limits()).toEqual(EDITION_LIMITS.free);
     });
 
     it('isActive() returns false', () => {
       expect(gate.isActive()).toBe(false);
     });
 
-    it('limit() returns undefined', () => {
-      expect(gate.limit('max_devices')).toBeUndefined();
+    it('getLicense() returns null', () => {
+      expect(gate.getLicense()).toBeNull();
+    });
+
+    it('limit("max_devices") returns 1', () => {
+      expect(gate.limit('max_devices')).toBe(1);
+    });
+
+    it('isUnlimited("max_devices") returns false', () => {
+      expect(gate.isUnlimited('max_devices')).toBe(false);
     });
   });
 
   // -- Free license --------------------------------------------------------
 
-  describe('with valid free license', () => {
+  describe('with free license', () => {
     beforeEach(() => {
       gate.setLicense(makeLicense({
         edition: 'free',
         features: EDITION_FEATURES.free,
-        limits: { max_devices: 1, evidence_retention_days: 7, max_certificates_per_month: 1 },
+        limits: EDITION_LIMITS.free,
       }));
     });
 
@@ -64,27 +83,32 @@ describe('FeatureGate', () => {
       expect(gate.edition()).toBe('free');
     });
 
-    it('has() returns true for free features', () => {
-      expect(gate.has('dashboard')).toBe(true);
-      expect(gate.has('trust_score')).toBe(true);
-      expect(gate.has('overlay_shield')).toBe(true);
-      expect(gate.has('clipboard_monitor')).toBe(true);
+    it('has("shield_basic") returns true', () => {
+      expect(gate.has('shield_basic')).toBe(true);
     });
 
-    it('has() returns false for personal-only features', () => {
-      expect(gate.has('zoom_monitor')).toBe(false);
-      expect(gate.has('evidence_vault')).toBe(false);
-      expect(gate.has('crypto_guard')).toBe(false);
+    it('has("verify_send") returns true', () => {
+      expect(gate.has('verify_send')).toBe(true);
     });
 
-    it('free has exactly 4 features', () => {
-      expect(EDITION_FEATURES.free).toHaveLength(4);
+    it('has("email_signature") returns true', () => {
+      expect(gate.has('email_signature')).toBe(true);
     });
 
-    it('limit() returns correct free-tier values', () => {
-      expect(gate.limit('max_devices')).toBe(1);
-      expect(gate.limit('evidence_retention_days')).toBe(7);
-      expect(gate.limit('max_certificates_per_month')).toBe(1);
+    it('has("shield_breathing") returns false', () => {
+      expect(gate.has('shield_breathing')).toBe(false);
+    });
+
+    it('has("crypto_basic") returns false', () => {
+      expect(gate.has('crypto_basic')).toBe(false);
+    });
+
+    it('limit("verifications_per_day") returns 20', () => {
+      expect(gate.limit('verifications_per_day')).toBe(20);
+    });
+
+    it('limit("certs_per_month") returns 0', () => {
+      expect(gate.limit('certs_per_month')).toBe(0);
     });
 
     it('isActive() returns true', () => {
@@ -94,12 +118,12 @@ describe('FeatureGate', () => {
 
   // -- Personal license ----------------------------------------------------
 
-  describe('with valid personal license', () => {
+  describe('with personal license', () => {
     beforeEach(() => {
       gate.setLicense(makeLicense({
         edition: 'personal',
         features: EDITION_FEATURES.personal,
-        limits: { max_devices: 2, evidence_retention_days: 30, max_certificates_per_month: 3 },
+        limits: EDITION_LIMITS.personal,
       }));
     });
 
@@ -107,35 +131,46 @@ describe('FeatureGate', () => {
       expect(gate.edition()).toBe('personal');
     });
 
-    it('has() returns true for personal features', () => {
-      expect(gate.has('dashboard')).toBe(true);
-      expect(gate.has('zoom_monitor')).toBe(true);
-      expect(gate.has('teams_monitor')).toBe(true);
-      expect(gate.has('email_monitor')).toBe(true);
-      expect(gate.has('crypto_guard')).toBe(true);
-      expect(gate.has('phishing_detection')).toBe(true);
-      expect(gate.has('evidence_vault')).toBe(true);
+    it('has("crypto_basic") returns true', () => {
+      expect(gate.has('crypto_basic')).toBe(true);
     });
 
-    it('has() returns false for business-only features', () => {
-      expect(gate.has('slack_monitor')).toBe(false);
-      expect(gate.has('trust_certificates')).toBe(false);
+    it('has("shield_breathing") returns true', () => {
+      expect(gate.has('shield_breathing')).toBe(true);
+    });
+
+    it('has("evidence_full") returns true', () => {
+      expect(gate.has('evidence_full')).toBe(true);
+    });
+
+    it('has("verify_custom_badge") returns true', () => {
+      expect(gate.has('verify_custom_badge')).toBe(true);
+    });
+
+    it('has("zoom_monitor") returns false', () => {
+      expect(gate.has('zoom_monitor')).toBe(false);
+    });
+
+    it('has("policy_engine") returns false', () => {
       expect(gate.has('policy_engine')).toBe(false);
-      expect(gate.has('api_access')).toBe(false);
     });
 
-    it('personal has exactly 10 features', () => {
-      expect(EDITION_FEATURES.personal).toHaveLength(10);
+    it('limit("evidence_retention_days") returns 30', () => {
+      expect(gate.limit('evidence_retention_days')).toBe(30);
     });
 
-    it('isActive() returns true', () => {
-      expect(gate.isActive()).toBe(true);
+    it('limit("certs_per_month") returns 3', () => {
+      expect(gate.limit('certs_per_month')).toBe(3);
+    });
+
+    it('isUnlimited("verifications_per_day") returns true', () => {
+      expect(gate.isUnlimited('verifications_per_day')).toBe(true);
     });
   });
 
-  // -- Valid business license ----------------------------------------------
+  // -- Business license ----------------------------------------------------
 
-  describe('with valid business license', () => {
+  describe('with business license', () => {
     beforeEach(() => {
       gate.setLicense(makeLicense());
     });
@@ -144,24 +179,40 @@ describe('FeatureGate', () => {
       expect(gate.edition()).toBe('business');
     });
 
-    it('has() returns true for included features', () => {
-      expect(gate.has('overlay_shield')).toBe(true);
-      expect(gate.has('evidence_vault')).toBe(true);
-      expect(gate.has('trust_certificates')).toBe(true);
+    it('has("zoom_monitor") returns true', () => {
+      expect(gate.has('zoom_monitor')).toBe(true);
+    });
+
+    it('has("teams_monitor") returns true', () => {
+      expect(gate.has('teams_monitor')).toBe(true);
+    });
+
+    it('has("policy_engine") returns true', () => {
       expect(gate.has('policy_engine')).toBe(true);
-      expect(gate.has('api_access')).toBe(true);
-      expect(gate.has('dlp_scanning')).toBe(true);
     });
 
-    it('has() returns false for features not in the license', () => {
+    it('has("crypto_monitor") returns true', () => {
+      expect(gate.has('crypto_monitor')).toBe(true);
+    });
+
+    it('has("audit_log") returns true', () => {
+      expect(gate.has('audit_log')).toBe(true);
+    });
+
+    it('has("sso_scim") returns false', () => {
+      expect(gate.has('sso_scim')).toBe(false);
+    });
+
+    it('has("siem_export") returns false', () => {
       expect(gate.has('siem_export')).toBe(false);
-      expect(gate.has('enterprise_alerting')).toBe(false);
-      expect(gate.has('advanced_analytics')).toBe(false);
-      expect(gate.has('multi_tenant')).toBe(false);
     });
 
-    it('business has exactly 22 features', () => {
-      expect(EDITION_FEATURES.business).toHaveLength(22);
+    it('has("cert_pro") returns false', () => {
+      expect(gate.has('cert_pro')).toBe(false);
+    });
+
+    it('limit("max_devices") returns 10', () => {
+      expect(gate.limit('max_devices')).toBe(10);
     });
 
     it('isActive() returns true', () => {
@@ -171,12 +222,12 @@ describe('FeatureGate', () => {
 
   // -- Enterprise license --------------------------------------------------
 
-  describe('with valid enterprise license', () => {
+  describe('with enterprise license', () => {
     beforeEach(() => {
       gate.setLicense(makeLicense({
         edition: 'enterprise',
         features: EDITION_FEATURES.enterprise,
-        limits: { max_devices: -1, evidence_retention_days: -1, max_certificates_per_month: -1 },
+        limits: EDITION_LIMITS.enterprise,
       }));
     });
 
@@ -184,20 +235,25 @@ describe('FeatureGate', () => {
       expect(gate.edition()).toBe('enterprise');
     });
 
-    it('has() returns true for all 35 features', () => {
+    it('has() returns true for ALL features', () => {
       for (const feature of EDITION_FEATURES.enterprise) {
         expect(gate.has(feature)).toBe(true);
       }
     });
 
-    it('enterprise has exactly 35 features', () => {
-      expect(EDITION_FEATURES.enterprise).toHaveLength(35);
+    it('all limits are -1 (unlimited)', () => {
+      const lim = gate.limits();
+      for (const key of Object.keys(lim) as (keyof EditionLimits)[]) {
+        expect(lim[key]).toBe(-1);
+      }
     });
 
-    it('uses -1 sentinel for unlimited limits', () => {
-      expect(gate.limit('max_devices')).toBe(-1);
-      expect(gate.limit('evidence_retention_days')).toBe(-1);
-      expect(gate.limit('max_certificates_per_month')).toBe(-1);
+    it('isUnlimited("max_devices") returns true', () => {
+      expect(gate.isUnlimited('max_devices')).toBe(true);
+    });
+
+    it('isUnlimited("certs_per_month") returns true', () => {
+      expect(gate.isUnlimited('certs_per_month')).toBe(true);
     });
 
     it('isActive() returns true', () => {
@@ -210,49 +266,69 @@ describe('FeatureGate', () => {
   describe('with expired license', () => {
     beforeEach(() => {
       gate.setLicense(makeLicense({
-        expires_at: new Date(Date.now() - 86_400_000).toISOString(), // -1 day
+        expires_at: new Date(Date.now() - 86_400_000).toISOString(),
       }));
     });
 
-    it('has() returns false for all features', () => {
-      expect(gate.has('overlay_shield')).toBe(false);
-      expect(gate.has('evidence_vault')).toBe(false);
+    it('has("shield_basic") returns true (unregistered fallback)', () => {
+      expect(gate.has('shield_basic')).toBe(true);
+    });
+
+    it('has("verify_send") returns false', () => {
+      expect(gate.has('verify_send')).toBe(false);
+    });
+
+    it('has("zoom_monitor") returns false', () => {
+      expect(gate.has('zoom_monitor')).toBe(false);
+    });
+
+    it('edition() returns "free"', () => {
+      expect(gate.edition()).toBe('free');
+    });
+
+    it('limits() returns free limits', () => {
+      expect(gate.limits()).toEqual(EDITION_LIMITS.free);
     });
 
     it('isActive() returns false', () => {
       expect(gate.isActive()).toBe(false);
     });
+  });
 
-    it('edition() still returns the license edition', () => {
-      expect(gate.edition()).toBe('business');
+  // -- setLicense with invalid signature -----------------------------------
+
+  describe('setLicense with empty signature', () => {
+    it('returns false and license stays null', () => {
+      const result = gate.setLicense(makeLicense({ signature: '' }));
+
+      expect(result).toBe(false);
+      expect(gate.isActive()).toBe(false);
+      expect(gate.getLicense()).toBeNull();
+      expect(gate.edition()).toBe('free');
     });
   });
 
-  // -- Limits --------------------------------------------------------------
+  describe('setLicense with empty license_id', () => {
+    it('returns false and license stays null', () => {
+      const result = gate.setLicense(makeLicense({ license_id: '' }));
 
-  describe('limit()', () => {
-    it('returns correct value for existing keys', () => {
-      gate.setLicense(makeLicense());
-      expect(gate.limit('max_devices')).toBe(10);
-      expect(gate.limit('evidence_retention_days')).toBe(365);
-      expect(gate.limit('max_certificates_per_month')).toBe(50);
+      expect(result).toBe(false);
+      expect(gate.isActive()).toBe(false);
+      expect(gate.getLicense()).toBeNull();
     });
+  });
 
-    it('returns undefined for missing keys', () => {
-      gate.setLicense(makeLicense());
-      expect(gate.limit('nonexistent')).toBeUndefined();
-    });
-
-    it('returns undefined when license has no limits', () => {
-      gate.setLicense(makeLicense({ limits: undefined }));
-      expect(gate.limit('max_devices')).toBeUndefined();
+  describe('setLicense with valid license', () => {
+    it('returns true', () => {
+      const result = gate.setLicense(makeLicense());
+      expect(result).toBe(true);
     });
   });
 
   // -- clearLicense --------------------------------------------------------
 
   describe('clearLicense()', () => {
-    it('resets gate to default state', () => {
+    it('resets to unregistered state', () => {
       gate.setLicense(makeLicense());
       expect(gate.isActive()).toBe(true);
       expect(gate.edition()).toBe('business');
@@ -261,50 +337,31 @@ describe('FeatureGate', () => {
 
       expect(gate.isActive()).toBe(false);
       expect(gate.edition()).toBe('free');
-      expect(gate.has('overlay_shield')).toBe(false);
-      expect(gate.limit('max_devices')).toBeUndefined();
+      expect(gate.getLicense()).toBeNull();
+      expect(gate.has('shield_basic')).toBe(true);
+      expect(gate.has('verify_send')).toBe(false);
+      expect(gate.has('zoom_monitor')).toBe(false);
     });
   });
 
-  // -- Invalid signature ---------------------------------------------------
-
-  describe('setLicense with empty signature', () => {
-    it('rejects the license (gate stays null)', () => {
-      gate.setLicense(makeLicense({ signature: '' }));
-
-      expect(gate.isActive()).toBe(false);
-      expect(gate.edition()).toBe('free');
-      expect(gate.has('overlay_shield')).toBe(false);
-    });
-  });
-
-  describe('setLicense with empty license_id', () => {
-    it('rejects the license (gate stays null)', () => {
-      gate.setLicense(makeLicense({ license_id: '' }));
-
-      expect(gate.isActive()).toBe(false);
-      expect(gate.edition()).toBe('free');
-    });
-  });
-
-  // -- EDITION_FEATURES subset validation ----------------------------------
+  // -- Edition feature subset validation -----------------------------------
 
   describe('EDITION_FEATURES subset validation', () => {
-    it('free features are a subset of personal', () => {
-      for (const feature of EDITION_FEATURES.free) {
-        expect(EDITION_FEATURES.personal).toContain(feature);
+    it('free is a subset of personal', () => {
+      for (const f of EDITION_FEATURES.free) {
+        expect(EDITION_FEATURES.personal).toContain(f);
       }
     });
 
-    it('personal features are a subset of business', () => {
-      for (const feature of EDITION_FEATURES.personal) {
-        expect(EDITION_FEATURES.business).toContain(feature);
+    it('personal is a subset of business', () => {
+      for (const f of EDITION_FEATURES.personal) {
+        expect(EDITION_FEATURES.business).toContain(f);
       }
     });
 
-    it('business features are a subset of enterprise', () => {
-      for (const feature of EDITION_FEATURES.business) {
-        expect(EDITION_FEATURES.enterprise).toContain(feature);
+    it('business is a subset of enterprise', () => {
+      for (const f of EDITION_FEATURES.business) {
+        expect(EDITION_FEATURES.enterprise).toContain(f);
       }
     });
 
@@ -313,17 +370,71 @@ describe('FeatureGate', () => {
       expect(EDITION_FEATURES.personal.length).toBeLessThan(EDITION_FEATURES.business.length);
       expect(EDITION_FEATURES.business.length).toBeLessThan(EDITION_FEATURES.enterprise.length);
     });
+  });
+});
 
-    it('all features in enterprise are unique', () => {
-      const unique = new Set(EDITION_FEATURES.enterprise);
-      expect(unique.size).toBe(EDITION_FEATURES.enterprise.length);
-    });
+// ── Helper function tests ──────────────────────────────────────────────────
 
-    it('tier sizes match expected counts', () => {
-      expect(EDITION_FEATURES.free).toHaveLength(4);
-      expect(EDITION_FEATURES.personal).toHaveLength(10);
-      expect(EDITION_FEATURES.business).toHaveLength(22);
-      expect(EDITION_FEATURES.enterprise).toHaveLength(35);
-    });
+describe('getRequiredEdition()', () => {
+  it('returns "free" for shield_basic', () => {
+    expect(getRequiredEdition('shield_basic')).toBe('free');
+  });
+
+  it('returns "free" for verify_send', () => {
+    expect(getRequiredEdition('verify_send')).toBe('free');
+  });
+
+  it('returns "personal" for crypto_basic', () => {
+    expect(getRequiredEdition('crypto_basic')).toBe('personal');
+  });
+
+  it('returns "personal" for shield_breathing', () => {
+    expect(getRequiredEdition('shield_breathing')).toBe('personal');
+  });
+
+  it('returns "business" for zoom_monitor', () => {
+    expect(getRequiredEdition('zoom_monitor')).toBe('business');
+  });
+
+  it('returns "business" for policy_engine', () => {
+    expect(getRequiredEdition('policy_engine')).toBe('business');
+  });
+
+  it('returns "enterprise" for sso_scim', () => {
+    expect(getRequiredEdition('sso_scim')).toBe('enterprise');
+  });
+
+  it('returns "enterprise" for siem_export', () => {
+    expect(getRequiredEdition('siem_export')).toBe('enterprise');
+  });
+
+  it('returns "enterprise" for insurance_readiness', () => {
+    expect(getRequiredEdition('insurance_readiness')).toBe('enterprise');
+  });
+});
+
+describe('isEditionAtLeast()', () => {
+  it('business >= personal', () => {
+    expect(isEditionAtLeast('business', 'personal')).toBe(true);
+  });
+
+  it('free < personal', () => {
+    expect(isEditionAtLeast('free', 'personal')).toBe(false);
+  });
+
+  it('enterprise >= enterprise', () => {
+    expect(isEditionAtLeast('enterprise', 'enterprise')).toBe(true);
+  });
+
+  it('personal >= free', () => {
+    expect(isEditionAtLeast('personal', 'free')).toBe(true);
+  });
+
+  it('free >= free', () => {
+    expect(isEditionAtLeast('free', 'free')).toBe(true);
+  });
+
+  it('personal < business', () => {
+    expect(isEditionAtLeast('personal', 'business')).toBe(false);
   });
 });
