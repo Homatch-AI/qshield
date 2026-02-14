@@ -131,6 +131,10 @@ export interface ServiceRegistry {
     restore: () => Promise<boolean>;
     switchEdition: (edition: string) => Promise<unknown>;
   };
+  localApiManager: {
+    getInfo: () => { port: number; token: string; running: boolean };
+    regenerateToken: () => { token: string };
+  };
 }
 
 // ── Rate limiter ─────────────────────────────────────────────────────────────
@@ -611,6 +615,15 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     }
     services.licenseManager.loadMockLicense(edition);
     return ok(null);
+  });
+
+  // ── Local API ───────────────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.API_GET_INFO, async () => {
+    return ok(services.localApiManager.getInfo());
+  });
+
+  wrapHandler(IPC_CHANNELS.API_REGENERATE_TOKEN, async () => {
+    return ok(services.localApiManager.regenerateToken());
   });
 
   // ── App ──────────────────────────────────────────────────────────────

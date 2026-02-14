@@ -199,6 +199,11 @@ interface QShieldAuthAPI {
   switchEdition(edition: string): Promise<unknown>;
 }
 
+interface QShieldApiInfoAPI {
+  getInfo(): Promise<{ port: number; token: string; running: boolean }>;
+  regenerateToken(): Promise<{ token: string }>;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -213,6 +218,7 @@ interface QShieldAPI {
   crypto: QShieldCryptoAPI;
   license: QShieldLicenseAPI;
   auth: QShieldAuthAPI;
+  api: QShieldApiInfoAPI;
   app: QShieldAppAPI;
 }
 

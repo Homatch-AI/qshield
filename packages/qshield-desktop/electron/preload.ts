@@ -369,6 +369,14 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<unknown>(IPC_CHANNELS.AUTH_SWITCH_EDITION, edition),
   },
 
+  api: {
+    getInfo: (): Promise<{ port: number; token: string; running: boolean }> =>
+      invoke<{ port: number; token: string; running: boolean }>(IPC_CHANNELS.API_GET_INFO),
+
+    regenerateToken: (): Promise<{ token: string }> =>
+      invoke<{ token: string }>(IPC_CHANNELS.API_REGENERATE_TOKEN),
+  },
+
   app: {
     version: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),

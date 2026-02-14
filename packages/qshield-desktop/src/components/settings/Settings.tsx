@@ -11,6 +11,7 @@ import useAuthStore from '@/stores/auth-store';
 import { AccountSection } from './AccountSection';
 import { SubscriptionSection } from './SubscriptionSection';
 import { DevEditionSwitcher } from '@/components/account/DevEditionSwitcher';
+import { BrowserExtensionSection } from './BrowserExtensionSection';
 
 /**
  * Full settings page with sections for Gateway, Adapters, Policy Rules,
@@ -228,6 +229,9 @@ export default function Settings() {
           })}
         </div>
       </SettingsSection>
+
+      {/* Browser Extension */}
+      <BrowserExtensionSection />
 
       {/* Policy Rules */}
       <SettingsSection title="Policy Rules" description="Configure automated alerting and escalation rules">

@@ -36,6 +36,7 @@ interface SignRequest {
 export class LocalApiServer {
   private server: Server | null = null;
   private port = 3847;
+  private currentToken: string | null = null;
 
   constructor(private deps: LocalApiDeps) {}
 
@@ -79,6 +80,11 @@ export class LocalApiServer {
   /** Return the port the server is actually listening on. */
   getPort(): number {
     return this.port;
+  }
+
+  /** Override the auth token used by the server. */
+  setToken(token: string): void {
+    this.currentToken = token;
   }
 
   // ── Private ──────────────────────────────────────────────────────────────
@@ -127,7 +133,8 @@ export class LocalApiServer {
 
     // All other endpoints require auth token
     const token = req.headers['x-qshield-token'] as string | undefined;
-    if (!token || token !== this.deps.getApiToken()) {
+    const expectedToken = this.currentToken ?? this.deps.getApiToken();
+    if (!token || token !== expectedToken) {
       return this.sendJson(res, 401, { error: 'Unauthorized — missing or invalid X-QShield-Token header' });
     }
 

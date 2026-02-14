@@ -942,6 +942,11 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       restore: () => authSvc.restoreSession(),
       switchEdition: (edition: string) => authSvc.switchEdition(edition as 'free' | 'personal' | 'business' | 'enterprise'),
     },
+    // Stub — overridden in app.whenReady() after localApi is created
+    localApiManager: {
+      getInfo: () => ({ port: 3847, token: '', running: false }),
+      regenerateToken: () => ({ token: '' }),
+    },
   };
 }
 
@@ -1144,7 +1149,6 @@ app.whenReady().then(() => {
     apiToken = randomUUID();
     configManager.set('localApiToken', apiToken);
   }
-  const capturedApiToken = apiToken;
 
   localApi = new LocalApiServer({
     getServices: () => services,
@@ -1158,8 +1162,9 @@ app.whenReady().then(() => {
       const session = configManager?.get('auth.session') as { user?: { name?: string } } | null;
       return session?.user?.name ?? 'QShield User';
     },
-    getApiToken: () => capturedApiToken,
+    getApiToken: () => apiToken!,
   });
+  localApi.setToken(apiToken);
 
   localApi.start(3847).then(() => {
     const port = localApi!.getPort();
@@ -1169,17 +1174,21 @@ app.whenReady().then(() => {
     log.error('Failed to start local API server:', err);
   });
 
-  // IPC handler: get API info for Settings page / extension setup
-  ipcMain.handle('config:get-api-info', () => {
-    return {
-      success: true,
-      data: {
-        port: localApi?.getPort() ?? 3847,
-        token: capturedApiToken,
-        running: localApi !== null,
-      },
-    };
-  });
+  // Wire up localApiManager on the service registry (needs localApi + configManager)
+  services!.localApiManager = {
+    getInfo: () => ({
+      port: localApi?.getPort() ?? 3847,
+      token: apiToken!,
+      running: localApi !== null,
+    }),
+    regenerateToken: () => {
+      const newToken = randomUUID();
+      apiToken = newToken;
+      configManager!.set('localApiToken', newToken);
+      localApi?.setToken(newToken);
+      return { token: newToken };
+    },
+  };
 
   // Create main window
   mainWindow = createMainWindow();
