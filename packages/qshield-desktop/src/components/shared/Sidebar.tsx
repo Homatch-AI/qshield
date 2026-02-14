@@ -1,10 +1,17 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { NAV_ITEMS } from '@/lib/constants';
 import useTrustStore from '@/stores/trust-store';
 import useAlertStore from '@/stores/alert-store';
 import useLicenseStore from '@/stores/license-store';
+import useAuthStore from '@/stores/auth-store';
 import { UpgradeModal } from './UpgradeModal';
+
+const SIDEBAR_EDITION_COLORS: Record<string, string> = {
+  personal: 'text-slate-500',
+  business: 'text-sky-400',
+  enterprise: 'text-purple-400',
+};
 
 function NavIcon({ icon, className = '' }: { icon: string; className?: string }) {
   const iconPaths: Record<string, React.ReactNode> = {
@@ -73,6 +80,8 @@ export function Sidebar() {
   const level = useTrustStore((s) => s.level);
   const activeAlertCount = useAlertStore((s) => s.alerts.filter((a) => !a.dismissed).length);
   const hasFeature = useLicenseStore((s) => s.hasFeature);
+  const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
 
   return (
     <aside
@@ -186,6 +195,28 @@ export function Sidebar() {
                 style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Account */}
+      {user && (
+        <div className="border-t border-slate-700 p-2">
+          <div
+            onClick={() => navigate('/account')}
+            className="flex items-center gap-3 rounded-lg px-2 py-2 cursor-pointer hover:bg-slate-800 transition-colors"
+          >
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500 text-xs font-bold text-white">
+              {(user.name || user.email)[0].toUpperCase()}
+            </div>
+            {!collapsed && (
+              <div className="flex-1 min-w-0">
+                <span className="block text-sm text-slate-300 truncate leading-tight">{user.name}</span>
+                <span className={`block text-[10px] uppercase tracking-wider ${SIDEBAR_EDITION_COLORS[user.edition] ?? 'text-slate-500'}`}>
+                  {user.edition}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
