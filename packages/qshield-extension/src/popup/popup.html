@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QShield</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <img src="../../icons/icon-48.png" alt="QShield" class="logo" />
+        <h1>QShield</h1>
+      </header>
+
+      <div id="status-section" class="section">
+        <div class="status-row">
+          <span class="label">Desktop App</span>
+          <span id="connection-status" class="badge badge-disconnected">Disconnected</span>
+        </div>
+        <div class="status-row">
+          <span class="label">Edition</span>
+          <span id="edition-label" class="value">—</span>
+        </div>
+        <div class="status-row">
+          <span class="label">Verifications Today</span>
+          <span id="verifications-label" class="value">—</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <label class="toggle-row">
+          <span>Enable QShield</span>
+          <input type="checkbox" id="toggle-enabled" />
+        </label>
+        <label class="toggle-row">
+          <span>Auto-inject badges</span>
+          <input type="checkbox" id="toggle-auto-inject" />
+        </label>
+      </div>
+
+      <div class="section">
+        <label class="field-label" for="api-port">API Port</label>
+        <input type="number" id="api-port" class="input" min="1024" max="65535" />
+
+        <label class="field-label" for="api-token">API Token</label>
+        <input type="password" id="api-token" class="input" placeholder="Paste from Desktop app" />
+      </div>
+
+      <button id="save-btn" class="btn btn-primary">Save Settings</button>
+      <button id="test-btn" class="btn btn-secondary">Test Connection</button>
+
+      <div id="message" class="message hidden"></div>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
