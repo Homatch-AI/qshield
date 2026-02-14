@@ -2,6 +2,7 @@ import { useState } from 'react';
 import useAuthStore from '@/stores/auth-store';
 import useLicenseStore from '@/stores/license-store';
 import { UpgradeModal } from '@/components/shared/UpgradeModal';
+import { openUpgradeUrl } from '@/lib/upgrade-urls';
 
 const EDITION_BADGES: Record<string, { bg: string; text: string }> = {
   personal: { bg: 'bg-slate-600/20', text: 'text-slate-400' },
@@ -106,7 +107,7 @@ export function SubscriptionSection() {
             </button>
           )}
           <button
-            onClick={() => console.log('Opens Stripe portal')}
+            onClick={() => openUpgradeUrl('manage_billing')}
             className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-700"
           >
             Manage Billing

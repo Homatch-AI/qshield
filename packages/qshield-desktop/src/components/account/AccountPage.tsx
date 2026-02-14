@@ -1,5 +1,6 @@
 import useAuthStore from '@/stores/auth-store';
 import useLicenseStore from '@/stores/license-store';
+import { openUpgradeUrl } from '@/lib/upgrade-urls';
 
 const EDITION_BADGES: Record<string, { bg: string; text: string }> = {
   personal: { bg: 'bg-slate-600/20', text: 'text-slate-400' },
@@ -69,9 +70,11 @@ function PlanCard({
 
   const handleUpgrade = () => {
     if (plan === 'enterprise') {
-      window.open('mailto:sales@qshield.io?subject=QShield Enterprise', '_blank');
+      openUpgradeUrl('contact_sales');
+    } else if (currentEdition === 'personal' && plan === 'business') {
+      openUpgradeUrl('personal_to_business');
     } else {
-      window.open(`https://qshield.io/pricing?edition=${plan}&ref=desktop`, '_blank');
+      openUpgradeUrl('business_to_enterprise');
     }
   };
 

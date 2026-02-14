@@ -15,7 +15,7 @@
  * - sandbox: true (always)
  * - All renderer communication via contextBridge + IPC invoke only
  */
-import { app, BrowserWindow, clipboard, ipcMain, session, Tray, Menu, nativeImage, screen, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, session, shell, Tray, Menu, nativeImage, screen, Notification } from 'electron';
 import path from 'node:path';
 import { createHmac, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -1072,6 +1072,15 @@ app.whenReady().then(() => {
       mainWindow.focus();
       mainWindow.webContents.send('navigate', '/alerts');
     }
+    return { success: true, data: null };
+  });
+
+  // Open external URL in system browser
+  ipcMain.handle('app:open-external', async (_event, url: string) => {
+    if (typeof url !== 'string' || (!url.startsWith('https://') && !url.startsWith('mailto:'))) {
+      return { success: false, error: { message: 'Only https:// and mailto: URLs are allowed', code: 'INVALID_URL' } };
+    }
+    await shell.openExternal(url);
     return { success: true, data: null };
   });
 

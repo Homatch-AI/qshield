@@ -145,6 +145,8 @@ export const IPC_CHANNELS = {
   SHIELD_SET_OPACITY: 'shield:set-opacity',
   /** Focus the main window and navigate to the alerts page */
   APP_SHOW_ALERTS: 'app:show-alerts',
+  /** Open a URL in the system default browser */
+  APP_OPEN_EXTERNAL: 'app:open-external',
 } as const;
 
 /** Union type of all valid IPC channel strings */
