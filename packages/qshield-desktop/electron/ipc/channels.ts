@@ -151,6 +151,8 @@ export const IPC_CHANNELS = {
   APP_SHOW_ALERTS: 'app:show-alerts',
   /** Open a URL in the system default browser */
   APP_OPEN_EXTERNAL: 'app:open-external',
+  /** Get local API server info (port, token, running status) */
+  CONFIG_GET_API_INFO: 'config:get-api-info',
 } as const;
 
 /** Union type of all valid IPC channel strings */

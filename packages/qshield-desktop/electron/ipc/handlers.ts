@@ -101,6 +101,8 @@ export interface ServiceRegistry {
   };
   verificationService: {
     getStats: () => unknown;
+    createRecord: (opts: { senderName: string; senderEmail: string; trustScore: number; trustLevel: string; emailSubject?: string }) => { verificationId: string; verifyUrl: string; referralId: string };
+    recordClick: (verificationId: string) => void;
   };
   cryptoService: {
     getStatus: () => unknown;

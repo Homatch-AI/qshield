@@ -212,6 +212,42 @@ function buildMinimalSignature(config: SignatureConfig, score: number, level: st
 </table>`;
 }
 
+// ── Compact verification badge (for browser extension injection) ──────────
+
+export function generateVerificationBadgeHtml(opts: {
+  verifyUrl: string;
+  trustScore: number;
+  trustLevel: string;
+  senderName: string;
+  showBranding: boolean;
+}): string {
+  const levelColor = getLevelColor(opts.trustLevel);
+  const iconUri = shieldIconDataUri(levelColor);
+  const brandingRow = opts.showBranding
+    ? `<tr><td colspan="3" style="padding:2px 12px 6px 12px;font-size:9px;color:#94a3b8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">Protected by <a href="https://qshield.io/download" style="color:#94a3b8;text-decoration:none;font-weight:600;">QShield</a> &mdash; <a href="https://qshield.io/download" style="color:#0ea5e9;text-decoration:none;">protect your emails too</a></td></tr>`
+    : '';
+
+  return `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:8px 0;">
+  <tr>
+    <td style="background:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid ${levelColor};border-radius:6px;overflow:hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+        <tr>
+          <td style="padding:8px 8px 8px 12px;vertical-align:middle;"><img src="${iconUri}" width="16" height="19" alt="QShield" style="display:block;"/></td>
+          <td style="padding:8px 4px 8px 4px;vertical-align:middle;">
+            <a href="${escapeHtml(opts.verifyUrl)}" style="font-size:12px;color:#1e293b;text-decoration:none;font-weight:500;">Verify this email arrived safely&nbsp;&#8599;</a>
+            <span style="font-size:11px;font-weight:700;color:${levelColor};margin-left:6px;">Score:&nbsp;${opts.trustScore}</span>
+          </td>
+          <td style="padding:8px 12px 8px 8px;vertical-align:middle;">
+            <a href="${escapeHtml(opts.verifyUrl)}" style="display:inline-block;background:${levelColor};color:#fff;font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;text-decoration:none;">Verify</a>
+          </td>
+        </tr>
+        ${brandingRow}
+      </table>
+    </td>
+  </tr>
+</table>`;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function generateSignatureHTML(

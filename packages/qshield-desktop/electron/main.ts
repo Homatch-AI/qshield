@@ -30,6 +30,7 @@ import { NotificationService } from './services/notification';
 import { validateAddress, verifyTransactionHash, loadScamDatabase } from '@qshield/core';
 import { LicenseManager } from './services/license-manager';
 import { AuthService } from './services/auth-service';
+import { LocalApiServer } from './services/local-api-server';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,6 +64,7 @@ let isQuitting = false;
 let currentTrustLevel: 'critical' | 'warning' | 'elevated' | 'normal' | 'verified' = 'normal';
 let currentTrustScore = 85;
 let services: ServiceRegistry | null = null;
+let localApi: LocalApiServer | null = null;
 
 const isDev = !app.isPackaged;
 
@@ -903,6 +905,8 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
     },
     verificationService: {
       getStats: () => verificationService.getStats(),
+      createRecord: (opts) => verificationService.createRecord(opts),
+      recordClick: (id) => verificationService.recordClick(id),
     },
     cryptoService: {
       getStatus: () => cryptoMonitor.getStatus(),
@@ -989,7 +993,13 @@ async function gracefulShutdown(): Promise<void> {
     log.info('Trust state saved');
   }
 
-  // 2. Stop all adapters
+  // 2. Stop local API server
+  if (localApi) {
+    await localApi.stop();
+    localApi = null;
+  }
+
+  // 3. Stop all adapters
   // TODO: When real adapter manager is integrated, call adapterManager.stopAll()
   log.info('Adapters stopped (stub)');
 
@@ -1125,6 +1135,50 @@ app.whenReady().then(() => {
       shieldWindow.setOpacity(clamped);
     }
     return { success: true, data: null };
+  });
+
+  // ── Local API server for browser extension ──────────────────────────────
+  // Generate or read persisted API token
+  let apiToken = configManager.get('localApiToken') as string | null;
+  if (!apiToken) {
+    apiToken = randomUUID();
+    configManager.set('localApiToken', apiToken);
+  }
+  const capturedApiToken = apiToken;
+
+  localApi = new LocalApiServer({
+    getServices: () => services,
+    getTrustScore: () => currentTrustScore,
+    getTrustLevel: () => currentTrustLevel,
+    getUserEmail: () => {
+      const session = configManager?.get('auth.session') as { user?: { email?: string } } | null;
+      return session?.user?.email ?? 'user@qshield.io';
+    },
+    getUserName: () => {
+      const session = configManager?.get('auth.session') as { user?: { name?: string } } | null;
+      return session?.user?.name ?? 'QShield User';
+    },
+    getApiToken: () => capturedApiToken,
+  });
+
+  localApi.start(3847).then(() => {
+    const port = localApi!.getPort();
+    configManager!.set('localApiPort', port);
+    log.info(`Local API server running on port ${port}`);
+  }).catch((err) => {
+    log.error('Failed to start local API server:', err);
+  });
+
+  // IPC handler: get API info for Settings page / extension setup
+  ipcMain.handle('config:get-api-info', () => {
+    return {
+      success: true,
+      data: {
+        port: localApi?.getPort() ?? 3847,
+        token: capturedApiToken,
+        running: localApi !== null,
+      },
+    };
   });
 
   // Create main window
