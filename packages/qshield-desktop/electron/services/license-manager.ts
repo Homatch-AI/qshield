@@ -2,6 +2,7 @@
  * License manager service — loads, validates, and persists QShield licenses.
  * Delegates runtime feature checks to the singleton featureGate from @qshield/core.
  */
+import { randomUUID } from 'node:crypto';
 import log from 'electron-log';
 import {
   featureGate,
@@ -73,7 +74,6 @@ export class LicenseManager {
    * Bypasses signature verification and injects directly into the feature gate.
    */
   loadMockLicense(edition: QShieldEdition): void {
-    const { randomUUID } = require('node:crypto') as typeof import('node:crypto');
     const license: QShieldLicense = {
       license_id: randomUUID(),
       edition,

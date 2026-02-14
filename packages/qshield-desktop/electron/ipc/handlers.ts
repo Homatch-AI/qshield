@@ -535,9 +535,13 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     if (!password || typeof password !== 'string' || password.length < 8) {
       return fail('VALIDATION_ERROR', 'Password must be at least 8 characters');
     }
-    const session = await services.authService.login({ email, password });
-    services.licenseManager.loadMockLicense((session as { user: { edition: string } }).user.edition);
-    return ok(session);
+    try {
+      const session = await services.authService.login({ email, password });
+      services.licenseManager.loadMockLicense((session as { user: { edition: string } }).user.edition);
+      return ok(session);
+    } catch (err) {
+      return fail('AUTH_ERROR', err instanceof Error ? err.message : 'Login failed');
+    }
   });
 
   wrapHandler(IPC_CHANNELS.AUTH_REGISTER, async (_event, credentials) => {
@@ -554,9 +558,13 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return fail('VALIDATION_ERROR', 'Name is required');
     }
-    const session = await services.authService.register({ email, password, name });
-    services.licenseManager.loadMockLicense((session as { user: { edition: string } }).user.edition);
-    return ok(session);
+    try {
+      const session = await services.authService.register({ email, password, name });
+      services.licenseManager.loadMockLicense((session as { user: { edition: string } }).user.edition);
+      return ok(session);
+    } catch (err) {
+      return fail('AUTH_ERROR', err instanceof Error ? err.message : 'Registration failed');
+    }
   });
 
   wrapHandler(IPC_CHANNELS.AUTH_LOGOUT, async () => {
