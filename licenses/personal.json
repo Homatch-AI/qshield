@@ -1,10 +1,31 @@
 {
-  "license_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+  "license_id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80",
   "edition": "personal",
   "expires_at": "2027-02-13T00:00:00Z",
-  "features": ["overlay_shield"],
+  "features": [
+    "shield_basic",
+    "verify_send",
+    "email_signature",
+    "timeline_24h",
+    "evidence_preview",
+    "alerts_basic",
+    "shield_breathing",
+    "verify_tls_check",
+    "verify_routing_check",
+    "verify_custom_badge",
+    "verify_remove_branding",
+    "timeline_full",
+    "evidence_full",
+    "cert_basic",
+    "crypto_basic"
+  ],
   "limits": {
-    "evidence_retention_days": 30
+    "max_devices": 2,
+    "evidence_retention_days": 30,
+    "certs_per_month": 3,
+    "integrations": 0,
+    "verifications_per_day": -1,
+    "verification_history_days": 30
   },
   "signature": "mock-sig-personal"
 }

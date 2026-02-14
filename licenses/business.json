@@ -1,19 +1,43 @@
 {
-  "license_id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+  "license_id": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091",
   "edition": "business",
   "expires_at": "2027-02-13T00:00:00Z",
   "features": [
-    "overlay_shield",
-    "evidence_vault",
+    "shield_basic",
+    "verify_send",
+    "email_signature",
+    "timeline_24h",
+    "evidence_preview",
+    "alerts_basic",
+    "shield_breathing",
+    "verify_tls_check",
+    "verify_routing_check",
+    "verify_custom_badge",
+    "verify_remove_branding",
+    "timeline_full",
+    "evidence_full",
+    "cert_basic",
+    "crypto_basic",
+    "verify_intercept_scan",
+    "verify_analytics",
+    "verify_bulk_api",
     "zoom_monitor",
     "teams_monitor",
     "email_monitor",
+    "evidence_export",
+    "alerts_full",
     "policy_engine",
-    "trust_certificates"
+    "auto_freeze",
+    "audit_log",
+    "crypto_monitor"
   ],
   "limits": {
     "max_devices": 10,
-    "evidence_retention_days": 365
+    "evidence_retention_days": 365,
+    "certs_per_month": 50,
+    "integrations": 3,
+    "verifications_per_day": -1,
+    "verification_history_days": 365
   },
   "signature": "mock-sig-business"
 }
