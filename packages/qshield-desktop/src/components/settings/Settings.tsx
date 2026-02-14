@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import useAuthStore from '@/stores/auth-store';
 import { AccountSection } from './AccountSection';
 import { SubscriptionSection } from './SubscriptionSection';
+import { DevEditionSwitcher } from '@/components/account/DevEditionSwitcher';
 
 /**
  * Full settings page with sections for Gateway, Adapters, Policy Rules,
@@ -128,6 +129,8 @@ export default function Settings() {
       {error && (
         <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-400">{error}</div>
       )}
+
+      <DevEditionSwitcher />
 
       {/* Account Link */}
       {user && (

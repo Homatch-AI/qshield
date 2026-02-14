@@ -208,6 +208,21 @@ export class AuthService {
   }
 
   /**
+   * Switch the current user's edition (dev/testing only).
+   * Updates the persisted session with the new edition.
+   */
+  async switchEdition(edition: 'personal' | 'business' | 'enterprise'): Promise<AuthSession> {
+    const session = this.config.get('auth.session') as AuthSession | null;
+    if (!session) {
+      throw new Error('Not authenticated');
+    }
+    session.user.edition = edition;
+    this.config.set('auth.session', session);
+    log.info(`[AuthService] Edition switched to ${edition}`);
+    return session;
+  }
+
+  /**
    * Restore a cached session on app startup.
    * Reads persisted session, validates expiry, refreshes if needed.
    * @returns true if user is authenticated after restore

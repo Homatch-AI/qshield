@@ -113,6 +113,8 @@ export const IPC_CHANNELS = {
   LICENSE_CLEAR: 'license:clear',
   /** Check whether a feature is available under the current license */
   LICENSE_CHECK_FEATURE: 'license:check-feature',
+  /** Load a mock license for a given edition (dev only) */
+  LICENSE_LOAD_MOCK: 'license:load-mock',
 
   // ── Auth ───────────────────────────────────────────────────────────────
   /** Authenticate with email and password */
@@ -127,6 +129,8 @@ export const IPC_CHANNELS = {
   AUTH_GET_USER: 'auth:get-user',
   /** Restore a cached session on startup */
   AUTH_RESTORE: 'auth:restore',
+  /** Switch the current user's edition (dev only) */
+  AUTH_SWITCH_EDITION: 'auth:switch-edition',
 
   // ── App ────────────────────────────────────────────────────────────────
   /** Get the application version string */

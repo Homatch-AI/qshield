@@ -341,6 +341,9 @@ contextBridge.exposeInMainWorld('qshield', {
 
     checkFeature: (feature: string): Promise<unknown> =>
       invoke<unknown>(IPC_CHANNELS.LICENSE_CHECK_FEATURE, feature),
+
+    loadMock: (edition: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.LICENSE_LOAD_MOCK, edition),
   },
 
   auth: {
@@ -361,6 +364,9 @@ contextBridge.exposeInMainWorld('qshield', {
 
     restore: (): Promise<boolean> =>
       invoke<boolean>(IPC_CHANNELS.AUTH_RESTORE),
+
+    switchEdition: (edition: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.AUTH_SWITCH_EDITION, edition),
   },
 
   app: {

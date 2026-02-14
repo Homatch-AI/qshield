@@ -927,6 +927,7 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       clearLicense: () => licMgr.clearLicense(),
       hasFeature: (feature: string) => licMgr.hasFeature(feature as Parameters<typeof licMgr.hasFeature>[0]),
       getEdition: () => licMgr.getEdition(),
+      loadMockLicense: (edition: string) => licMgr.loadMockLicense(edition as 'personal' | 'business' | 'enterprise'),
     },
     authService: {
       login: (credentials: { email: string; password: string }) => authSvc.login(credentials),
@@ -935,6 +936,7 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       getSession: () => authSvc.getSession(),
       getUser: () => authSvc.getUser(),
       restore: () => authSvc.restoreSession(),
+      switchEdition: (edition: string) => authSvc.switchEdition(edition as 'personal' | 'business' | 'enterprise'),
     },
   };
 }

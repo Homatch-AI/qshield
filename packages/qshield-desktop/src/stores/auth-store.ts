@@ -14,6 +14,7 @@ interface AuthActions {
   register: (email: string, password: string, name: string) => Promise<boolean>;
   logout: () => Promise<void>;
   restore: () => Promise<boolean>;
+  switchEdition: (edition: string) => Promise<boolean>;
   clearError: () => void;
 }
 
@@ -130,6 +131,23 @@ const useAuthStore = create<AuthStore>((set) => ({
         loading: false,
         error: err instanceof Error ? err.message : 'Session restore failed',
       });
+      return false;
+    }
+  },
+
+  switchEdition: async (edition: string) => {
+    try {
+      if (!isIPCAvailable()) return false;
+      await window.qshield.auth.switchEdition(edition);
+      // Re-fetch user to get updated edition
+      const user = await window.qshield.auth.getUser() as {
+        id: string; email: string; name: string; edition: string;
+      } | null;
+      set({ user });
+      // Refresh license store with new edition features
+      await useLicenseStore.getState().fetchLicense();
+      return true;
+    } catch {
       return false;
     }
   },

@@ -1,6 +1,7 @@
 import useAuthStore from '@/stores/auth-store';
 import useLicenseStore from '@/stores/license-store';
 import { openUpgradeUrl } from '@/lib/upgrade-urls';
+import { DevEditionSwitcher } from './DevEditionSwitcher';
 
 const EDITION_BADGES: Record<string, { bg: string; text: string }> = {
   personal: { bg: 'bg-slate-600/20', text: 'text-slate-400' },
@@ -154,6 +155,8 @@ export default function AccountPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-100">Account</h1>
+
+      <DevEditionSwitcher />
 
       {/* Profile */}
       <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6">

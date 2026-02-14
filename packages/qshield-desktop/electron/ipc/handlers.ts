@@ -118,6 +118,7 @@ export interface ServiceRegistry {
     clearLicense: () => unknown;
     hasFeature: (feature: string) => boolean;
     getEdition: () => string;
+    loadMockLicense: (edition: string) => void;
   };
   authService: {
     login: (credentials: { email: string; password: string }) => Promise<unknown>;
@@ -126,6 +127,7 @@ export interface ServiceRegistry {
     getSession: () => unknown;
     getUser: () => unknown;
     restore: () => Promise<boolean>;
+    switchEdition: (edition: string) => Promise<unknown>;
   };
 }
 
@@ -571,6 +573,25 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
   wrapHandler(IPC_CHANNELS.AUTH_RESTORE, async () => {
     const restored = await services.authService.restore();
     return ok(restored);
+  });
+
+  const validEditions = ['personal', 'business', 'enterprise'];
+
+  wrapHandler(IPC_CHANNELS.AUTH_SWITCH_EDITION, async (_event, edition) => {
+    if (typeof edition !== 'string' || !validEditions.includes(edition)) {
+      return fail('VALIDATION_ERROR', 'Edition must be "personal", "business", or "enterprise"');
+    }
+    const session = await services.authService.switchEdition(edition);
+    services.licenseManager.loadMockLicense(edition);
+    return ok(session);
+  });
+
+  wrapHandler(IPC_CHANNELS.LICENSE_LOAD_MOCK, async (_event, edition) => {
+    if (typeof edition !== 'string' || !validEditions.includes(edition)) {
+      return fail('VALIDATION_ERROR', 'Edition must be "personal", "business", or "enterprise"');
+    }
+    services.licenseManager.loadMockLicense(edition);
+    return ok(null);
   });
 
   // ── App ──────────────────────────────────────────────────────────────

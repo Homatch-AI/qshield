@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type {
   TrustState,
   EvidenceRecord,
@@ -184,6 +186,7 @@ interface QShieldLicenseAPI {
   set(license: unknown): Promise<unknown>;
   clear(): Promise<void>;
   checkFeature(feature: string): Promise<unknown>;
+  loadMock(edition: string): Promise<unknown>;
 }
 
 interface QShieldAuthAPI {
@@ -193,6 +196,7 @@ interface QShieldAuthAPI {
   getSession(): Promise<{ user: { id: string; email: string; name: string; edition: string }; expiresAt: number } | null>;
   getUser(): Promise<{ id: string; email: string; name: string; edition: string } | null>;
   restore(): Promise<boolean>;
+  switchEdition(edition: string): Promise<unknown>;
 }
 
 interface QShieldAPI {

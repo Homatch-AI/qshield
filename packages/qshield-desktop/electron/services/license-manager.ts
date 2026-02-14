@@ -66,6 +66,35 @@ export class LicenseManager {
     log.info('[LicenseManager] License cleared');
   }
 
+  /**
+   * Load a mock license for a given edition (dev/testing only).
+   * Bypasses signature verification and injects directly into the feature gate.
+   */
+  loadMockLicense(edition: 'personal' | 'business' | 'enterprise'): void {
+    const { randomUUID } = require('node:crypto') as typeof import('node:crypto');
+    const featureMap: Record<string, Feature[]> = {
+      personal: ['overlay_shield'],
+      business: ['overlay_shield', 'evidence_vault', 'zoom_monitor', 'teams_monitor', 'email_monitor', 'policy_engine', 'trust_certificates'],
+      enterprise: ['overlay_shield', 'evidence_vault', 'zoom_monitor', 'teams_monitor', 'email_monitor', 'policy_engine', 'siem_export', 'enterprise_alerting', 'trust_certificates', 'advanced_analytics'],
+    };
+    const limitsMap: Record<string, QShieldLicense['limits']> = {
+      personal: { evidence_retention_days: 30 },
+      business: { max_devices: 10, evidence_retention_days: 365 },
+      enterprise: { evidence_retention_days: -1 },
+    };
+    const license: QShieldLicense = {
+      license_id: randomUUID(),
+      edition,
+      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      features: featureMap[edition],
+      limits: limitsMap[edition],
+      signature: `mock-dev-${edition}`,
+    };
+    this.config.set('license', license);
+    featureGate.setLicense(license);
+    log.info(`[LicenseManager] Mock ${edition} license loaded`);
+  }
+
   /** Get the current edition (falls back to "personal"). */
   getEdition(): QShieldEdition {
     return featureGate.edition();
