@@ -6,6 +6,8 @@ import { formatFileSize } from '@/lib/formatters';
 import { ADAPTER_LABELS } from '@/lib/constants';
 import { isIPCAvailable } from '@/lib/mock-data';
 import type { PolicyRule, AdapterType } from '@qshield/core';
+import { AccountSection } from './AccountSection';
+import { SubscriptionSection } from './SubscriptionSection';
 
 /**
  * Full settings page with sections for Gateway, Adapters, Policy Rules,
@@ -122,6 +124,10 @@ export default function Settings() {
       {error && (
         <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-400">{error}</div>
       )}
+
+      {/* Account & Subscription */}
+      <AccountSection />
+      <SubscriptionSection />
 
       {/* Gateway Configuration */}
       <SettingsSection title="Gateway Connection" description="Configure the QShield gateway server endpoint">
