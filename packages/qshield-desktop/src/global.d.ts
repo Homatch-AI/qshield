@@ -185,6 +185,15 @@ interface QShieldLicenseAPI {
   checkFeature(feature: string): Promise<unknown>;
 }
 
+interface QShieldAuthAPI {
+  login(email: string, password: string): Promise<{ user: { id: string; email: string; name: string; edition: string }; accessToken: string }>;
+  register(email: string, password: string, name: string): Promise<{ user: { id: string; email: string; name: string; edition: string }; accessToken: string }>;
+  logout(): Promise<void>;
+  getSession(): Promise<{ user: { id: string; email: string; name: string; edition: string }; expiresAt: number } | null>;
+  getUser(): Promise<{ id: string; email: string; name: string; edition: string } | null>;
+  restore(): Promise<boolean>;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -198,6 +207,7 @@ interface QShieldAPI {
   verification: QShieldVerificationAPI;
   crypto: QShieldCryptoAPI;
   license: QShieldLicenseAPI;
+  auth: QShieldAuthAPI;
   app: QShieldAppAPI;
 }
 

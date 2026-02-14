@@ -119,6 +119,14 @@ export interface ServiceRegistry {
     hasFeature: (feature: string) => boolean;
     getEdition: () => string;
   };
+  authService: {
+    login: (credentials: { email: string; password: string }) => Promise<unknown>;
+    register: (credentials: { email: string; password: string; name: string }) => Promise<unknown>;
+    logout: () => Promise<void>;
+    getSession: () => unknown;
+    getUser: () => unknown;
+    restore: () => Promise<boolean>;
+  };
 }
 
 // ── Rate limiter ─────────────────────────────────────────────────────────────
@@ -511,6 +519,58 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
       allowed: services.licenseManager.hasFeature(validFeature),
       edition: services.licenseManager.getEdition(),
     });
+  });
+
+  // ── Auth ──────────────────────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.AUTH_LOGIN, async (_event, credentials) => {
+    if (!credentials || typeof credentials !== 'object') {
+      return fail('VALIDATION_ERROR', 'Login credentials are required');
+    }
+    const { email, password } = credentials as { email?: string; password?: string };
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return fail('VALIDATION_ERROR', 'Valid email address is required');
+    }
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      return fail('VALIDATION_ERROR', 'Password must be at least 8 characters');
+    }
+    const session = await services.authService.login({ email, password });
+    return ok(session);
+  });
+
+  wrapHandler(IPC_CHANNELS.AUTH_REGISTER, async (_event, credentials) => {
+    if (!credentials || typeof credentials !== 'object') {
+      return fail('VALIDATION_ERROR', 'Registration credentials are required');
+    }
+    const { email, password, name } = credentials as { email?: string; password?: string; name?: string };
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return fail('VALIDATION_ERROR', 'Valid email address is required');
+    }
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      return fail('VALIDATION_ERROR', 'Password must be at least 8 characters');
+    }
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return fail('VALIDATION_ERROR', 'Name is required');
+    }
+    const session = await services.authService.register({ email, password, name });
+    return ok(session);
+  });
+
+  wrapHandler(IPC_CHANNELS.AUTH_LOGOUT, async () => {
+    await services.authService.logout();
+    return ok(null);
+  });
+
+  wrapHandler(IPC_CHANNELS.AUTH_GET_SESSION, async () => {
+    return ok(services.authService.getSession());
+  });
+
+  wrapHandler(IPC_CHANNELS.AUTH_GET_USER, async () => {
+    return ok(services.authService.getUser());
+  });
+
+  wrapHandler(IPC_CHANNELS.AUTH_RESTORE, async () => {
+    const restored = await services.authService.restore();
+    return ok(restored);
   });
 
   // ── App ──────────────────────────────────────────────────────────────

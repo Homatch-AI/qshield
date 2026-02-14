@@ -114,6 +114,20 @@ export const IPC_CHANNELS = {
   /** Check whether a feature is available under the current license */
   LICENSE_CHECK_FEATURE: 'license:check-feature',
 
+  // ── Auth ───────────────────────────────────────────────────────────────
+  /** Authenticate with email and password */
+  AUTH_LOGIN: 'auth:login',
+  /** Register a new account */
+  AUTH_REGISTER: 'auth:register',
+  /** Log out the current user */
+  AUTH_LOGOUT: 'auth:logout',
+  /** Get the current auth session */
+  AUTH_GET_SESSION: 'auth:get-session',
+  /** Get the current authenticated user */
+  AUTH_GET_USER: 'auth:get-user',
+  /** Restore a cached session on startup */
+  AUTH_RESTORE: 'auth:restore',
+
   // ── App ────────────────────────────────────────────────────────────────
   /** Get the application version string */
   APP_VERSION: 'app:version',

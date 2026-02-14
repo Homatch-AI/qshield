@@ -343,6 +343,26 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<unknown>(IPC_CHANNELS.LICENSE_CHECK_FEATURE, feature),
   },
 
+  auth: {
+    login: (email: string, password: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.AUTH_LOGIN, { email, password }),
+
+    register: (email: string, password: string, name: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.AUTH_REGISTER, { email, password, name }),
+
+    logout: (): Promise<void> =>
+      invoke<void>(IPC_CHANNELS.AUTH_LOGOUT),
+
+    getSession: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.AUTH_GET_SESSION),
+
+    getUser: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.AUTH_GET_USER),
+
+    restore: (): Promise<boolean> =>
+      invoke<boolean>(IPC_CHANNELS.AUTH_RESTORE),
+  },
+
   app: {
     version: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),

@@ -29,6 +29,7 @@ import { CryptoMonitorService } from './services/crypto-monitor';
 import { NotificationService } from './services/notification';
 import { validateAddress, verifyTransactionHash, loadScamDatabase } from '@qshield/core';
 import { LicenseManager } from './services/license-manager';
+import { AuthService } from './services/auth-service';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -717,6 +718,17 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
   const licMgr = new LicenseManager(config);
   licMgr.loadLicense();
 
+  const authSvc = new AuthService(config);
+  // Restore cached session on startup; if restored, reload the license
+  authSvc.restoreSession().then((restored) => {
+    if (restored) {
+      licMgr.loadLicense();
+      log.info('[AuthService] Session restored, license reloaded');
+    }
+  }).catch((err) => {
+    log.warn('[AuthService] Session restore failed:', err);
+  });
+
   // Initialize crypto monitoring service
   const cryptoMonitor = new CryptoMonitorService((addresses) => {
     config.set('trustedAddresses', addresses);
@@ -915,6 +927,14 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       clearLicense: () => licMgr.clearLicense(),
       hasFeature: (feature: string) => licMgr.hasFeature(feature as Parameters<typeof licMgr.hasFeature>[0]),
       getEdition: () => licMgr.getEdition(),
+    },
+    authService: {
+      login: (credentials: { email: string; password: string }) => authSvc.login(credentials),
+      register: (credentials: { email: string; password: string; name: string }) => authSvc.register(credentials),
+      logout: () => authSvc.logout(),
+      getSession: () => authSvc.getSession(),
+      getUser: () => authSvc.getUser(),
+      restore: () => authSvc.restoreSession(),
     },
   };
 }
