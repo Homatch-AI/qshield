@@ -536,6 +536,7 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
       return fail('VALIDATION_ERROR', 'Password must be at least 8 characters');
     }
     const session = await services.authService.login({ email, password });
+    services.licenseManager.loadMockLicense((session as { user: { edition: string } }).user.edition);
     return ok(session);
   });
 
@@ -554,11 +555,13 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
       return fail('VALIDATION_ERROR', 'Name is required');
     }
     const session = await services.authService.register({ email, password, name });
+    services.licenseManager.loadMockLicense((session as { user: { edition: string } }).user.edition);
     return ok(session);
   });
 
   wrapHandler(IPC_CHANNELS.AUTH_LOGOUT, async () => {
     await services.authService.logout();
+    services.licenseManager.clearLicense();
     return ok(null);
   });
 
@@ -572,6 +575,12 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
 
   wrapHandler(IPC_CHANNELS.AUTH_RESTORE, async () => {
     const restored = await services.authService.restore();
+    if (restored) {
+      const user = services.authService.getUser() as { edition: string } | null;
+      if (user) {
+        services.licenseManager.loadMockLicense(user.edition);
+      }
+    }
     return ok(restored);
   });
 

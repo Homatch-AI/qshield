@@ -8,6 +8,20 @@
 import { randomUUID } from 'node:crypto';
 import log from 'electron-log';
 import type { ConfigManager } from './config';
+import type { QShieldEdition } from '@qshield/core';
+
+// ── Test accounts ─────────────────────────────────────────────────────────────
+
+/** Default password for all test accounts */
+const TEST_PASSWORD = 'qshield123';
+
+/** Test accounts — email → edition + display name */
+const TEST_ACCOUNTS: Record<string, { edition: QShieldEdition; name: string }> = {
+  'free@free.com':         { edition: 'free',       name: 'Free User' },
+  'personal@personal.com': { edition: 'personal',   name: 'Personal User' },
+  'biz@biz.com':           { edition: 'business',   name: 'Business User' },
+  'ent@ent.com':           { edition: 'enterprise',  name: 'Enterprise User' },
+};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,20 +77,26 @@ export class AuthService {
       throw new Error('Password must be at least 8 characters');
     }
 
-    // TODO: Replace with real API call
-    // const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ email, password }),
-    // });
+    // TODO: Replace mock with POST /api/v1/auth/login
+
+    const normalizedEmail = email.toLowerCase();
+    const testAccount = TEST_ACCOUNTS[normalizedEmail];
+
+    // Test account password check
+    if (testAccount && password !== TEST_PASSWORD) {
+      throw new Error('Invalid password for test account');
+    }
+
+    const edition: QShieldEdition = testAccount?.edition ?? 'free';
+    const name = testAccount?.name ?? normalizedEmail.split('@')[0];
 
     const now = Date.now();
     const session: AuthSession = {
       user: {
         id: randomUUID(),
-        email,
-        name: email.split('@')[0],
-        edition: 'free',
+        email: normalizedEmail,
+        name,
+        edition,
         createdAt: new Date(now).toISOString(),
       },
       accessToken: `mock_access_${randomUUID()}`,
@@ -84,11 +104,9 @@ export class AuthService {
       expiresAt: now + SESSION_DURATION_MS,
     };
 
-    // Persist session to config
-    // TODO: Encrypt session data before persisting
     this.config.set('auth.session', session);
 
-    log.info(`[AuthService] Login successful: ${email}`);
+    log.info(`[AuthService] Login successful: ${normalizedEmail} (${edition})`);
     return session;
   }
 
@@ -111,20 +129,21 @@ export class AuthService {
       throw new Error('Name is required');
     }
 
-    // TODO: Replace with real API call
-    // const response = await fetch(`${API_BASE}/api/v1/auth/register`, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ email, password, name }),
-    // });
+    // TODO: Replace mock with POST /api/v1/auth/register
+
+    const normalizedEmail = email.toLowerCase();
+    const testAccount = TEST_ACCOUNTS[normalizedEmail];
+
+    const edition: QShieldEdition = testAccount?.edition ?? 'free';
+    const displayName = testAccount?.name ?? name.trim();
 
     const now = Date.now();
     const session: AuthSession = {
       user: {
         id: randomUUID(),
-        email,
-        name: name.trim(),
-        edition: 'free',
+        email: normalizedEmail,
+        name: displayName,
+        edition,
         createdAt: new Date(now).toISOString(),
       },
       accessToken: `mock_access_${randomUUID()}`,
@@ -132,11 +151,9 @@ export class AuthService {
       expiresAt: now + SESSION_DURATION_MS,
     };
 
-    // Persist session to config
-    // TODO: Encrypt session data before persisting
     this.config.set('auth.session', session);
 
-    log.info(`[AuthService] Registration successful: ${email}`);
+    log.info(`[AuthService] Registration successful: ${normalizedEmail} (${edition})`);
     return session;
   }
 
