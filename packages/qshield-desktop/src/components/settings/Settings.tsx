@@ -6,6 +6,8 @@ import { formatFileSize } from '@/lib/formatters';
 import { ADAPTER_LABELS } from '@/lib/constants';
 import { isIPCAvailable } from '@/lib/mock-data';
 import type { PolicyRule, AdapterType } from '@qshield/core';
+import { useNavigate } from 'react-router-dom';
+import useAuthStore from '@/stores/auth-store';
 import { AccountSection } from './AccountSection';
 import { SubscriptionSection } from './SubscriptionSection';
 
@@ -15,6 +17,8 @@ import { SubscriptionSection } from './SubscriptionSection';
  */
 export default function Settings() {
   const { config, policyRules, loading, error, fetchConfig, updateConfig, addPolicyRule, updatePolicyRule, removePolicyRule } = useConfigStore();
+  const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
 
   const [gatewayUrl, setGatewayUrl] = useState('');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -123,6 +127,31 @@ export default function Settings() {
 
       {error && (
         <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-400">{error}</div>
+      )}
+
+      {/* Account Link */}
+      {user && (
+        <div
+          onClick={() => navigate('/account')}
+          className="rounded-xl bg-slate-800/50 border border-slate-700 hover:border-slate-600 p-4 cursor-pointer transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-500 text-sm font-bold text-white">
+              {(user.name || user.email)[0].toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-100 truncate">{user.name}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize bg-slate-600/20 text-slate-400">{user.edition}</span>
+              </div>
+              <p className="text-xs text-slate-500 truncate">{user.email}</p>
+            </div>
+            <svg className="h-4 w-4 text-slate-500 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </div>
+          <p className="text-xs text-slate-500 mt-2 ml-[52px]">Manage your account, subscription, and billing &rarr;</p>
+        </div>
       )}
 
       {/* Account & Subscription */}
