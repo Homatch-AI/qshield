@@ -9,21 +9,21 @@
  * 4. On content changes, re-sign periodically (debounced)
  */
 
-const COMPOSE_BODY_SELECTORS = [
+export const COMPOSE_BODY_SELECTORS = [
   'div[role="textbox"][aria-label="Message Body"]',
   'div.Am.Al.editable',
   'div[g_editable="true"]',
 ];
-const COMPOSE_CONTAINER_SELECTOR = 'div.M9, div.AD';
+export const COMPOSE_CONTAINER_SELECTOR = 'div.M9, div.AD';
 const RECIPIENT_SELECTOR = 'span[email]';
 const SUBJECT_SELECTOR = 'input[name="subjectbox"]';
-const BADGE_CLASS = 'qshield-verification-badge';
+export const BADGE_CLASS = 'qshield-verification-badge';
 
 const processedBodies = new WeakSet<Element>();
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-async function sha256(text: string): Promise<string> {
+export async function sha256(text: string): Promise<string> {
   const data = new TextEncoder().encode(text);
   const buf = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(buf))
@@ -31,7 +31,7 @@ async function sha256(text: string): Promise<string> {
     .join('');
 }
 
-function findComposeBody(container: Element): HTMLElement | null {
+export function findComposeBody(container: Element): HTMLElement | null {
   for (const sel of COMPOSE_BODY_SELECTORS) {
     const el = container.querySelector(sel) as HTMLElement | null;
     if (el) return el;
@@ -39,7 +39,7 @@ function findComposeBody(container: Element): HTMLElement | null {
   return null;
 }
 
-function getRecipients(root: Element): string[] {
+export function getRecipients(root: Element): string[] {
   // Walk up to find the compose form
   let el: Element | null = root;
   for (let i = 0; i < 20 && el; i++) {
@@ -54,7 +54,7 @@ function getRecipients(root: Element): string[] {
   return [];
 }
 
-function getSubject(root: Element): string {
+export function getSubject(root: Element): string {
   let el: Element | null = root;
   for (let i = 0; i < 20 && el; i++) {
     const input = el.querySelector(SUBJECT_SELECTOR) as HTMLInputElement | null;
@@ -66,7 +66,7 @@ function getSubject(root: Element): string {
 
 // ── Static fallback badge (no API needed) ────────────────────────
 
-function createStaticBadgeHtml(): string {
+export function createStaticBadgeHtml(): string {
   return `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin-top:12px;">
   <tr>
     <td style="padding:8px 0;">
@@ -95,7 +95,7 @@ function createStaticBadgeHtml(): string {
 
 // ── Badge injection ──────────────────────────────────────────────
 
-function injectBadge(body: HTMLElement, html: string): void {
+export function injectBadge(body: HTMLElement, html: string): void {
   // Remove existing badge
   body.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => el.remove());
 
@@ -107,7 +107,7 @@ function injectBadge(body: HTMLElement, html: string): void {
   body.appendChild(wrapper);
 }
 
-async function trySignWithApi(body: HTMLElement): Promise<void> {
+export async function trySignWithApi(body: HTMLElement): Promise<void> {
   const bodyText = body.innerText?.trim();
   if (!bodyText) return;
 
@@ -137,12 +137,12 @@ async function trySignWithApi(body: HTMLElement): Promise<void> {
 
 // ── Compose window handling ──────────────────────────────────────
 
-function debounce(fn: () => void, ms: number): () => void {
+export function debounce(fn: () => void, ms: number): () => void {
   let timer: ReturnType<typeof setTimeout>;
   return () => { clearTimeout(timer); timer = setTimeout(fn, ms); };
 }
 
-async function attachToComposeBody(body: HTMLElement): Promise<void> {
+export async function attachToComposeBody(body: HTMLElement): Promise<void> {
   if (processedBodies.has(body)) return;
   processedBodies.add(body);
 
@@ -167,7 +167,7 @@ async function attachToComposeBody(body: HTMLElement): Promise<void> {
   contentObserver.observe(body, { childList: true, characterData: true, subtree: true });
 }
 
-function scanForComposes(): void {
+export function scanForComposes(): void {
   // Method 1: Find compose containers
   const containers = document.querySelectorAll(COMPOSE_CONTAINER_SELECTOR);
   for (const container of containers) {
@@ -186,13 +186,17 @@ function scanForComposes(): void {
 
 // ── Initialize ───────────────────────────────────────────────────
 
-const observer = new MutationObserver(() => scanForComposes());
-observer.observe(document.body, { childList: true, subtree: true });
+export function init(): void {
+  const observer = new MutationObserver(() => scanForComposes());
+  observer.observe(document.body, { childList: true, subtree: true });
 
-// Initial scan
-scanForComposes();
+  // Initial scan
+  scanForComposes();
 
-// Also scan periodically as a safety net (Gmail can be tricky)
-setInterval(scanForComposes, 2000);
+  // Also scan periodically as a safety net (Gmail can be tricky)
+  setInterval(scanForComposes, 2000);
 
-console.log('[QShield] Gmail content script loaded');
+  console.log('[QShield] Gmail content script loaded');
+}
+
+init();
