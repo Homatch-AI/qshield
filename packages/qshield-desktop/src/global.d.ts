@@ -117,6 +117,7 @@ interface QShieldAppAPI {
   setShieldOpacity(opacity: number): Promise<void>;
   showAlerts(): Promise<void>;
   onNavigate(callback: (route: string) => void): void;
+  offNavigate(callback: (...args: unknown[]) => void): void;
   openExternal(url: string): Promise<void>;
 }
 

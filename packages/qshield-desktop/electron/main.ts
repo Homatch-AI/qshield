@@ -399,6 +399,22 @@ function buildTrayMenu(): Electron.Menu {
       },
     },
     {
+      label: 'New Secure Message',
+      click: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+          mainWindow.webContents.send('navigate', '/messages/compose');
+        } else {
+          mainWindow = createMainWindow();
+          mainWindow.once('ready-to-show', () => {
+            mainWindow?.webContents.send('navigate', '/messages/compose');
+          });
+        }
+      },
+    },
+    {
       label: 'Open Evidence Vault',
       click: () => {
         if (mainWindow) {

@@ -432,6 +432,10 @@ contextBridge.exposeInMainWorld('qshield', {
       ipcRenderer.on('navigate', (_event: Electron.IpcRendererEvent, route: string) => callback(route));
     },
 
+    offNavigate: (callback: (...args: unknown[]) => void): void => {
+      ipcRenderer.removeListener('navigate', callback);
+    },
+
     openExternal: (url: string): Promise<null> =>
       invoke<null>(IPC_CHANNELS.APP_OPEN_EXTERNAL, url),
   },
