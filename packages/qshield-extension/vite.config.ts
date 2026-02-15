@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 export default defineConfig({
   build: {
@@ -27,11 +27,20 @@ export default defineConfig({
     {
       name: 'copy-popup-assets',
       closeBundle() {
-        // Copy manifest.json to dist
-        copyFileSync(
-          resolve(__dirname, 'manifest.json'),
+        // Copy manifest.json to dist, stripping "dist/" prefix from paths
+        const manifest = readFileSync(resolve(__dirname, 'manifest.json'), 'utf-8');
+        writeFileSync(
           resolve(__dirname, 'dist/manifest.json'),
+          manifest.replaceAll('dist/', ''),
         );
+        // Copy icons to dist
+        mkdirSync(resolve(__dirname, 'dist/icons'), { recursive: true });
+        for (const size of ['16', '48', '128']) {
+          copyFileSync(
+            resolve(__dirname, `icons/icon-${size}.png`),
+            resolve(__dirname, `dist/icons/icon-${size}.png`),
+          );
+        }
         // Copy popup HTML and CSS to dist (not processed by Vite)
         mkdirSync(resolve(__dirname, 'dist/popup'), { recursive: true });
         copyFileSync(
