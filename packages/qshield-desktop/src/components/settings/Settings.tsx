@@ -6,7 +6,7 @@ import { formatFileSize } from '@/lib/formatters';
 import { ADAPTER_LABELS } from '@/lib/constants';
 import { isIPCAvailable } from '@/lib/mock-data';
 import type { PolicyRule, AdapterType } from '@qshield/core';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, NavLink } from 'react-router-dom';
 import useAuthStore from '@/stores/auth-store';
 import { AccountSection } from './AccountSection';
 import { SubscriptionSection } from './SubscriptionSection';
@@ -419,6 +419,34 @@ export default function Settings() {
 
       {/* Email Signature */}
       <EmailSignatureSection />
+
+      {/* Help & Guides */}
+      <div className="rounded-xl border border-slate-700 bg-slate-900 overflow-hidden">
+        <div className="border-b border-slate-700 px-5 py-3">
+          <h3 className="text-sm font-semibold text-slate-200">Help & Guides</h3>
+        </div>
+        <div className="p-4 space-y-2">
+          <NavLink
+            to="/messages/guide"
+            className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3 transition-colors hover:bg-slate-800 hover:border-slate-600 group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/10">
+                <svg className="h-4 w-4 text-sky-400" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+              </div>
+              <div>
+                <span className="text-sm font-medium text-slate-200">Secure Messages Guide</span>
+                <p className="text-xs text-slate-500">How to send encrypted, self-destructing messages</p>
+              </div>
+            </div>
+            <svg className="h-4 w-4 text-slate-600 group-hover:text-slate-400 transition-colors" viewBox="0 0 24 24" fill="none" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </NavLink>
+        </div>
+      </div>
 
       {/* App Info */}
       <SettingsSection title="About">
