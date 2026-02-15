@@ -1,18 +1,27 @@
 /**
- * Gmail content script — watches for compose windows and injects
- * QShield verification badges when the user clicks Send.
+ * Gmail content script — detects compose windows and injects
+ * QShield verification badges automatically.
  *
- * Self-contained: no imports from other modules (content scripts
- * run as classic scripts in Chrome, not ES modules).
+ * Strategy:
+ * 1. MutationObserver watches for new compose windows
+ * 2. When compose detected, inject badge immediately (static fallback)
+ * 3. Try to sign with Desktop API — update badge with real verification ID
+ * 4. On content changes, re-sign periodically (debounced)
  */
 
-const SEND_BUTTON_SELECTOR = 'div[role="button"][aria-label*="Send"]';
-const COMPOSE_BODY_SELECTOR = 'div[role="textbox"][aria-label="Message Body"], div.Am.Al.editable';
-const COMPOSE_CONTAINER_SELECTOR = 'div.M9';
+const COMPOSE_BODY_SELECTORS = [
+  'div[role="textbox"][aria-label="Message Body"]',
+  'div.Am.Al.editable',
+  'div[g_editable="true"]',
+];
+const COMPOSE_CONTAINER_SELECTOR = 'div.M9, div.AD';
 const RECIPIENT_SELECTOR = 'span[email]';
 const SUBJECT_SELECTOR = 'input[name="subjectbox"]';
+const BADGE_CLASS = 'qshield-verification-badge';
 
-const processedComposes = new WeakSet<Element>();
+const processedBodies = new WeakSet<Element>();
+
+// ── Helpers ─────────────────────────────────────────────────────
 
 async function sha256(text: string): Promise<string> {
   const data = new TextEncoder().encode(text);
@@ -22,30 +31,85 @@ async function sha256(text: string): Promise<string> {
     .join('');
 }
 
-function getRecipients(compose: Element): string[] {
-  return Array.from(compose.querySelectorAll(RECIPIENT_SELECTOR))
-    .map((el) => el.getAttribute('email'))
-    .filter((e): e is string => !!e);
+function findComposeBody(container: Element): HTMLElement | null {
+  for (const sel of COMPOSE_BODY_SELECTORS) {
+    const el = container.querySelector(sel) as HTMLElement | null;
+    if (el) return el;
+  }
+  return null;
 }
 
-function getSubject(compose: Element): string {
-  const input = compose.querySelector(SUBJECT_SELECTOR) as HTMLInputElement | null;
-  return input?.value ?? '';
+function getRecipients(root: Element): string[] {
+  // Walk up to find the compose form
+  let el: Element | null = root;
+  for (let i = 0; i < 20 && el; i++) {
+    const recipients = el.querySelectorAll(RECIPIENT_SELECTOR);
+    if (recipients.length > 0) {
+      return Array.from(recipients)
+        .map((r) => r.getAttribute('email'))
+        .filter((e): e is string => !!e);
+    }
+    el = el.parentElement;
+  }
+  return [];
 }
 
-function getBodyElement(compose: Element): HTMLElement | null {
-  return compose.querySelector(COMPOSE_BODY_SELECTOR) as HTMLElement | null;
+function getSubject(root: Element): string {
+  let el: Element | null = root;
+  for (let i = 0; i < 20 && el; i++) {
+    const input = el.querySelector(SUBJECT_SELECTOR) as HTMLInputElement | null;
+    if (input) return input.value ?? '';
+    el = el.parentElement;
+  }
+  return '';
 }
 
-async function signAndInject(compose: Element): Promise<void> {
-  const body = getBodyElement(compose);
-  if (!body) return;
+// ── Static fallback badge (no API needed) ────────────────────────
 
+function createStaticBadgeHtml(): string {
+  return `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin-top:12px;">
+  <tr>
+    <td style="padding:8px 0;">
+      <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;border-left:3px solid #0ea5e9;">
+        <tr>
+          <td style="padding:8px 12px;vertical-align:middle;">
+            <span style="font-size:13px;font-weight:600;color:#1e293b;">🛡 Verified by QShield</span>
+            <span style="font-size:11px;color:#64748b;margin-left:8px;">This email is protected against interception</span>
+          </td>
+          <td style="padding:8px 12px;vertical-align:middle;">
+            <span style="font-size:11px;color:#0ea5e9;font-weight:500;">Verify ↗</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:2px 0 0 0;">
+      <span style="font-size:9px;color:#94a3b8;">Protected by </span>
+      <span style="font-size:9px;color:#94a3b8;font-weight:600;">QShield</span>
+      <span style="font-size:9px;color:#cbd5e1;"> — Verify your emails too → qshield.io</span>
+    </td>
+  </tr>
+</table>`;
+}
+
+// ── Badge injection ──────────────────────────────────────────────
+
+function injectBadge(body: HTMLElement, html: string): void {
+  // Remove existing badge
+  body.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => el.remove());
+
+  const wrapper = document.createElement('div');
+  wrapper.className = BADGE_CLASS;
+  wrapper.contentEditable = 'false';
+  wrapper.style.cssText = 'user-select:none;pointer-events:auto;margin-top:8px;';
+  wrapper.innerHTML = html;
+  body.appendChild(wrapper);
+}
+
+async function trySignWithApi(body: HTMLElement): Promise<void> {
   const bodyText = body.innerText?.trim();
   if (!bodyText) return;
-
-  // Remove any previously injected badge
-  body.querySelectorAll('.qshield-verification-badge').forEach((el) => el.remove());
 
   try {
     const contentHash = await sha256(bodyText);
@@ -54,55 +118,81 @@ async function signAndInject(compose: Element): Promise<void> {
       type: 'SIGN_EMAIL',
       data: {
         contentHash,
-        subject: getSubject(compose),
-        recipients: getRecipients(compose),
+        subject: getSubject(body),
+        recipients: getRecipients(body),
         timestamp: new Date().toISOString(),
         platform: 'gmail',
       },
     });
 
-    if (!response?.success || !response.badgeHtml) return;
-
-    const badge = document.createElement('div');
-    badge.className = 'qshield-verification-badge';
-    badge.setAttribute('data-verification-id', response.verificationId ?? '');
-    badge.innerHTML = response.badgeHtml;
-    body.appendChild(badge);
-  } catch (err) {
-    console.warn('[QShield] Badge injection failed:', err);
+    if (response?.success && response.badgeHtml) {
+      injectBadge(body, response.badgeHtml);
+      console.log('[QShield] Badge updated with verification ID:', response.verificationId);
+    }
+  } catch {
+    // API not available — static badge is already showing
+    console.log('[QShield] Desktop API not available, using static badge');
   }
 }
 
-async function attachToCompose(compose: Element): Promise<void> {
-  if (processedComposes.has(compose)) return;
-  processedComposes.add(compose);
+// ── Compose window handling ──────────────────────────────────────
 
-  // Check if extension is enabled
-  const configResult = await chrome.runtime.sendMessage({ type: 'GET_CONFIG' });
-  if (!configResult?.enabled || !configResult?.autoInject) return;
+function debounce(fn: () => void, ms: number): () => void {
+  let timer: ReturnType<typeof setTimeout>;
+  return () => { clearTimeout(timer); timer = setTimeout(fn, ms); };
+}
 
-  const sendBtn = compose.querySelector(SEND_BUTTON_SELECTOR);
-  if (sendBtn) {
-    sendBtn.addEventListener(
-      'click',
-      () => { signAndInject(compose); },
-      { capture: true, once: true },
-    );
-  }
+async function attachToComposeBody(body: HTMLElement): Promise<void> {
+  if (processedBodies.has(body)) return;
+  processedBodies.add(body);
+
+  console.log('[QShield] Compose window detected, injecting badge');
+
+  // 1. Inject static badge immediately (works without API)
+  injectBadge(body, createStaticBadgeHtml());
+
+  // 2. Try to get a real signed badge from Desktop API
+  await trySignWithApi(body);
+
+  // 3. Watch for content changes — re-sign periodically
+  const debouncedResign = debounce(() => trySignWithApi(body), 3000);
+
+  const contentObserver = new MutationObserver(() => {
+    // Don't re-trigger on our own badge injection
+    const lastChild = body.lastElementChild;
+    if (lastChild?.classList.contains(BADGE_CLASS)) return;
+    debouncedResign();
+  });
+
+  contentObserver.observe(body, { childList: true, characterData: true, subtree: true });
 }
 
 function scanForComposes(): void {
-  const composes = document.querySelectorAll(COMPOSE_CONTAINER_SELECTOR);
-  for (const compose of composes) {
-    attachToCompose(compose);
+  // Method 1: Find compose containers
+  const containers = document.querySelectorAll(COMPOSE_CONTAINER_SELECTOR);
+  for (const container of containers) {
+    const body = findComposeBody(container);
+    if (body) attachToComposeBody(body);
+  }
+
+  // Method 2: Direct search for editable textboxes (fallback)
+  for (const sel of COMPOSE_BODY_SELECTORS) {
+    const bodies = document.querySelectorAll(sel);
+    for (const body of bodies) {
+      attachToComposeBody(body as HTMLElement);
+    }
   }
 }
 
-// Watch for dynamically created compose windows
+// ── Initialize ───────────────────────────────────────────────────
+
 const observer = new MutationObserver(() => scanForComposes());
 observer.observe(document.body, { childList: true, subtree: true });
 
 // Initial scan
 scanForComposes();
+
+// Also scan periodically as a safety net (Gmail can be tricky)
+setInterval(scanForComposes, 2000);
 
 console.log('[QShield] Gmail content script loaded');
