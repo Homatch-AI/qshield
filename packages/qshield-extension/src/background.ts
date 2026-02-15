@@ -59,6 +59,7 @@ const messageHandlers: Record<string, (msg: unknown) => Promise<unknown>> = {
   GET_CONNECTION: handleGetConnection,
   GET_CONFIG: handleGetConfig,
   SIGN_EMAIL: handleSignEmail,
+  CREATE_SECURE_MESSAGE: handleCreateSecureMessage,
 };
 
 async function handleGetStatus(): Promise<unknown> {
@@ -106,6 +107,33 @@ async function handleSignEmail(msg: unknown): Promise<unknown> {
     };
   } catch (err) {
     console.warn('[QShield] Sign email failed:', err);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+async function handleCreateSecureMessage(msg: unknown): Promise<unknown> {
+  const { data } = msg as {
+    data: {
+      subject: string;
+      content: string;
+      recipients: string[];
+      expiresIn: string;
+      maxViews: number;
+      requireVerification: boolean;
+    };
+  };
+
+  try {
+    const api = await getClient();
+    const result = await api.createSecureMessage(data);
+    return {
+      success: true,
+      shareUrl: result.shareUrl,
+      messageId: result.messageId,
+      expiresAt: result.expiresAt,
+    };
+  } catch (err) {
+    console.warn('[QShield] Create secure message failed:', err);
     return { success: false, error: (err as Error).message };
   }
 }

@@ -29,6 +29,12 @@ export interface StatusResponse {
   dailyLimit: number;
 }
 
+export interface CreateSecureMessageResponse {
+  messageId: string;
+  shareUrl: string;
+  expiresAt: string;
+}
+
 export const DEFAULT_CONFIG: QShieldConfig = {
   apiPort: 3847,
   apiToken: '',

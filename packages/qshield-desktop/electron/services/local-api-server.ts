@@ -171,6 +171,9 @@ export class LocalApiServer {
     if (method === 'POST' && url === '/api/v1/email/verify-click') {
       return this.handleVerifyClick(req, res);
     }
+    if (method === 'POST' && url === '/api/v1/message/create') {
+      return this.handleCreateMessage(req, res);
+    }
 
     this.sendJson(res, 404, { error: 'Not found' });
   }
@@ -427,6 +430,58 @@ export class LocalApiServer {
       mimeType: attachment.mimeType,
       filename: attachment.filename,
     });
+  }
+
+  private async handleCreateMessage(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const services = this.deps.getServices();
+    if (!services) {
+      return this.sendJson(res, 503, { error: 'Desktop services not ready' });
+    }
+
+    const body = await this.readBody(req);
+    if (!body) {
+      return this.sendJson(res, 400, { error: 'Request body is required' });
+    }
+
+    let parsed: {
+      subject?: string;
+      content?: string;
+      recipients?: string[];
+      expiresIn?: string;
+      maxViews?: number;
+      requireVerification?: boolean;
+    };
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return this.sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+
+    if (!parsed.content || typeof parsed.content !== 'string') {
+      return this.sendJson(res, 400, { error: 'content is required' });
+    }
+
+    try {
+      const result = await services.secureMessageService.create({
+        subject: parsed.subject || 'Secure Message',
+        content: parsed.content,
+        expiresIn: parsed.expiresIn || '24h',
+        maxViews: parsed.maxViews ?? -1,
+        requireVerification: parsed.requireVerification ?? false,
+        allowedRecipients: parsed.recipients,
+      }) as { id: string; shareUrl: string; expiresAt: string };
+
+      log.info(`[LocalAPI] Secure message created: id=${result.id}`);
+
+      this.sendJson(res, 200, {
+        messageId: result.id,
+        shareUrl: result.shareUrl,
+        expiresAt: result.expiresAt,
+      });
+    } catch (err) {
+      log.error('[LocalAPI] Create secure message failed:', err);
+      this.sendJson(res, 500, { error: (err as Error).message || 'Failed to create secure message' });
+    }
   }
 
   private async handleMessageVerify(id: string, req: IncomingMessage, res: ServerResponse): Promise<void> {

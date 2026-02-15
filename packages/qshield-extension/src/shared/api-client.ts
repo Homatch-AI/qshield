@@ -1,4 +1,4 @@
-import type { QShieldConfig, SignResponse, HealthResponse, StatusResponse } from './types';
+import type { QShieldConfig, SignResponse, HealthResponse, StatusResponse, CreateSecureMessageResponse } from './types';
 
 export class QShieldApiClient {
   private baseUrl: string;
@@ -58,6 +58,30 @@ export class QShieldApiClient {
       headers: { 'X-QShield-Token': this.token },
     });
     if (!res.ok) throw new Error(`Status check failed: ${res.status}`);
+    return res.json();
+  }
+
+  /** Create an encrypted secure message via Desktop. */
+  async createSecureMessage(params: {
+    subject: string;
+    content: string;
+    recipients: string[];
+    expiresIn: string;
+    maxViews: number;
+    requireVerification: boolean;
+  }): Promise<CreateSecureMessageResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/message/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-QShield-Token': this.token,
+      },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { error?: string }).error ?? `Create failed: ${res.status}`);
+    }
     return res.json();
   }
 
