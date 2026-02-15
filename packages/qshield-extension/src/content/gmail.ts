@@ -119,7 +119,7 @@ export async function trySignWithApi(body: HTMLElement): Promise<void> {
       data: {
         contentHash,
         subject: getSubject(body),
-        recipients: getRecipients(body),
+        recipients: (() => { const r = getRecipients(body); return r.length > 0 ? r : ['draft']; })(),
         timestamp: new Date().toISOString(),
         platform: 'gmail',
       },

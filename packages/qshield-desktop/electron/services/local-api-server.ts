@@ -26,7 +26,7 @@ interface LocalApiDeps {
 interface SignRequest {
   contentHash: string;
   subject?: string;
-  recipients: string[];
+  recipients?: string[];
   timestamp: string;
   platform: string;
 }
@@ -185,8 +185,8 @@ export class LocalApiServer {
     if (!parsed.contentHash || typeof parsed.contentHash !== 'string') {
       return this.sendJson(res, 400, { error: 'contentHash is required' });
     }
-    if (!Array.isArray(parsed.recipients) || parsed.recipients.length === 0) {
-      return this.sendJson(res, 400, { error: 'recipients array is required' });
+    if (parsed.recipients && !Array.isArray(parsed.recipients)) {
+      return this.sendJson(res, 400, { error: 'recipients must be an array' });
     }
     if (!parsed.timestamp || !parsed.platform) {
       return this.sendJson(res, 400, { error: 'timestamp and platform are required' });
@@ -207,7 +207,7 @@ export class LocalApiServer {
     });
 
     // Log evidence (content hash + recipient hashes)
-    const recipientHashes = parsed.recipients.map((r: string) =>
+    const recipientHashes = (parsed.recipients ?? []).map((r: string) =>
       createHash('sha256').update(r.toLowerCase()).digest('hex').slice(0, 16),
     );
     log.info(`[LocalAPI] Email signed: verification=${record.verificationId}, recipients=${recipientHashes.length}, platform=${parsed.platform}`);
