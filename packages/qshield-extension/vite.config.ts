@@ -27,6 +27,11 @@ export default defineConfig({
     {
       name: 'copy-popup-assets',
       closeBundle() {
+        // Copy manifest.json to dist
+        copyFileSync(
+          resolve(__dirname, 'manifest.json'),
+          resolve(__dirname, 'dist/manifest.json'),
+        );
         // Copy popup HTML and CSS to dist (not processed by Vite)
         mkdirSync(resolve(__dirname, 'dist/popup'), { recursive: true });
         copyFileSync(
