@@ -143,7 +143,7 @@ export interface ServiceRegistry {
     destroy: (id: string) => unknown;
     getAccessLog: (id: string) => unknown;
     copyLink: (id: string) => void;
-    recordAccess: (id: string, entry: { ip: string; userAgent: string; recipientEmail?: string; action: 'viewed' | 'downloaded' | 'verified' | 'expired' | 'destroyed' }) => boolean;
+    recordAccess: (id: string, entry: { ip: string; userAgent: string; recipientEmail?: string; action: 'viewed' | 'downloaded' | 'file_downloaded' | 'verified' | 'expired' | 'destroyed' }) => boolean;
     getDecryptedContent: (id: string) => string | null;
   };
 }
@@ -695,7 +695,7 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     if (!opts || typeof opts !== 'object') {
       return fail('VALIDATION_ERROR', 'Message options are required');
     }
-    const { subject, content, expiresIn, maxViews, requireVerification, allowedRecipients } = opts as Record<string, unknown>;
+    const { subject, content, attachments, expiresIn, maxViews, requireVerification, allowedRecipients } = opts as Record<string, unknown>;
     if (!subject || typeof subject !== 'string' || subject.trim().length === 0) {
       return fail('VALIDATION_ERROR', 'Subject is required');
     }
@@ -712,7 +712,7 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     const senderName = user?.name ?? 'QShield User';
     const senderEmail = user?.email ?? 'user@qshield.io';
     return ok(services.secureMessageService.create(
-      { subject: subject as string, content: content as string, expiresIn: expiresIn as string, maxViews: maxViews as number, requireVerification: !!requireVerification, allowedRecipients: Array.isArray(allowedRecipients) ? allowedRecipients : [] },
+      { subject: subject as string, content: content as string, attachments: Array.isArray(attachments) ? attachments : undefined, expiresIn: expiresIn as string, maxViews: maxViews as number, requireVerification: !!requireVerification, allowedRecipients: Array.isArray(allowedRecipients) ? allowedRecipients : [] },
       senderName,
       senderEmail,
     ));

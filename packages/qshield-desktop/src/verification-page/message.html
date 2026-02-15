@@ -83,6 +83,24 @@ a:hover{text-decoration:underline}
 .msg-content{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:100%;margin-bottom:1rem}
 .msg-content-body{font-size:.9rem;line-height:1.7;color:var(--text);white-space:pre-wrap;word-break:break-word}
 
+/* Attachments */
+.att-section{width:100%;margin-bottom:1rem}
+.att-header{font-size:.875rem;font-weight:600;color:var(--text);margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem}
+.att-list{display:flex;flex-direction:column;gap:.5rem}
+.att-card{display:flex;align-items:center;justify-content:space-between;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.625rem .875rem}
+.att-info{display:flex;align-items:center;gap:.625rem;min-width:0;flex:1}
+.att-icon{width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.att-icon-pdf{background:rgba(239,68,68,.1)}
+.att-icon-img{background:rgba(168,85,247,.1)}
+.att-icon-zip{background:rgba(245,158,11,.1)}
+.att-icon-doc{background:rgba(14,165,233,.1)}
+.att-icon-default{background:rgba(148,163,184,.1)}
+.att-name{font-size:.8125rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att-size{font-size:.6875rem;color:var(--text-dim)}
+.att-dl-btn{flex-shrink:0;display:flex;align-items:center;gap:.375rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.375rem .75rem;font-size:.75rem;color:var(--text-muted);cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.att-dl-btn:hover{background:var(--sky-bg);color:var(--sky);border-color:var(--sky-border)}
+.att-dl-btn:disabled{opacity:.5;cursor:wait}
+
 .msg-footer{width:100%;text-align:center;padding:1.5rem 0}
 .msg-footer .powered{font-size:.75rem;color:var(--text-dim);margin-bottom:.25rem}
 .msg-footer .views{font-size:.75rem;color:var(--text-dim)}
@@ -185,6 +203,15 @@ a:hover{text-decoration:underline}
       <div class="msg-content-body" id="msg-body"></div>
     </div>
 
+    <!-- Attachments (populated dynamically) -->
+    <div id="attachments-section" class="att-section" style="display:none">
+      <div class="att-header">
+        <span>&#128206;</span>
+        <span id="attachment-count"></span> Attachments
+      </div>
+      <div id="attachment-list" class="att-list"></div>
+    </div>
+
     <div class="msg-footer">
       <div class="powered">This message was sent securely via QShield</div>
       <div class="views" id="msg-views"></div>
@@ -230,9 +257,10 @@ a:hover{text-decoration:underline}
   // Determine API base: same origin for local dev, or qshield.io in prod
   var apiBase = location.origin;
 
-  // ── State references ────────────────────────────────────────────────────
-  var msgData = null; // server response
-  var decryptedContent = null;
+  // ── State ─────────────────────────────────────────────────────────────
+  var msgData = null;     // server response
+  var aesKey = null;       // imported CryptoKey for decryption
+  var attachments = [];    // attachment metadata from server
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function show(id) {
@@ -252,10 +280,10 @@ a:hover{text-decoration:underline}
     return days + ' days';
   }
 
-  function escapeHtml(str) {
-    var div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
   }
 
   // Convert base64url to Uint8Array
@@ -277,30 +305,45 @@ a:hover{text-decoration:underline}
     return arr;
   }
 
+  // File type icon and CSS class
+  function fileTypeInfo(filename, mimeType) {
+    var ext = (filename.split('.').pop() || '').toLowerCase();
+    if (ext === 'pdf' || mimeType === 'application/pdf')
+      return { emoji: '\uD83D\uDCC4', cls: 'att-icon-pdf' };
+    if (/^image\//.test(mimeType) || /^(png|jpg|jpeg|gif|svg|webp|bmp)$/.test(ext))
+      return { emoji: '\uD83D\uDCF7', cls: 'att-icon-img' };
+    if (/^(zip|gz|tar|rar|7z)$/.test(ext) || /compressed|archive|zip/.test(mimeType))
+      return { emoji: '\uD83D\uDCE6', cls: 'att-icon-zip' };
+    if (/^(doc|docx|xls|xlsx|ppt|pptx|txt|csv|md)$/.test(ext))
+      return { emoji: '\uD83D\uDCC4', cls: 'att-icon-doc' };
+    return { emoji: '\uD83D\uDCC1', cls: 'att-icon-default' };
+  }
+
+  // ── Import AES key from URL fragment ──────────────────────────────────
+  async function importKey(keyB64url) {
+    var keyBytes = base64urlToBytes(keyB64url);
+    return crypto.subtle.importKey(
+      'raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']
+    );
+  }
+
   // ── Decrypt with SubtleCrypto ───────────────────────────────────────────
-  async function decryptContent(contentEncrypted, ivB64, keyB64url) {
+  async function decryptAesGcm(contentEncrypted, ivB64, cryptoKey) {
     var parts = contentEncrypted.split('.');
     if (parts.length !== 2) throw new Error('Invalid ciphertext format');
 
     var ciphertext = base64ToBytes(parts[0]);
     var authTag = base64ToBytes(parts[1]);
     var iv = base64ToBytes(ivB64);
-    var keyBytes = base64urlToBytes(keyB64url);
 
     // Combine ciphertext + authTag (WebCrypto expects them concatenated)
     var combined = new Uint8Array(ciphertext.length + authTag.length);
     combined.set(ciphertext);
     combined.set(authTag, ciphertext.length);
 
-    var cryptoKey = await crypto.subtle.importKey(
-      'raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']
-    );
-
-    var decrypted = await crypto.subtle.decrypt(
+    return crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: iv }, cryptoKey, combined
     );
-
-    return new TextDecoder().decode(decrypted);
   }
 
   // ── Display message ─────────────────────────────────────────────────────
@@ -310,8 +353,112 @@ a:hover{text-decoration:underline}
     document.getElementById('msg-subject').textContent = msgData.subject;
     document.getElementById('msg-expires').textContent = timeUntil(msgData.expiresAt);
     document.getElementById('msg-body').textContent = content;
+
+    // Render attachments if present
+    if (attachments.length > 0) {
+      renderAttachments();
+    }
+
     show('state-message');
   }
+
+  // ── Render attachment list ──────────────────────────────────────────────
+  function renderAttachments() {
+    var section = document.getElementById('attachments-section');
+    var list = document.getElementById('attachment-list');
+    var countEl = document.getElementById('attachment-count');
+
+    countEl.textContent = attachments.length;
+    section.style.display = 'block';
+    list.innerHTML = '';
+
+    for (var i = 0; i < attachments.length; i++) {
+      var att = attachments[i];
+      var info = fileTypeInfo(att.filename, att.mimeType);
+
+      var card = document.createElement('div');
+      card.className = 'att-card';
+
+      var infoDiv = document.createElement('div');
+      infoDiv.className = 'att-info';
+
+      var iconDiv = document.createElement('div');
+      iconDiv.className = 'att-icon ' + info.cls;
+      iconDiv.textContent = info.emoji;
+
+      var textDiv = document.createElement('div');
+      textDiv.style.minWidth = '0';
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'att-name';
+      nameDiv.textContent = att.filename;
+      var sizeDiv = document.createElement('div');
+      sizeDiv.className = 'att-size';
+      sizeDiv.textContent = formatBytes(att.sizeBytes);
+      textDiv.appendChild(nameDiv);
+      textDiv.appendChild(sizeDiv);
+
+      infoDiv.appendChild(iconDiv);
+      infoDiv.appendChild(textDiv);
+
+      var dlBtn = document.createElement('button');
+      dlBtn.className = 'att-dl-btn';
+      dlBtn.innerHTML = '\u2B07 Download';
+      dlBtn.setAttribute('data-att-id', att.id);
+      dlBtn.setAttribute('data-filename', att.filename);
+      dlBtn.onclick = (function(attId, filename, btn) {
+        return function() { downloadAttachment(attId, filename, btn); };
+      })(att.id, att.filename, dlBtn);
+
+      card.appendChild(infoDiv);
+      card.appendChild(dlBtn);
+      list.appendChild(card);
+    }
+  }
+
+  // ── Download and decrypt an attachment ──────────────────────────────────
+  window.downloadAttachment = async function(attachmentId, filename, btn) {
+    if (!aesKey) return;
+
+    var origText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '\u23F3 Decrypting...';
+
+    try {
+      var resp = await fetch(apiBase + '/api/v1/message/' + messageId + '/attachment/' + attachmentId);
+      if (!resp.ok) {
+        var err = await resp.json().catch(function() { return {}; });
+        throw new Error(err.error || 'Failed to fetch attachment');
+      }
+
+      var data = await resp.json();
+
+      // Decrypt the attachment using the same AES key + attachment-specific IV
+      var decrypted = await decryptAesGcm(data.dataEncrypted, data.iv, aesKey);
+
+      // Trigger browser download
+      var blob = new Blob([decrypted], { type: data.mimeType || 'application/octet-stream' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      btn.innerHTML = '\u2705 Downloaded';
+      setTimeout(function() {
+        btn.innerHTML = origText;
+        btn.disabled = false;
+      }, 2000);
+    } catch (e) {
+      btn.innerHTML = '\u274C Failed';
+      setTimeout(function() {
+        btn.innerHTML = origText;
+        btn.disabled = false;
+      }, 3000);
+    }
+  };
 
   // ── Verification flow ──────────────────────────────────────────────────
   window.sendCode = function() {
@@ -404,6 +551,7 @@ a:hover{text-decoration:underline}
       if (!resp.ok) throw new Error('Server error: ' + resp.status);
 
       msgData = await resp.json();
+      attachments = msgData.attachments || [];
 
       // If verification is required, show the gate
       if (msgData.requireVerification) {
@@ -413,7 +561,6 @@ a:hover{text-decoration:underline}
 
       // Try client-side decryption with the key from URL fragment
       if (!keyFragment) {
-        // No key in URL — cannot decrypt
         document.getElementById('error-title').textContent = 'Missing decryption key';
         document.getElementById('error-desc').textContent = 'The link is missing the encryption key. Make sure you copied the full URL including the # fragment.';
         show('state-error');
@@ -421,7 +568,9 @@ a:hover{text-decoration:underline}
       }
 
       try {
-        decryptedContent = await decryptContent(msgData.contentEncrypted, msgData.iv, keyFragment);
+        aesKey = await importKey(keyFragment);
+        var decryptedBuf = await decryptAesGcm(msgData.contentEncrypted, msgData.iv, aesKey);
+        var decryptedContent = new TextDecoder().decode(decryptedBuf);
         showMessage(decryptedContent);
       } catch (decErr) {
         document.getElementById('error-title').textContent = 'Decryption failed';

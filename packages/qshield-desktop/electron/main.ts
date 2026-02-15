@@ -756,6 +756,7 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
   // Initialize secure message service
   const secureMessageSvc = new SecureMessageService();
   secureMessageSvc.setPersist((messages) => config.set('secureMessages', messages));
+  secureMessageSvc.setEditionProvider(() => licMgr.getEdition());
   const savedMessages = config.get('secureMessages') as Parameters<typeof secureMessageSvc.load>[0] | undefined;
   if (savedMessages && Array.isArray(savedMessages)) {
     secureMessageSvc.load(savedMessages);
@@ -957,7 +958,7 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
     },
     secureMessageService: {
       create: (opts: unknown) => {
-        const o = opts as { subject: string; content: string; expiresIn: string; maxViews: number; requireVerification: boolean; allowedRecipients: string[] };
+        const o = opts as { subject: string; content: string; attachments?: { filename: string; mimeType: string; data: string }[]; expiresIn: string; maxViews: number; requireVerification: boolean; allowedRecipients: string[] };
         const user = authSvc.getUser() as { name?: string; email?: string } | null;
         return secureMessageSvc.create(
           o as Parameters<typeof secureMessageSvc.create>[0],
@@ -979,7 +980,7 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
           clipboard.writeText(summary.shareUrl);
         }
       },
-      recordAccess: (id: string, entry: { ip: string; userAgent: string; recipientEmail?: string; action: 'viewed' | 'downloaded' | 'verified' | 'expired' | 'destroyed' }) =>
+      recordAccess: (id: string, entry: { ip: string; userAgent: string; recipientEmail?: string; action: 'viewed' | 'downloaded' | 'file_downloaded' | 'verified' | 'expired' | 'destroyed' }) =>
         secureMessageSvc.recordAccess(id, entry),
       getDecryptedContent: (id: string) => secureMessageSvc.getDecryptedContent(id),
     },

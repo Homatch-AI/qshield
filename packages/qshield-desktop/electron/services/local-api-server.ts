@@ -145,6 +145,10 @@ export class LocalApiServer {
     if (messageMatch && method === 'GET') {
       return this.handleMessageGet(messageMatch[1], res);
     }
+    const messageAttachMatch = url.match(/^\/api\/v1\/message\/([a-f0-9]{12})\/attachment\/([a-f0-9]+)$/);
+    if (messageAttachMatch && method === 'GET') {
+      return this.handleAttachmentGet(messageAttachMatch[1], messageAttachMatch[2], res);
+    }
     const messageVerifyMatch = url.match(/^\/api\/v1\/message\/([a-f0-9]{12})\/verify$/);
     if (messageVerifyMatch && method === 'POST') {
       return this.handleMessageVerify(messageVerifyMatch[1], req, res);
@@ -343,6 +347,7 @@ export class LocalApiServer {
       senderName: string;
       requireVerification: boolean;
       accessLog: unknown[];
+      attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>;
     } | null;
 
     if (!msg) {
@@ -364,6 +369,14 @@ export class LocalApiServer {
       action: 'viewed',
     });
 
+    // Return attachment metadata (without encrypted data — fetched separately)
+    const attachmentMeta = (msg.attachments ?? []).map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+    }));
+
     this.sendJson(res, 200, {
       subject: msg.subject,
       contentEncrypted: msg.contentEncrypted,
@@ -372,6 +385,47 @@ export class LocalApiServer {
       senderName: msg.senderName,
       trustScore: this.deps.getTrustScore(),
       requireVerification: msg.requireVerification,
+      attachments: attachmentMeta,
+    });
+  }
+
+  private handleAttachmentGet(messageId: string, attachmentId: string, res: ServerResponse): void {
+    const services = this.deps.getServices();
+    if (!services) {
+      return this.sendJson(res, 503, { error: 'Desktop services not ready' });
+    }
+
+    const msg = services.secureMessageService.get(messageId) as {
+      status: string;
+      expiresAt: string;
+      attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number; dataEncrypted: string; iv: string }>;
+    } | null;
+
+    if (!msg) {
+      return this.sendJson(res, 404, { error: 'Message not found' });
+    }
+
+    if (msg.status === 'destroyed' || msg.status === 'expired' || new Date(msg.expiresAt) <= new Date()) {
+      return this.sendJson(res, 410, { error: 'Message is no longer available' });
+    }
+
+    const attachment = (msg.attachments ?? []).find((a) => a.id === attachmentId);
+    if (!attachment) {
+      return this.sendJson(res, 404, { error: 'Attachment not found' });
+    }
+
+    // Record file download access
+    services.secureMessageService.recordAccess(messageId, {
+      ip: 'local',
+      userAgent: 'api-client',
+      action: 'file_downloaded',
+    });
+
+    this.sendJson(res, 200, {
+      dataEncrypted: attachment.dataEncrypted,
+      iv: attachment.iv,
+      mimeType: attachment.mimeType,
+      filename: attachment.filename,
     });
   }
 

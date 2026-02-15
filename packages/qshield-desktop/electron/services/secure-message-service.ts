@@ -5,7 +5,7 @@
  * Keys are stored locally and shared via URL fragment (#key) so they
  * are never sent to the server.
  */
-import { createHmac, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
+import { createHmac, createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import log from 'electron-log';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -15,7 +15,17 @@ export interface AccessLogEntry {
   ip: string;
   userAgent: string;
   recipientEmail?: string;
-  action: 'viewed' | 'downloaded' | 'verified' | 'expired' | 'destroyed';
+  action: 'viewed' | 'downloaded' | 'file_downloaded' | 'verified' | 'expired' | 'destroyed';
+}
+
+export interface SecureAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  dataEncrypted: string;
+  iv: string;
+  hash: string;
 }
 
 export interface SecureMessage {
@@ -28,6 +38,7 @@ export interface SecureMessage {
   contentHash: string;
   iv: string;
   key: string;
+  attachments: SecureAttachment[];
   expiresAt: string;
   maxViews: number;
   currentViews: number;
@@ -38,9 +49,16 @@ export interface SecureMessage {
   accessLog: AccessLogEntry[];
 }
 
+export interface AttachmentInput {
+  filename: string;
+  mimeType: string;
+  data: string; // base64-encoded file content
+}
+
 export interface CreateMessageOpts {
   subject: string;
   content: string;
+  attachments?: AttachmentInput[];
   expiresIn: '1h' | '24h' | '7d' | '30d';
   maxViews: number;
   requireVerification: boolean;
@@ -55,6 +73,8 @@ export interface MessageSummary {
   status: string;
   currentViews: number;
   maxViews: number;
+  attachmentCount: number;
+  totalAttachmentSize: number;
   shareUrl: string;
 }
 
@@ -71,17 +91,31 @@ const EXPIRY_MS: Record<string, number> = {
   '30d': 30 * 24 * 60 * 60 * 1000,
 };
 
+/** Attachment limits by edition: [maxTotalBytes, maxFiles] */
+const ATTACHMENT_LIMITS: Record<string, [number, number]> = {
+  free: [0, 0],
+  personal: [1 * 1024 * 1024, 3],
+  business: [10 * 1024 * 1024, 10],
+  enterprise: [100 * 1024 * 1024, 50],
+};
+
 // ── Service ──────────────────────────────────────────────────────────────────
 
 export class SecureMessageService {
   private messages: SecureMessage[] = [];
   private persistFn: ((messages: SecureMessage[]) => void) | null = null;
+  private editionFn: (() => string) | null = null;
 
   constructor() {}
 
   /** Set a callback to persist messages to config. */
   setPersist(fn: (messages: SecureMessage[]) => void): void {
     this.persistFn = fn;
+  }
+
+  /** Set a callback to get the current edition for attachment limits. */
+  setEditionProvider(fn: () => string): void {
+    this.editionFn = fn;
   }
 
   /** Load persisted messages. */
@@ -108,6 +142,9 @@ export class SecureMessageService {
     // Content hash for evidence
     const contentHash = createHmac('sha256', HMAC_KEY).update(opts.content).digest('hex');
 
+    // Encrypt attachments
+    const attachments = this.encryptAttachments(opts.attachments ?? [], key);
+
     // Calculate expiry
     const expiresAt = new Date(Date.now() + EXPIRY_MS[opts.expiresIn]).toISOString();
 
@@ -126,6 +163,7 @@ export class SecureMessageService {
       contentHash,
       iv: iv.toString('base64'),
       key: key.toString('base64'),
+      attachments,
       expiresAt,
       maxViews: opts.maxViews,
       currentViews: 0,
@@ -140,7 +178,7 @@ export class SecureMessageService {
     if (this.messages.length > MAX_MESSAGES) this.messages.length = MAX_MESSAGES;
     this.persist();
 
-    log.info(`[SecureMessage] Created: ${id} (expires: ${opts.expiresIn}, maxViews: ${opts.maxViews})`);
+    log.info(`[SecureMessage] Created: ${id} (expires: ${opts.expiresIn}, maxViews: ${opts.maxViews}, attachments: ${attachments.length})`);
 
     return this.toSummary(message);
   }
@@ -163,12 +201,12 @@ export class SecureMessageService {
     try {
       const key = Buffer.from(msg.key, 'base64');
       const iv = Buffer.from(msg.iv, 'base64');
-      const [encrypted, authTagB64] = msg.contentEncrypted.split('.');
+      const [enc, authTagB64] = msg.contentEncrypted.split('.');
       const authTag = Buffer.from(authTagB64, 'base64');
 
       const decipher = createDecipheriv('aes-256-gcm', key, iv);
       decipher.setAuthTag(authTag);
-      let decrypted = decipher.update(encrypted, 'base64', 'utf8');
+      let decrypted = decipher.update(enc, 'base64', 'utf8');
       decrypted += decipher.final('utf8');
       return decrypted;
     } catch (err) {
@@ -199,6 +237,7 @@ export class SecureMessageService {
     if (msg.maxViews !== -1 && msg.currentViews >= msg.maxViews) {
       msg.status = 'destroyed';
       msg.contentEncrypted = '';
+      msg.attachments = [];
       log.info(`[SecureMessage] Auto-destroyed ${id} after ${msg.currentViews} views`);
     }
 
@@ -213,6 +252,7 @@ export class SecureMessageService {
 
     msg.status = 'destroyed';
     msg.contentEncrypted = '';
+    msg.attachments = [];
     this.persist();
 
     log.info(`[SecureMessage] Destroyed: ${id}`);
@@ -238,11 +278,63 @@ export class SecureMessageService {
     return createHmac('sha256', HMAC_KEY).update(data).digest('hex').slice(0, 12);
   }
 
+  private encryptAttachments(inputs: AttachmentInput[], key: Buffer): SecureAttachment[] {
+    if (inputs.length === 0) return [];
+
+    // Check edition limits
+    const edition = this.editionFn?.() ?? 'personal';
+    const [maxBytes, maxFiles] = ATTACHMENT_LIMITS[edition] ?? ATTACHMENT_LIMITS.personal;
+
+    if (maxFiles === 0) {
+      throw new Error('File attachments are not available on your current plan');
+    }
+    if (inputs.length > maxFiles) {
+      throw new Error(`Maximum ${maxFiles} attachments allowed on ${edition} plan`);
+    }
+
+    let totalSize = 0;
+    const attachments: SecureAttachment[] = [];
+
+    for (const input of inputs) {
+      const fileData = Buffer.from(input.data, 'base64');
+      totalSize += fileData.length;
+
+      if (totalSize > maxBytes) {
+        throw new Error(`Total attachment size exceeds ${Math.round(maxBytes / 1024 / 1024)} MB limit for ${edition} plan`);
+      }
+
+      // Separate IV per attachment
+      const attIv = randomBytes(12);
+      const attCipher = createCipheriv('aes-256-gcm', key, attIv);
+      let encData = attCipher.update(fileData).toString('base64');
+      encData += attCipher.final().toString('base64');
+      const attAuthTag = attCipher.getAuthTag();
+      const dataEncrypted = encData + '.' + attAuthTag.toString('base64');
+
+      // SHA-256 hash of original file
+      const hash = createHash('sha256').update(fileData).digest('hex');
+
+      attachments.push({
+        id: randomBytes(4).toString('hex'),
+        filename: input.filename,
+        mimeType: input.mimeType,
+        sizeBytes: fileData.length,
+        dataEncrypted,
+        iv: attIv.toString('base64'),
+        hash,
+      });
+    }
+
+    return attachments;
+  }
+
   private toSummary(msg: SecureMessage): MessageSummary {
     const keyBase64Url = msg.key
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
+
+    const attachments = msg.attachments ?? [];
 
     return {
       id: msg.id,
@@ -252,6 +344,8 @@ export class SecureMessageService {
       status: msg.status,
       currentViews: msg.currentViews,
       maxViews: msg.maxViews,
+      attachmentCount: attachments.length,
+      totalAttachmentSize: attachments.reduce((sum, a) => sum + a.sizeBytes, 0),
       shareUrl: `${MESSAGE_BASE_URL}/${msg.id}#${keyBase64Url}`,
     };
   }
