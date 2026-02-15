@@ -377,6 +377,26 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<{ token: string }>(IPC_CHANNELS.API_REGENERATE_TOKEN),
   },
 
+  secureMessage: {
+    create: (opts: unknown): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.SECURE_MSG_CREATE, opts),
+
+    list: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.SECURE_MSG_LIST),
+
+    get: (id: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.SECURE_MSG_GET, id),
+
+    destroy: (id: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.SECURE_MSG_DESTROY, id),
+
+    getAccessLog: (id: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.SECURE_MSG_ACCESS_LOG, id),
+
+    copyLink: (id: string): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.SECURE_MSG_COPY_LINK, id),
+  },
+
   app: {
     version: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),

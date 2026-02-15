@@ -135,6 +135,16 @@ export interface ServiceRegistry {
     getInfo: () => { port: number; token: string; running: boolean };
     regenerateToken: () => { token: string };
   };
+  secureMessageService: {
+    create: (opts: unknown, senderName: string, senderEmail: string) => unknown;
+    list: () => unknown;
+    get: (id: string) => unknown;
+    destroy: (id: string) => unknown;
+    getAccessLog: (id: string) => unknown;
+    copyLink: (id: string) => void;
+    recordAccess: (id: string, entry: { ip: string; userAgent: string; recipientEmail?: string; action: 'viewed' | 'downloaded' | 'verified' | 'expired' | 'destroyed' }) => boolean;
+    getDecryptedContent: (id: string) => string | null;
+  };
 }
 
 // ── Rate limiter ─────────────────────────────────────────────────────────────
@@ -648,6 +658,61 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
   });
 
   // NOTE: APP_TOGGLE_MAIN is registered in main.ts (needs direct mainWindow access)
+
+  // ── Secure Messages ────────────────────────────────────────────────
+  const validExpiresIn = ['1h', '24h', '7d', '30d'];
+
+  wrapHandler(IPC_CHANNELS.SECURE_MSG_CREATE, async (_event, opts) => {
+    if (!opts || typeof opts !== 'object') {
+      return fail('VALIDATION_ERROR', 'Message options are required');
+    }
+    const { subject, content, expiresIn, maxViews, requireVerification, allowedRecipients } = opts as Record<string, unknown>;
+    if (!subject || typeof subject !== 'string' || subject.trim().length === 0) {
+      return fail('VALIDATION_ERROR', 'Subject is required');
+    }
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return fail('VALIDATION_ERROR', 'Content is required');
+    }
+    if (!expiresIn || typeof expiresIn !== 'string' || !validExpiresIn.includes(expiresIn)) {
+      return fail('VALIDATION_ERROR', 'expiresIn must be one of: 1h, 24h, 7d, 30d');
+    }
+    if (typeof maxViews !== 'number' || maxViews < -1) {
+      return fail('VALIDATION_ERROR', 'maxViews must be >= -1');
+    }
+    const user = services.authService.getUser() as { name?: string; email?: string } | null;
+    const senderName = user?.name ?? 'QShield User';
+    const senderEmail = user?.email ?? 'user@qshield.io';
+    return ok(services.secureMessageService.create(
+      { subject: subject as string, content: content as string, expiresIn: expiresIn as string, maxViews: maxViews as number, requireVerification: !!requireVerification, allowedRecipients: Array.isArray(allowedRecipients) ? allowedRecipients : [] },
+      senderName,
+      senderEmail,
+    ));
+  });
+
+  wrapHandler(IPC_CHANNELS.SECURE_MSG_LIST, async () => {
+    return ok(services.secureMessageService.list());
+  });
+
+  wrapHandler(IPC_CHANNELS.SECURE_MSG_GET, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    return ok(services.secureMessageService.get(validId));
+  });
+
+  wrapHandler(IPC_CHANNELS.SECURE_MSG_DESTROY, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    return ok(services.secureMessageService.destroy(validId));
+  });
+
+  wrapHandler(IPC_CHANNELS.SECURE_MSG_ACCESS_LOG, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    return ok(services.secureMessageService.getAccessLog(validId));
+  });
+
+  wrapHandler(IPC_CHANNELS.SECURE_MSG_COPY_LINK, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    services.secureMessageService.copyLink(validId);
+    return ok(null);
+  });
 
   log.info('All IPC handlers registered');
 }

@@ -131,6 +131,16 @@ export class LocalApiServer {
       return this.handleHealth(res);
     }
 
+    // Secure message endpoints — no auth required (public link access)
+    const messageMatch = url.match(/^\/api\/v1\/message\/([a-f0-9]{12})$/);
+    if (messageMatch && method === 'GET') {
+      return this.handleMessageGet(messageMatch[1], res);
+    }
+    const messageVerifyMatch = url.match(/^\/api\/v1\/message\/([a-f0-9]{12})\/verify$/);
+    if (messageVerifyMatch && method === 'POST') {
+      return this.handleMessageVerify(messageVerifyMatch[1], req, res);
+    }
+
     // All other endpoints require auth token
     const token = req.headers['x-qshield-token'] as string | undefined;
     const expectedToken = this.currentToken ?? this.deps.getApiToken();
@@ -286,6 +296,97 @@ export class LocalApiServer {
 
     services.verificationService.recordClick(parsed.verificationId);
     this.sendJson(res, 200, { recorded: true });
+  }
+
+  // ── Secure message handlers ─────────────────────────────────────────────
+
+  private handleMessageGet(id: string, res: ServerResponse): void {
+    const services = this.deps.getServices();
+    if (!services) {
+      return this.sendJson(res, 503, { error: 'Desktop services not ready' });
+    }
+
+    const msg = services.secureMessageService.get(id) as {
+      status: string;
+      expiresAt: string;
+      subject: string;
+      contentEncrypted: string;
+      iv: string;
+      senderName: string;
+      requireVerification: boolean;
+      accessLog: unknown[];
+    } | null;
+
+    if (!msg) {
+      return this.sendJson(res, 404, { error: 'Message not found' });
+    }
+
+    if (msg.status === 'destroyed') {
+      return this.sendJson(res, 410, { error: 'Message has been destroyed' });
+    }
+
+    if (msg.status === 'expired' || new Date(msg.expiresAt) <= new Date()) {
+      return this.sendJson(res, 410, { error: 'Message has expired' });
+    }
+
+    // Record access
+    services.secureMessageService.recordAccess(id, {
+      ip: 'local',
+      userAgent: 'api-client',
+      action: 'viewed',
+    });
+
+    this.sendJson(res, 200, {
+      subject: msg.subject,
+      contentEncrypted: msg.contentEncrypted,
+      iv: msg.iv,
+      expiresAt: msg.expiresAt,
+      senderName: msg.senderName,
+      trustScore: this.deps.getTrustScore(),
+      requireVerification: msg.requireVerification,
+    });
+  }
+
+  private async handleMessageVerify(id: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const services = this.deps.getServices();
+    if (!services) {
+      return this.sendJson(res, 503, { error: 'Desktop services not ready' });
+    }
+
+    const body = await this.readBody(req);
+    if (!body) {
+      return this.sendJson(res, 400, { error: 'Request body is required' });
+    }
+
+    let parsed: { email?: string; code?: string };
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return this.sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+
+    if (!parsed.email || !parsed.code) {
+      return this.sendJson(res, 400, { error: 'email and code are required' });
+    }
+
+    // Mock verification: accept any 6-digit code
+    if (!/^\d{6}$/.test(parsed.code)) {
+      return this.sendJson(res, 403, { error: 'Invalid verification code' });
+    }
+
+    const content = services.secureMessageService.getDecryptedContent(id) as string | null;
+    if (!content) {
+      return this.sendJson(res, 404, { error: 'Message not found or destroyed' });
+    }
+
+    services.secureMessageService.recordAccess(id, {
+      ip: 'local',
+      userAgent: 'api-client',
+      recipientEmail: parsed.email,
+      action: 'verified',
+    });
+
+    this.sendJson(res, 200, { verified: true, content });
   }
 
   // ── Utilities ────────────────────────────────────────────────────────────

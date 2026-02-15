@@ -199,6 +199,46 @@ interface QShieldAuthAPI {
   switchEdition(edition: string): Promise<unknown>;
 }
 
+interface QShieldSecureMessageAPI {
+  create(opts: {
+    subject: string;
+    content: string;
+    expiresIn: '1h' | '24h' | '7d' | '30d';
+    maxViews: number;
+    requireVerification: boolean;
+    allowedRecipients: string[];
+  }): Promise<{
+    id: string;
+    subject: string;
+    createdAt: string;
+    expiresAt: string;
+    status: string;
+    currentViews: number;
+    maxViews: number;
+    shareUrl: string;
+  }>;
+  list(): Promise<Array<{
+    id: string;
+    subject: string;
+    createdAt: string;
+    expiresAt: string;
+    status: string;
+    currentViews: number;
+    maxViews: number;
+    shareUrl: string;
+  }>>;
+  get(id: string): Promise<unknown>;
+  destroy(id: string): Promise<boolean>;
+  getAccessLog(id: string): Promise<Array<{
+    timestamp: string;
+    ip: string;
+    userAgent: string;
+    recipientEmail?: string;
+    action: string;
+  }>>;
+  copyLink(id: string): Promise<null>;
+}
+
 interface QShieldApiInfoAPI {
   getInfo(): Promise<{ port: number; token: string; running: boolean }>;
   regenerateToken(): Promise<{ token: string }>;
@@ -218,6 +258,7 @@ interface QShieldAPI {
   crypto: QShieldCryptoAPI;
   license: QShieldLicenseAPI;
   auth: QShieldAuthAPI;
+  secureMessage: QShieldSecureMessageAPI;
   api: QShieldApiInfoAPI;
   app: QShieldAppAPI;
 }

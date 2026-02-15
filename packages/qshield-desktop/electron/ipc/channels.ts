@@ -156,6 +156,20 @@ export const IPC_CHANNELS = {
   API_GET_INFO: 'api:get-info',
   /** Regenerate the local API token */
   API_REGENERATE_TOKEN: 'api:regenerate-token',
+
+  // ── Secure Messages ─────────────────────────────────────────────────
+  /** Create a new encrypted secure message */
+  SECURE_MSG_CREATE: 'secure-msg:create',
+  /** List all secure messages */
+  SECURE_MSG_LIST: 'secure-msg:list',
+  /** Get a secure message by ID */
+  SECURE_MSG_GET: 'secure-msg:get',
+  /** Destroy a secure message */
+  SECURE_MSG_DESTROY: 'secure-msg:destroy',
+  /** Get the access log for a secure message */
+  SECURE_MSG_ACCESS_LOG: 'secure-msg:access-log',
+  /** Copy the share link for a secure message to clipboard */
+  SECURE_MSG_COPY_LINK: 'secure-msg:copy-link',
 } as const;
 
 /** Union type of all valid IPC channel strings */

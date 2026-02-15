@@ -31,6 +31,7 @@ import { validateAddress, verifyTransactionHash, loadScamDatabase } from '@qshie
 import { LicenseManager } from './services/license-manager';
 import { AuthService } from './services/auth-service';
 import { LocalApiServer } from './services/local-api-server';
+import { SecureMessageService } from './services/secure-message-service';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -752,6 +753,18 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
   // Start crypto monitoring
   cryptoMonitor.start();
 
+  // Initialize secure message service
+  const secureMessageSvc = new SecureMessageService();
+  secureMessageSvc.setPersist((messages) => config.set('secureMessages', messages));
+  const savedMessages = config.get('secureMessages') as Parameters<typeof secureMessageSvc.load>[0] | undefined;
+  if (savedMessages && Array.isArray(savedMessages)) {
+    secureMessageSvc.load(savedMessages);
+  }
+
+  // Check for expired messages on startup and every 60 seconds
+  secureMessageSvc.checkExpiration();
+  setInterval(() => secureMessageSvc.checkExpiration(), 60_000);
+
   return {
     trustMonitor: {
       getState: () => {
@@ -941,6 +954,34 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       getUser: () => authSvc.getUser(),
       restore: () => authSvc.restoreSession(),
       switchEdition: (edition: string) => authSvc.switchEdition(edition as 'free' | 'personal' | 'business' | 'enterprise'),
+    },
+    secureMessageService: {
+      create: (opts: unknown) => {
+        const o = opts as { subject: string; content: string; expiresIn: string; maxViews: number; requireVerification: boolean; allowedRecipients: string[] };
+        const user = authSvc.getUser() as { name?: string; email?: string } | null;
+        return secureMessageSvc.create(
+          o as Parameters<typeof secureMessageSvc.create>[0],
+          user?.name ?? 'QShield User',
+          user?.email ?? 'user@qshield.io',
+        );
+      },
+      list: () => secureMessageSvc.list(),
+      get: (id: string) => secureMessageSvc.get(id),
+      destroy: (id: string) => secureMessageSvc.destroy(id),
+      getAccessLog: (id: string) => {
+        const msg = secureMessageSvc.get(id);
+        return msg?.accessLog ?? [];
+      },
+      copyLink: (id: string) => {
+        const summaries = secureMessageSvc.list();
+        const summary = summaries.find((s) => s.id === id);
+        if (summary) {
+          clipboard.writeText(summary.shareUrl);
+        }
+      },
+      recordAccess: (id: string, entry: { ip: string; userAgent: string; recipientEmail?: string; action: 'viewed' | 'downloaded' | 'verified' | 'expired' | 'destroyed' }) =>
+        secureMessageSvc.recordAccess(id, entry),
+      getDecryptedContent: (id: string) => secureMessageSvc.getDecryptedContent(id),
     },
     // Stub — overridden in app.whenReady() after localApi is created
     localApiManager: {
