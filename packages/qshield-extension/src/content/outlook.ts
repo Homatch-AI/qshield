@@ -1,15 +1,16 @@
 /**
  * Outlook Web content script — watches for compose windows and injects
- * QShield verification badges when the user clicks Send.
+ * QShield verification badges and the "Secure" button.
  *
- * Self-contained: no imports from other modules (content scripts
- * run as classic scripts in Chrome, not ES modules).
+ * Supports outlook.live.com, outlook.office.com, outlook.office365.com.
  */
 
+import { injectSecureButton } from './secure-button';
+
 const SEND_BUTTON_SELECTOR = 'button[aria-label="Send"], button[title="Send"]';
-const COMPOSE_BODY_SELECTOR = 'div[role="textbox"][aria-label="Message body"]';
-const COMPOSE_CONTAINER_SELECTOR = 'div[role="dialog"], div[class*="compose"]';
-const RECIPIENT_SELECTOR = 'div[role="listbox"] span.wellItemText, span[class*="PersonaText"]';
+const COMPOSE_BODY_SELECTOR = 'div[role="textbox"][aria-label="Message body"], div[contenteditable="true"]';
+const COMPOSE_CONTAINER_SELECTOR = 'div[role="dialog"], div[class*="compose"], div.customScrollBar';
+const RECIPIENT_SELECTOR = 'span[data-lpc-hover-target], div[role="listbox"] span.wellItemText, span[class*="PersonaText"]';
 const SUBJECT_SELECTOR = 'input[aria-label="Add a subject"]';
 
 const processedComposes = new WeakSet<Element>();
@@ -34,7 +35,11 @@ function getSubject(compose: Element): string {
 }
 
 function getBodyElement(compose: Element): HTMLElement | null {
-  return compose.querySelector(COMPOSE_BODY_SELECTOR) as HTMLElement | null;
+  for (const sel of COMPOSE_BODY_SELECTOR.split(',').map((s) => s.trim())) {
+    const el = compose.querySelector(sel) as HTMLElement | null;
+    if (el) return el;
+  }
+  return null;
 }
 
 async function signAndInject(compose: Element): Promise<void> {
@@ -79,6 +84,20 @@ async function attachToCompose(compose: Element): Promise<void> {
   const configResult = await chrome.runtime.sendMessage({ type: 'GET_CONFIG' });
   if (!configResult?.enabled || !configResult?.autoInject) return;
 
+  // Inject "Secure" button into compose toolbar
+  const body = getBodyElement(compose);
+  if (body) {
+    injectSecureButton(body, {
+      bodySelector: COMPOSE_BODY_SELECTOR,
+      subjectSelector: SUBJECT_SELECTOR,
+      recipientSelector: RECIPIENT_SELECTOR,
+      toolbarSelector: 'div[role="toolbar"]',
+      sendButtonSelector: SEND_BUTTON_SELECTOR,
+      getRecipientEmail: (el) => el.textContent?.trim() || '',
+    });
+  }
+
+  // Sign badge on Send click
   const sendBtn = compose.querySelector(SEND_BUTTON_SELECTOR);
   if (sendBtn) {
     sendBtn.addEventListener(
@@ -90,10 +109,12 @@ async function attachToCompose(compose: Element): Promise<void> {
 }
 
 function scanForComposes(): void {
-  const containers = document.querySelectorAll(COMPOSE_CONTAINER_SELECTOR);
-  for (const el of containers) {
-    if (el.querySelector(COMPOSE_BODY_SELECTOR)) {
-      attachToCompose(el);
+  for (const sel of COMPOSE_CONTAINER_SELECTOR.split(',').map((s) => s.trim())) {
+    const containers = document.querySelectorAll(sel);
+    for (const el of containers) {
+      if (getBodyElement(el)) {
+        attachToCompose(el);
+      }
     }
   }
 }
