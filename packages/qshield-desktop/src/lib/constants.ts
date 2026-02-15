@@ -76,6 +76,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/certificates', label: 'Certificates', icon: 'certificate', requiredFeature: 'cert_basic' },
   { path: '/alerts', label: 'Alerts', icon: 'bell', requiredFeature: 'alerts_full', visibleFrom: 'alerts_basic' },
   { path: '/crypto', label: 'Crypto Security', icon: 'shield-check', requiredFeature: 'crypto_basic' },
+  { path: '/messages', label: 'Secure Messages', icon: 'lock' },
   { path: '/settings', label: 'Settings', icon: 'settings' },
 ];
 

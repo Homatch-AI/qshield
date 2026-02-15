@@ -11,6 +11,7 @@ const EvidenceVault = lazy(() => import('@/components/vault/EvidenceVault'));
 const CertificatesPage = lazy(() => import('@/components/certificates/CertificatesPage'));
 const AlertsPage = lazy(() => import('@/components/alerts/AlertsPage'));
 const CryptoSecurity = lazy(() => import('@/components/crypto/CryptoSecurity'));
+const SecureMessages = lazy(() => import('@/components/messages/SecureMessages'));
 const Settings = lazy(() => import('@/components/settings/Settings'));
 const AccountPage = lazy(() => import('@/components/account/AccountPage'));
 const ShieldOverlay = lazy(() => import('@/components/shield/ShieldOverlay'));
@@ -114,6 +115,16 @@ export function Router() {
             <Suspense fallback={<PageLoader />}>
               <ErrorBoundary>
                 <CryptoSecurity />
+              </ErrorBoundary>
+            </Suspense>
+          }
+        />
+        <Route
+          path="messages"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <ErrorBoundary>
+                <SecureMessages />
               </ErrorBoundary>
             </Suspense>
           }
