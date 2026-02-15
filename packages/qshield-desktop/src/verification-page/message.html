@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Secure Message — QShield</title>
+<meta name="description" content="View an encrypted secure message sent via QShield.">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f172a;--bg-card:#1e293b;--bg-input:#0f172a;
+  --border:#334155;--border-light:#475569;
+  --text:#e2e8f0;--text-muted:#94a3b8;--text-dim:#64748b;
+  --green:#22c55e;--green-bg:rgba(34,197,94,.1);--green-border:rgba(34,197,94,.25);
+  --sky:#0ea5e9;--sky-bg:rgba(14,165,233,.1);--sky-border:rgba(14,165,233,.3);
+  --red:#ef4444;--red-bg:rgba(239,68,68,.1);--red-border:rgba(239,68,68,.3);
+  --amber:#f59e0b;
+  --radius:12px;--radius-sm:8px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,Courier,monospace;
+}
+html{font-family:var(--font);color:var(--text);-webkit-text-size-adjust:100%}
+body{background:var(--bg);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem 1rem}
+a{color:var(--sky);text-decoration:none}
+a:hover{text-decoration:underline}
+
+.container{width:100%;max-width:560px}
+
+/* Logo */
+.logo{display:flex;align-items:center;justify-content:center;gap:.5rem;margin-bottom:2rem}
+.logo svg{width:28px;height:28px;color:var(--sky)}
+.logo span{font-size:1.1rem;font-weight:600;color:var(--text)}
+
+/* States */
+.state{display:none;flex-direction:column;align-items:center;text-align:center}
+.state.active{display:flex}
+
+/* Loading */
+.loading-icon{width:64px;height:64px;margin-bottom:1.5rem;color:var(--sky);animation:pulse-fade 2s ease-in-out infinite}
+@keyframes pulse-fade{0%,100%{opacity:.4;transform:scale(.95)}50%{opacity:1;transform:scale(1)}}
+.loading-text{font-size:1rem;color:var(--text-muted);margin-bottom:.75rem}
+.loading-dots{display:flex;gap:6px;justify-content:center}
+.loading-dots span{width:6px;height:6px;border-radius:50%;background:var(--sky);animation:dot-pulse 1.4s ease-in-out infinite}
+.loading-dots span:nth-child(2){animation-delay:.2s}
+.loading-dots span:nth-child(3){animation-delay:.4s}
+@keyframes dot-pulse{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+
+/* Verify gate */
+.verify-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:2rem;width:100%;max-width:400px;text-align:left}
+.verify-card h2{font-size:1.1rem;font-weight:600;margin-bottom:.25rem}
+.verify-card p{font-size:.85rem;color:var(--text-muted);margin-bottom:1.25rem}
+.form-group{margin-bottom:1rem}
+.form-group label{display:block;font-size:.8rem;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem}
+.form-input{width:100%;padding:.6rem .75rem;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:.9rem;outline:none;transition:border-color .15s}
+.form-input:focus{border-color:var(--sky)}
+.form-input::placeholder{color:var(--text-dim)}
+.code-row{display:flex;gap:.5rem}
+.code-row .form-input{flex:1;text-align:center;letter-spacing:.3em;font-family:var(--mono);font-size:1.1rem}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;padding:.6rem 1.25rem;border-radius:var(--radius-sm);font-size:.875rem;font-weight:500;border:none;cursor:pointer;transition:background .15s,opacity .15s}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:var(--sky);color:#fff}
+.btn-primary:hover:not(:disabled){background:#0284c7}
+.btn-full{width:100%}
+.error-msg{font-size:.8rem;color:var(--red);margin-top:.5rem;display:none}
+.error-msg.visible{display:block}
+.code-sent-msg{font-size:.8rem;color:var(--green);margin-bottom:.75rem;display:none}
+.code-sent-msg.visible{display:block}
+
+/* Message view */
+.msg-header{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:100%;margin-bottom:1rem}
+.msg-title{display:flex;align-items:center;gap:.5rem;margin-bottom:1rem}
+.msg-title svg{width:20px;height:20px;color:var(--green)}
+.msg-title span{font-size:1.25rem;font-weight:700}
+.msg-meta{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.meta-item{display:flex;flex-direction:column;gap:.15rem}
+.meta-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);font-weight:600}
+.meta-value{font-size:.85rem;color:var(--text)}
+.trust-badge{display:inline-flex;align-items:center;gap:.3rem;padding:.15rem .5rem;border-radius:20px;font-size:.75rem;font-weight:600;background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
+.trust-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.encryption-badge{display:flex;align-items:center;gap:.4rem;margin-top:1rem;padding:.5rem .75rem;background:var(--green-bg);border:1px solid var(--green-border);border-radius:var(--radius-sm);font-size:.8rem;color:var(--green)}
+.encryption-badge svg{width:16px;height:16px;flex-shrink:0}
+
+.msg-content{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;width:100%;margin-bottom:1rem}
+.msg-content-body{font-size:.9rem;line-height:1.7;color:var(--text);white-space:pre-wrap;word-break:break-word}
+
+.msg-footer{width:100%;text-align:center;padding:1.5rem 0}
+.msg-footer .powered{font-size:.75rem;color:var(--text-dim);margin-bottom:.25rem}
+.msg-footer .views{font-size:.75rem;color:var(--text-dim)}
+.cta-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-top:1rem;text-align:center}
+.cta-card p{font-size:.85rem;color:var(--text-muted);margin-bottom:.75rem}
+.cta-card .btn{background:var(--sky-bg);color:var(--sky);border:1px solid var(--sky-border)}
+.cta-card .btn:hover{background:rgba(14,165,233,.2)}
+
+/* Expired/destroyed */
+.expired-icon{width:64px;height:64px;color:var(--red);margin-bottom:1.5rem}
+.expired-title{font-size:1.25rem;font-weight:700;margin-bottom:.5rem}
+.expired-desc{font-size:.9rem;color:var(--text-muted);max-width:380px;margin-bottom:1.5rem}
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- Logo -->
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5zm0 2.18l7 3.82v5c0 4.52-3.13 8.69-7 9.93C8.13 21.69 5 17.52 5 13V8l7-3.82z"/>
+      <path d="M12 7a3 3 0 100 6 3 3 0 000-6zm0 2a1 1 0 110 2 1 1 0 010-2z"/>
+    </svg>
+    <span>QShield</span>
+  </div>
+
+  <!-- Loading state -->
+  <div id="state-loading" class="state active">
+    <svg class="loading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+    </svg>
+    <div class="loading-text">Decrypting secure message...</div>
+    <div class="loading-dots"><span></span><span></span><span></span></div>
+  </div>
+
+  <!-- Verification gate -->
+  <div id="state-verify" class="state">
+    <div class="verify-card">
+      <h2>Identity Verification Required</h2>
+      <p>This message requires email verification before it can be viewed.</p>
+
+      <div id="verify-step-email">
+        <div class="form-group">
+          <label for="verify-email">Your email address</label>
+          <input type="email" id="verify-email" class="form-input" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <button id="btn-send-code" class="btn btn-primary btn-full" onclick="sendCode()">Send Verification Code</button>
+        <div id="verify-error-email" class="error-msg"></div>
+      </div>
+
+      <div id="verify-step-code" style="display:none">
+        <div class="code-sent-msg visible" id="code-sent-label">Code sent — check your email</div>
+        <div class="form-group">
+          <label for="verify-code">6-digit code</label>
+          <div class="code-row">
+            <input type="text" id="verify-code" class="form-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+          </div>
+        </div>
+        <button id="btn-verify" class="btn btn-primary btn-full" onclick="verifyCode()">Verify</button>
+        <div id="verify-error-code" class="error-msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Message view -->
+  <div id="state-message" class="state">
+    <div class="msg-header">
+      <div class="msg-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+        </svg>
+        <span>Secure Message</span>
+      </div>
+      <div class="msg-meta">
+        <div class="meta-item">
+          <span class="meta-label">From</span>
+          <span class="meta-value" id="msg-sender">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Trust Score</span>
+          <span class="meta-value"><span class="trust-badge" id="msg-trust">—</span></span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Subject</span>
+          <span class="meta-value" id="msg-subject">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Expires</span>
+          <span class="meta-value" id="msg-expires">—</span>
+        </div>
+      </div>
+      <div class="encryption-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        End-to-end encrypted — decrypted in your browser
+      </div>
+    </div>
+
+    <div class="msg-content">
+      <div class="msg-content-body" id="msg-body"></div>
+    </div>
+
+    <div class="msg-footer">
+      <div class="powered">This message was sent securely via QShield</div>
+      <div class="views" id="msg-views"></div>
+      <div class="cta-card">
+        <p>Want to send secure messages?</p>
+        <a href="https://qshield.io" target="_blank" rel="noopener" class="btn">Get QShield — Free</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Expired / destroyed state -->
+  <div id="state-expired" class="state">
+    <svg class="expired-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+    </svg>
+    <div class="expired-title" id="expired-title">This message is no longer available</div>
+    <div class="expired-desc" id="expired-desc">Secure messages are automatically deleted for your protection.</div>
+    <div class="cta-card" style="width:100%;max-width:400px">
+      <p>Send your own secure messages with QShield</p>
+      <a href="https://qshield.io" target="_blank" rel="noopener" class="btn">Get QShield — Free</a>
+    </div>
+  </div>
+
+  <!-- Error state -->
+  <div id="state-error" class="state">
+    <svg class="expired-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--amber)">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+    </svg>
+    <div class="expired-title" id="error-title">Unable to load message</div>
+    <div class="expired-desc" id="error-desc">The message could not be found or the link may be invalid.</div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── Parse URL ───────────────────────────────────────────────────────────
+  var pathMatch = location.pathname.match(/\/m\/([a-f0-9]{12})/);
+  var messageId = pathMatch ? pathMatch[1] : null;
+  var keyFragment = location.hash.slice(1); // base64url key
+
+  // Determine API base: same origin for local dev, or qshield.io in prod
+  var apiBase = location.origin;
+
+  // ── State references ────────────────────────────────────────────────────
+  var msgData = null; // server response
+  var decryptedContent = null;
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  function show(id) {
+    var states = document.querySelectorAll('.state');
+    for (var i = 0; i < states.length; i++) states[i].classList.remove('active');
+    document.getElementById(id).classList.add('active');
+  }
+
+  function timeUntil(iso) {
+    var diff = new Date(iso).getTime() - Date.now();
+    if (diff <= 0) return 'expired';
+    var mins = Math.floor(diff / 60000);
+    if (mins < 60) return mins + ' minutes';
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + ' hours';
+    var days = Math.floor(hrs / 24);
+    return days + ' days';
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Convert base64url to Uint8Array
+  function base64urlToBytes(b64url) {
+    var b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+    var pad = b64.length % 4;
+    if (pad) b64 += '===='.slice(pad);
+    var raw = atob(b64);
+    var arr = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+
+  // Convert base64 to Uint8Array
+  function base64ToBytes(b64) {
+    var raw = atob(b64);
+    var arr = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+
+  // ── Decrypt with SubtleCrypto ───────────────────────────────────────────
+  async function decryptContent(contentEncrypted, ivB64, keyB64url) {
+    var parts = contentEncrypted.split('.');
+    if (parts.length !== 2) throw new Error('Invalid ciphertext format');
+
+    var ciphertext = base64ToBytes(parts[0]);
+    var authTag = base64ToBytes(parts[1]);
+    var iv = base64ToBytes(ivB64);
+    var keyBytes = base64urlToBytes(keyB64url);
+
+    // Combine ciphertext + authTag (WebCrypto expects them concatenated)
+    var combined = new Uint8Array(ciphertext.length + authTag.length);
+    combined.set(ciphertext);
+    combined.set(authTag, ciphertext.length);
+
+    var cryptoKey = await crypto.subtle.importKey(
+      'raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']
+    );
+
+    var decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv }, cryptoKey, combined
+    );
+
+    return new TextDecoder().decode(decrypted);
+  }
+
+  // ── Display message ─────────────────────────────────────────────────────
+  function showMessage(content) {
+    document.getElementById('msg-sender').textContent = msgData.senderName;
+    document.getElementById('msg-trust').textContent = msgData.trustScore;
+    document.getElementById('msg-subject').textContent = msgData.subject;
+    document.getElementById('msg-expires').textContent = timeUntil(msgData.expiresAt);
+    document.getElementById('msg-body').textContent = content;
+    show('state-message');
+  }
+
+  // ── Verification flow ──────────────────────────────────────────────────
+  window.sendCode = function() {
+    var email = document.getElementById('verify-email').value.trim();
+    var errEl = document.getElementById('verify-error-email');
+    errEl.classList.remove('visible');
+
+    if (!email || !email.includes('@')) {
+      errEl.textContent = 'Please enter a valid email address';
+      errEl.classList.add('visible');
+      return;
+    }
+
+    // In real implementation this would send an email; for now just show code input
+    document.getElementById('verify-step-email').style.display = 'none';
+    document.getElementById('verify-step-code').style.display = 'block';
+  };
+
+  window.verifyCode = async function() {
+    var email = document.getElementById('verify-email').value.trim();
+    var code = document.getElementById('verify-code').value.trim();
+    var errEl = document.getElementById('verify-error-code');
+    var btn = document.getElementById('btn-verify');
+    errEl.classList.remove('visible');
+
+    if (!/^\d{6}$/.test(code)) {
+      errEl.textContent = 'Please enter a valid 6-digit code';
+      errEl.classList.add('visible');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Verifying...';
+
+    try {
+      var resp = await fetch(apiBase + '/api/v1/message/' + messageId + '/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, code: code })
+      });
+
+      if (!resp.ok) {
+        var err = await resp.json().catch(function() { return {}; });
+        throw new Error(err.error || 'Verification failed');
+      }
+
+      var data = await resp.json();
+      // Server returns plaintext for verified messages
+      showMessage(data.content);
+    } catch (e) {
+      errEl.textContent = e.message || 'Invalid verification code';
+      errEl.classList.add('visible');
+      btn.disabled = false;
+      btn.textContent = 'Verify';
+    }
+  };
+
+  // ── Main flow ───────────────────────────────────────────────────────────
+  async function init() {
+    if (!messageId) {
+      document.getElementById('error-title').textContent = 'Invalid link';
+      document.getElementById('error-desc').textContent = 'This link does not contain a valid message ID.';
+      show('state-error');
+      return;
+    }
+
+    try {
+      var resp = await fetch(apiBase + '/api/v1/message/' + messageId);
+
+      if (resp.status === 404) {
+        document.getElementById('error-title').textContent = 'Message not found';
+        document.getElementById('error-desc').textContent = 'This message does not exist or the link may be invalid.';
+        show('state-error');
+        return;
+      }
+
+      if (resp.status === 410) {
+        var errData = await resp.json().catch(function() { return {}; });
+        var isDestroyed = (errData.error || '').indexOf('destroyed') !== -1;
+        document.getElementById('expired-title').textContent =
+          isDestroyed ? 'This message has been destroyed' : 'This message has expired';
+        document.getElementById('expired-desc').textContent =
+          isDestroyed
+            ? 'The sender has permanently destroyed this message.'
+            : 'Secure messages are automatically deleted for your protection.';
+        show('state-expired');
+        return;
+      }
+
+      if (!resp.ok) throw new Error('Server error: ' + resp.status);
+
+      msgData = await resp.json();
+
+      // If verification is required, show the gate
+      if (msgData.requireVerification) {
+        show('state-verify');
+        return;
+      }
+
+      // Try client-side decryption with the key from URL fragment
+      if (!keyFragment) {
+        // No key in URL — cannot decrypt
+        document.getElementById('error-title').textContent = 'Missing decryption key';
+        document.getElementById('error-desc').textContent = 'The link is missing the encryption key. Make sure you copied the full URL including the # fragment.';
+        show('state-error');
+        return;
+      }
+
+      try {
+        decryptedContent = await decryptContent(msgData.contentEncrypted, msgData.iv, keyFragment);
+        showMessage(decryptedContent);
+      } catch (decErr) {
+        document.getElementById('error-title').textContent = 'Decryption failed';
+        document.getElementById('error-desc').textContent = 'The encryption key may be incorrect or the message data is corrupted.';
+        show('state-error');
+      }
+    } catch (e) {
+      document.getElementById('error-title').textContent = 'Connection error';
+      document.getElementById('error-desc').textContent = 'Could not connect to the QShield server. Please try again later.';
+      show('state-error');
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

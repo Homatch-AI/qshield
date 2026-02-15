@@ -7,6 +7,8 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { app } from 'electron';
 import log from 'electron-log';
 import { generateVerificationBadgeHtml } from './signature-generator';
@@ -37,6 +39,7 @@ export class LocalApiServer {
   private server: Server | null = null;
   private port = 3847;
   private currentToken: string | null = null;
+  private messagePageHtml: string | null = null;
 
   constructor(private deps: LocalApiDeps) {}
 
@@ -131,6 +134,12 @@ export class LocalApiServer {
       return this.handleHealth(res);
     }
 
+    // Secure message viewer page — serves standalone HTML
+    const messagePageMatch = url.match(/^\/m\/([a-f0-9]{12})$/);
+    if (messagePageMatch && method === 'GET') {
+      return this.handleMessagePage(res);
+    }
+
     // Secure message endpoints — no auth required (public link access)
     const messageMatch = url.match(/^\/api\/v1\/message\/([a-f0-9]{12})$/);
     if (messageMatch && method === 'GET') {
@@ -171,6 +180,25 @@ export class LocalApiServer {
       trustScore: this.deps.getTrustScore(),
       trustLevel: this.deps.getTrustLevel(),
     });
+  }
+
+  private handleMessagePage(res: ServerResponse): void {
+    if (!this.messagePageHtml) {
+      try {
+        // app.getAppPath() → project root in dev, asar in prod
+        const appRoot = app.getAppPath();
+        const devPath = join(appRoot, 'src', 'verification-page', 'message.html');
+        const prodPath = join(process.resourcesPath ?? '', 'verification-page', 'message.html');
+        const filePath = app.isPackaged ? prodPath : devPath;
+        this.messagePageHtml = readFileSync(filePath, 'utf-8');
+      } catch (err) {
+        log.error('[LocalAPI] Failed to read message.html:', err);
+        this.sendJson(res, 500, { error: 'Message viewer page not found' });
+        return;
+      }
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(this.messagePageHtml);
   }
 
   private async handleEmailSign(req: IncomingMessage, res: ServerResponse): Promise<void> {
