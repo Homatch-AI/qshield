@@ -33,6 +33,8 @@ export const IPC_CHANNELS = {
   CERT_LIST: 'cert:list',
   /** Export a certificate as PDF with save dialog */
   CERT_EXPORT_PDF: 'cert:export-pdf',
+  /** Open a certificate PDF in the system default viewer */
+  CERT_REVIEW_PDF: 'cert:review-pdf',
 
   // ── Gateway ────────────────────────────────────────────────────────────
   /** Get gateway connection status */

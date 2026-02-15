@@ -30,6 +30,7 @@ interface QShieldCertificatesAPI {
   list(): Promise<TrustCertificate[]>;
   generate(options: CertOptions): Promise<TrustCertificate>;
   exportPdf(id: string): Promise<{ saved: boolean; path?: string }>;
+  reviewPdf(id: string): Promise<void>;
 }
 
 interface QShieldGatewayAPI {

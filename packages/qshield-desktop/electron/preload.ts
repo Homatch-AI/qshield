@@ -214,6 +214,9 @@ contextBridge.exposeInMainWorld('qshield', {
 
     exportPdf: (id: string): Promise<{ saved: boolean; path?: string }> =>
       invoke<{ saved: boolean; path?: string }>(IPC_CHANNELS.CERT_EXPORT_PDF, id),
+
+    reviewPdf: (id: string): Promise<void> =>
+      invoke<void>(IPC_CHANNELS.CERT_REVIEW_PDF, id),
   },
 
   gateway: {

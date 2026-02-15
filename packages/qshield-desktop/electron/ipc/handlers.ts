@@ -2,8 +2,9 @@
  * IPC handler registration with validation, rate limiting, and structured responses.
  * Every handler validates input, logs calls with timing, and returns structured results.
  */
-import { ipcMain, app, clipboard, dialog, BrowserWindow } from 'electron';
+import { ipcMain, app, clipboard, dialog, shell, BrowserWindow } from 'electron';
 import { copyFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import log from 'electron-log';
 import { IPC_CHANNELS } from './channels';
 import {
@@ -376,6 +377,34 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     await copyFile(pdfPath, result.filePath);
     log.info(`CERT_EXPORT_PDF: PDF exported to ${result.filePath}`);
     return ok({ saved: true, path: result.filePath });
+  });
+
+  wrapHandler(IPC_CHANNELS.CERT_REVIEW_PDF, async (_event, id) => {
+    const validId = validateUuid(id);
+    log.info(`CERT_REVIEW_PDF: request for id=${validId}`);
+
+    // Check for pre-existing PDF; if not found, generate one on the fly
+    let pdfPath = services.certGenerator.getPdfPath(validId);
+    if (!pdfPath) {
+      log.info('CERT_REVIEW_PDF: no existing PDF, generating on the fly...');
+      const cert = await services.certGenerator.generate({ sessionId: validId });
+      pdfPath = (cert as { pdfPath?: string })?.pdfPath ?? services.certGenerator.getPdfPath((cert as { id?: string })?.id ?? '');
+      if (!pdfPath) {
+        return fail('GENERATION_FAILED', 'Failed to generate PDF certificate');
+      }
+    }
+
+    // Copy to temp dir with a readable name and open in system viewer
+    const tempPath = join(app.getPath('temp'), `qshield-cert-${validId.slice(0, 8)}.pdf`);
+    await copyFile(pdfPath, tempPath);
+    const errMsg = await shell.openPath(tempPath);
+    if (errMsg) {
+      log.error(`CERT_REVIEW_PDF: shell.openPath failed: ${errMsg}`);
+      return fail('OPEN_FAILED', `Failed to open PDF: ${errMsg}`);
+    }
+
+    log.info(`CERT_REVIEW_PDF: opened ${tempPath}`);
+    return ok(null);
   });
 
   // ── Gateway ──────────────────────────────────────────────────────────
