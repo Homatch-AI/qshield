@@ -35,6 +35,12 @@ export interface CreateSecureMessageResponse {
   expiresAt: string;
 }
 
+export interface UploadSecureFileResponse {
+  fileId: string;
+  shareUrl: string;
+  expiresAt: string;
+}
+
 export const DEFAULT_CONFIG: QShieldConfig = {
   apiPort: 3847,
   apiToken: '',

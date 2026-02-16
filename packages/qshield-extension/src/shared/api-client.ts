@@ -1,4 +1,4 @@
-import type { QShieldConfig, SignResponse, HealthResponse, StatusResponse, CreateSecureMessageResponse } from './types';
+import type { QShieldConfig, SignResponse, HealthResponse, StatusResponse, CreateSecureMessageResponse, UploadSecureFileResponse } from './types';
 
 export class QShieldApiClient {
   private baseUrl: string;
@@ -81,6 +81,29 @@ export class QShieldApiClient {
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error((body as { error?: string }).error ?? `Create failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /** Upload an encrypted file via Desktop. */
+  async uploadSecureFile(params: {
+    fileName: string;
+    mimeType: string;
+    data: string;
+    expiresIn: string;
+    maxDownloads: number;
+  }): Promise<UploadSecureFileResponse> {
+    const res = await fetch(`${this.baseUrl}/api/v1/file/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-QShield-Token': this.token,
+      },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { error?: string }).error ?? `Upload failed: ${res.status}`);
     }
     return res.json();
   }

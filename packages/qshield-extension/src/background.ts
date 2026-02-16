@@ -60,6 +60,7 @@ const messageHandlers: Record<string, (msg: unknown) => Promise<unknown>> = {
   GET_CONFIG: handleGetConfig,
   SIGN_EMAIL: handleSignEmail,
   CREATE_SECURE_MESSAGE: handleCreateSecureMessage,
+  UPLOAD_SECURE_FILE: handleUploadSecureFile,
 };
 
 async function handleGetStatus(): Promise<unknown> {
@@ -134,6 +135,32 @@ async function handleCreateSecureMessage(msg: unknown): Promise<unknown> {
     };
   } catch (err) {
     console.warn('[QShield] Create secure message failed:', err);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+async function handleUploadSecureFile(msg: unknown): Promise<unknown> {
+  const { data } = msg as {
+    data: {
+      fileName: string;
+      mimeType: string;
+      data: string;
+      expiresIn: string;
+      maxDownloads: number;
+    };
+  };
+
+  try {
+    const api = await getClient();
+    const result = await api.uploadSecureFile(data);
+    return {
+      success: true,
+      fileId: result.fileId,
+      shareUrl: result.shareUrl,
+      expiresAt: result.expiresAt,
+    };
+  } catch (err) {
+    console.warn('[QShield] Upload secure file failed:', err);
     return { success: false, error: (err as Error).message };
   }
 }
