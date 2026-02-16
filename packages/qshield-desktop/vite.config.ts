@@ -73,4 +73,8 @@ export default defineConfig({
   build: {
     outDir: 'dist/renderer',
   },
+  test: {
+    exclude: ['e2e/**', 'node_modules/**'],
+    passWithNoTests: true,
+  },
 });
