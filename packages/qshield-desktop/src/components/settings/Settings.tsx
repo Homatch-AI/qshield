@@ -230,6 +230,9 @@ export default function Settings() {
         </div>
       </SettingsSection>
 
+      {/* Gmail Connection */}
+      <GmailConnectionSection />
+
       {/* Browser Extension */}
       <BrowserExtensionSection />
 
@@ -801,6 +804,102 @@ function EmailSignatureSection() {
             </>
           )}
         </button>
+      </div>
+    </SettingsSection>
+  );
+}
+
+function GmailConnectionSection() {
+  const [status, setStatus] = useState<{ connected: boolean; email: string | null }>({ connected: false, email: null });
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isIPCAvailable()) return;
+    window.qshield.gmail.getStatus().then(setStatus).catch(() => {});
+  }, []);
+
+  const handleConnect = async () => {
+    if (!isIPCAvailable()) return;
+    setConnecting(true);
+    setError(null);
+    try {
+      const result = await window.qshield.gmail.connect();
+      setStatus({ connected: true, email: result.email });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to connect Gmail');
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!isIPCAvailable()) return;
+    try {
+      await window.qshield.gmail.disconnect();
+      setStatus({ connected: false, email: null });
+    } catch {
+      setError('Failed to disconnect');
+    }
+  };
+
+  return (
+    <SettingsSection title="Gmail Connection" description="Connect your Gmail account for real-time email monitoring">
+      <div className="space-y-3">
+        {status.connected ? (
+          <>
+            <div className="flex items-center gap-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-emerald-400">Connected</span>
+                <p className="text-xs text-slate-400 mt-0.5">{status.email}</p>
+              </div>
+              <button
+                onClick={handleDisconnect}
+                className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-2 text-sm text-red-400 transition-colors hover:bg-red-500/10"
+              >
+                Disconnect
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="h-2.5 w-2.5 rounded-full bg-slate-600" />
+            <div className="flex-1">
+              <span className="text-sm font-medium text-slate-300">Not connected</span>
+              <p className="text-xs text-slate-500 mt-0.5">Connect Gmail to monitor real email events</p>
+            </div>
+            <button
+              onClick={handleConnect}
+              disabled={connecting}
+              className="flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:opacity-50"
+            >
+              {connecting ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              ) : (
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                </svg>
+              )}
+              Connect Gmail
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-400">{error}</div>
+        )}
+
+        <div className="rounded-lg bg-slate-800/50 border border-slate-700/50 p-3">
+          <div className="flex items-start gap-2">
+            <svg className="h-4 w-4 text-sky-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+            </svg>
+            <p className="text-xs text-slate-400">
+              QShield only reads email headers and metadata. It cannot send, delete, or modify your emails. Tokens are stored encrypted on your device.
+            </p>
+          </div>
+        </div>
       </div>
     </SettingsSection>
   );

@@ -173,6 +173,20 @@ export const IPC_CHANNELS = {
   /** Copy the share link for a secure message to clipboard */
   SECURE_MSG_COPY_LINK: 'secure-msg:copy-link',
 
+  // ── Gmail ──────────────────────────────────────────────────────
+  /** Start OAuth flow to connect Gmail */
+  GMAIL_CONNECT: 'gmail:connect',
+  /** Disconnect Gmail and revoke tokens */
+  GMAIL_DISCONNECT: 'gmail:disconnect',
+  /** Get Gmail connection status */
+  GMAIL_STATUS: 'gmail:status',
+
+  // ── File Watcher ──────────────────────────────────────────────
+  /** Configure file watcher adapter */
+  FILE_WATCHER_CONFIGURE: 'file-watcher:configure',
+  /** Get current watched paths */
+  FILE_WATCHER_PATHS: 'file-watcher:paths',
+
   // ── Secure Files ──────────────────────────────────────────────
   /** Upload and encrypt a new secure file */
   SECURE_FILE_UPLOAD: 'secure-file:upload',

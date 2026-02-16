@@ -33,6 +33,8 @@ import { AuthService } from './services/auth-service';
 import { LocalApiServer } from './services/local-api-server';
 import { SecureMessageService } from './services/secure-message-service';
 import { SecureFileService } from './services/secure-file-service';
+import { GoogleAuthService } from './services/google-auth';
+import { IPC_CHANNELS } from './ipc/channels';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1152,9 +1154,77 @@ app.whenReady().then(() => {
   // Set up CSP (must be before any window loads)
   setupCSP();
 
+  // Initialize Google OAuth service and load saved tokens
+  const googleAuth = new GoogleAuthService();
+  const savedGmailTokens = configManager.get('gmailTokens') as Record<string, unknown> | undefined;
+  if (savedGmailTokens) {
+    googleAuth.loadTokens(savedGmailTokens);
+    log.info('[Gmail] Loaded saved tokens');
+  }
+
   // Register IPC handlers
   services = createServiceRegistry(configManager);
   registerIpcHandlers(services);
+
+  // ── Gmail IPC handlers ────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.GMAIL_CONNECT, async () => {
+    try {
+      await googleAuth.authenticate();
+      // Store tokens securely
+      configManager!.set('gmailTokens', googleAuth.getTokens());
+      const email = googleAuth.getUserEmail() ?? '';
+      return { success: true, data: { email } };
+    } catch (err) {
+      log.error('[Gmail] OAuth connect failed:', err);
+      return {
+        success: false,
+        error: { message: err instanceof Error ? err.message : 'OAuth failed', code: 'GMAIL_AUTH_ERROR' },
+      };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_DISCONNECT, async () => {
+    try {
+      await googleAuth.revoke();
+      configManager!.set('gmailTokens', undefined);
+      return { success: true, data: null };
+    } catch (err) {
+      log.error('[Gmail] Disconnect failed:', err);
+      return {
+        success: false,
+        error: { message: err instanceof Error ? err.message : 'Disconnect failed', code: 'GMAIL_DISCONNECT_ERROR' },
+      };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_STATUS, () => {
+    return {
+      success: true,
+      data: {
+        connected: googleAuth.isAuthenticated(),
+        email: googleAuth.getUserEmail(),
+      },
+    };
+  });
+
+  // ── File Watcher IPC handlers ─────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.FILE_WATCHER_CONFIGURE, (_event, config: Record<string, unknown>) => {
+    // Placeholder — file watcher config is set via initialize()
+    log.info('[FileWatcher] Configure request:', config);
+    return { success: true, data: null };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FILE_WATCHER_PATHS, () => {
+    const homedir = app.getPath('home');
+    return {
+      success: true,
+      data: [
+        path.join(homedir, 'Documents'),
+        path.join(homedir, 'Downloads'),
+        path.join(homedir, 'Desktop'),
+      ],
+    };
+  });
 
   // Toggle main window — registered here for direct mainWindow access
   ipcMain.handle('app:toggle-main-window', () => {

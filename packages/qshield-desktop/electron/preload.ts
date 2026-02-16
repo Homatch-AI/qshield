@@ -400,6 +400,25 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<null>(IPC_CHANNELS.SECURE_MSG_COPY_LINK, id),
   },
 
+  gmail: {
+    connect: (): Promise<{ email: string }> =>
+      invoke<{ email: string }>(IPC_CHANNELS.GMAIL_CONNECT),
+
+    disconnect: (): Promise<void> =>
+      invoke<void>(IPC_CHANNELS.GMAIL_DISCONNECT),
+
+    getStatus: (): Promise<{ connected: boolean; email: string | null }> =>
+      invoke<{ connected: boolean; email: string | null }>(IPC_CHANNELS.GMAIL_STATUS),
+  },
+
+  fileWatcher: {
+    configure: (config: Record<string, unknown>): Promise<void> =>
+      invoke<void>(IPC_CHANNELS.FILE_WATCHER_CONFIGURE, config),
+
+    getWatchedPaths: (): Promise<string[]> =>
+      invoke<string[]>(IPC_CHANNELS.FILE_WATCHER_PATHS),
+  },
+
   app: {
     version: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),

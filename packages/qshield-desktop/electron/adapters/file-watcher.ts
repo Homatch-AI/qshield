@@ -1,211 +1,286 @@
 import log from 'electron-log';
+import * as chokidar from 'chokidar';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import { app } from 'electron';
 import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
 
-interface FileEventTemplate {
-  eventType: string;
-  trustImpact: number;
-  dataGenerator: () => Record<string, unknown>;
+interface FileWatcherConfig {
+  /** Directories to watch. Defaults to [home/Documents, home/Downloads, home/Desktop] */
+  watchPaths?: string[];
+  /** Glob patterns to ignore. Defaults to node_modules, .git, OS junk files */
+  ignoredPatterns?: string[];
+  /** File size threshold (bytes) to flag as "large file". Default: 50MB */
+  largeFileThreshold?: number;
+  /** Whether to compute SHA-256 hashes of changed files. Default: true */
+  computeHashes?: boolean;
+  /** Max file size to hash (skip huge files). Default: 100MB */
+  maxHashSize?: number;
 }
 
-const FILE_PATHS = {
-  documents: [
-    '/Documents/reports/quarterly-review.docx',
-    '/Documents/sensitive-data.csv',
-    '/Documents/hr-records.xlsx',
-    '/Documents/credentials-vault.kdbx',
-  ],
-  downloads: [
-    '/Downloads/installer.dmg',
-    '/Downloads/archive.zip',
-    '/Downloads/unknown-binary.exe',
-    '/Downloads/presentation.pptx',
-  ],
-  system: [
-    '/etc/hosts',
-    '/.ssh/known_hosts',
-    '/.ssh/id_rsa',
-    '/Library/Preferences/com.app.plist',
-    '/Library/Keychains/login.keychain-db',
-  ],
-  project: [
-    '/Projects/src/main.ts',
-    '/Projects/config.json',
-    '/Projects/.env',
-    '/Projects/package.json',
-  ],
-  temp: [
-    '/tmp/upload-cache-001.dat',
-    '/tmp/session-cache.dat',
-    '/var/tmp/swap-data.bin',
-  ],
-};
-
-const PROCESS_NAMES = ['Finder', 'Terminal', 'node', 'python3', 'docker', 'VS Code', 'Chrome', 'unknown'];
-const PERMISSIONS = ['644', '755', '600', '777', '400', '700'];
-
-function pickRandom<T>(items: T[]): T {
-  return items[Math.floor(Math.random() * items.length)];
-}
-
-function pickRandomPath(): string {
-  const allPaths = Object.values(FILE_PATHS).flat();
-  return pickRandom(allPaths);
-}
-
-/** Generate a realistic-looking SHA-256 hash string */
-function generateSha256(): string {
-  return Array.from({ length: 64 }, () =>
-    Math.floor(Math.random() * 16).toString(16),
-  ).join('');
-}
-
-const FILE_EVENTS: FileEventTemplate[] = [
-  {
-    eventType: 'file-created',
-    trustImpact: 0,
-    dataGenerator: () => ({
-      path: pickRandomPath(),
-      size: Math.floor(Math.random() * 10000000),
-      sha256: generateSha256(),
-      owner: 'current-user',
-      permissions: pickRandom(PERMISSIONS),
-      processName: pickRandom(PROCESS_NAMES),
-      isInMonitoredDir: Math.random() > 0.3,
-    }),
-  },
-  {
-    eventType: 'file-modified',
-    trustImpact: -5,
-    dataGenerator: () => ({
-      path: pickRandomPath(),
-      previousSize: Math.floor(Math.random() * 5000000),
-      newSize: Math.floor(Math.random() * 5000000),
-      sha256Before: generateSha256(),
-      sha256After: generateSha256(),
-      modifiedBy: pickRandom(['current-user', 'system', 'unknown-process']),
-      processName: pickRandom(PROCESS_NAMES),
-      isSystemFile: Math.random() > 0.6,
-    }),
-  },
-  {
-    eventType: 'file-deleted',
-    trustImpact: -10,
-    dataGenerator: () => ({
-      path: pickRandomPath(),
-      size: Math.floor(Math.random() * 20000000),
-      sha256: generateSha256(),
-      deletedBy: pickRandom(['current-user', 'scheduled-task', 'unknown']),
-      processName: pickRandom(PROCESS_NAMES),
-      recoverable: Math.random() > 0.4,
-      isInTrash: Math.random() > 0.5,
-    }),
-  },
-  {
-    eventType: 'file-moved',
-    trustImpact: -3,
-    dataGenerator: () => ({
-      sourcePath: pickRandomPath(),
-      destinationPath: pickRandomPath(),
-      size: Math.floor(Math.random() * 10000000),
-      sha256: generateSha256(),
-      movedBy: pickRandom(['current-user', 'system', 'unknown']),
-      processName: pickRandom(PROCESS_NAMES),
-      crossDevice: Math.random() > 0.8,
-    }),
-  },
-  {
-    eventType: 'file-permission-changed',
-    trustImpact: -15,
-    dataGenerator: () => ({
-      path: pickRandomPath(),
-      previousPermissions: pickRandom(PERMISSIONS),
-      newPermissions: pickRandom(PERMISSIONS),
-      changedBy: pickRandom(['current-user', 'root', 'unknown']),
-      processName: pickRandom(PROCESS_NAMES),
-      isEscalation: Math.random() > 0.6,
-      recursive: Math.random() > 0.7,
-    }),
-  },
-  {
-    eventType: 'large-file-detected',
-    trustImpact: -25,
-    dataGenerator: () => ({
-      path: pickRandomPath(),
-      size: Math.floor(Math.random() * 500000000) + 50000000, // 50MB - 550MB
-      sha256: generateSha256(),
-      fileType: pickRandom(['archive', 'database', 'disk-image', 'video', 'binary']),
-      createdBy: pickRandom(['current-user', 'download-manager', 'unknown']),
-      processName: pickRandom(PROCESS_NAMES),
-      destination: pickRandom(['local', 'usb-drive', 'network-share', 'cloud-storage']),
-      containsSensitive: Math.random() > 0.5,
-    }),
-  },
+const DEFAULT_IGNORED = [
+  '**/node_modules/**',
+  '**/.git/**',
+  '**/.DS_Store',
+  '**/Thumbs.db',
+  '**/*.tmp',
+  '**/*.swp',
+  '**/~$*',
+  '**/.Trash/**',
+  '**/Library/Caches/**',
 ];
 
+const FIFTY_MB = 50 * 1024 * 1024;
+const HUNDRED_MB = 100 * 1024 * 1024;
+
 /**
- * File Watcher adapter.
- * Monitors filesystem activity including file creation, modification,
- * deletion, moves, permission changes, and large file detection.
- * Includes SHA-256 hashes in metadata for integrity verification.
- * Produces simulated events at a configurable interval (default 10 seconds).
+ * Real filesystem monitoring adapter using chokidar.
+ * Watches Documents, Downloads, and Desktop for file system changes
+ * and emits trust-scored AdapterEvents into the TrustMonitor pipeline.
  */
 export class FileWatcherAdapter extends BaseAdapter {
   readonly id: AdapterType = 'file';
   readonly name = 'File Watcher';
   protected override defaultInterval = 10000;
 
+  private watcher: chokidar.FSWatcher | null = null;
+  private watchPaths: string[] = [];
+  private ignoredPatterns: (string | RegExp)[] = [];
+  private largeFileThreshold = FIFTY_MB;
+  private shouldComputeHashes = true;
+  private maxHashSize = HUNDRED_MB;
+
   constructor() {
     super();
     this.pollInterval = this.defaultInterval;
   }
 
-  /**
-   * Initialize the File Watcher adapter with optional configuration.
-   * @param config - may include pollInterval override
-   */
   async initialize(config: Record<string, unknown>): Promise<void> {
     await super.initialize(config);
-    log.info('[FileWatcherAdapter] Configured for filesystem monitoring');
+
+    const fc = config as Partial<FileWatcherConfig>;
+
+    const homedir = app.getPath('home');
+    this.watchPaths = fc.watchPaths ?? [
+      path.join(homedir, 'Documents'),
+      path.join(homedir, 'Downloads'),
+      path.join(homedir, 'Desktop'),
+    ];
+    this.ignoredPatterns = fc.ignoredPatterns ?? DEFAULT_IGNORED;
+    this.largeFileThreshold = fc.largeFileThreshold ?? FIFTY_MB;
+    this.shouldComputeHashes = fc.computeHashes ?? true;
+    this.maxHashSize = fc.maxHashSize ?? HUNDRED_MB;
+
+    log.info('[FileWatcher] Configured for real filesystem monitoring', {
+      paths: this.watchPaths,
+    });
   }
 
   /**
-   * Start monitoring filesystem activity.
+   * Start real filesystem monitoring via chokidar.
+   * Does NOT call super.start() — bypasses the simulation timer entirely.
    */
   async start(): Promise<void> {
-    await super.start();
-    log.info('[FileWatcherAdapter] Monitoring filesystem activity');
+    if (!this.enabled) {
+      log.warn('[FileWatcher] Cannot start: adapter not initialized');
+      return;
+    }
+    this.connected = true;
+    this.setupWatcher();
+    log.info('[FileWatcher] Real filesystem monitoring started');
   }
 
-  /**
-   * Stop monitoring filesystem activity.
-   */
   async stop(): Promise<void> {
+    await this.closeWatcher();
     await super.stop();
-    log.info('[FileWatcherAdapter] Stopped filesystem monitoring');
+    log.info('[FileWatcher] Stopped filesystem monitoring');
   }
 
-  /**
-   * Destroy the File Watcher adapter and release all resources.
-   */
   async destroy(): Promise<void> {
+    await this.closeWatcher();
     await super.destroy();
-    log.info('[FileWatcherAdapter] File watcher adapter destroyed');
+    log.info('[FileWatcher] Adapter destroyed');
   }
 
   /**
-   * Generate a simulated filesystem event with realistic metadata
-   * including file paths, sizes, SHA-256 hashes, and permissions.
-   * @returns an AdapterEvent representing filesystem activity
+   * Required by BaseAdapter but never called — real events come from chokidar.
    */
   protected generateSimulatedEvent(): AdapterEvent {
-    const template = pickRandom(FILE_EVENTS);
-    return {
-      adapterId: this.id,
-      eventType: template.eventType,
-      timestamp: new Date().toISOString(),
-      data: template.dataGenerator(),
-      trustImpact: template.trustImpact,
-    };
+    throw new Error('FileWatcherAdapter uses real events, not simulation');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private
+  // ---------------------------------------------------------------------------
+
+  private setupWatcher(): void {
+    // Filter to only paths that actually exist
+    const existingPaths = this.watchPaths.filter((p) => {
+      try {
+        fs.accessSync(p, fs.constants.R_OK);
+        return true;
+      } catch {
+        log.warn(`[FileWatcher] Skipping non-existent/unreadable path: ${p}`);
+        return false;
+      }
+    });
+
+    if (existingPaths.length === 0) {
+      log.warn('[FileWatcher] No valid watch paths — adapter idle');
+      return;
+    }
+
+    this.watcher = chokidar.watch(existingPaths, {
+      ignored: this.ignoredPatterns,
+      persistent: true,
+      ignoreInitial: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 500,
+        pollInterval: 100,
+      },
+      depth: 5,
+    });
+
+    this.watcher
+      .on('add', (filePath) => this.handleFileEvent('file-created', filePath))
+      .on('change', (filePath) => this.handleFileEvent('file-modified', filePath))
+      .on('unlink', (filePath) => this.handleFileEvent('file-deleted', filePath))
+      .on('addDir', (dirPath) => this.handleFileEvent('dir-created', dirPath))
+      .on('unlinkDir', (dirPath) => this.handleFileEvent('dir-deleted', dirPath))
+      .on('error', (error) => {
+        this.errorCount++;
+        this.lastError = error.message;
+        log.error('[FileWatcher] Watcher error:', error);
+      });
+  }
+
+  private async closeWatcher(): Promise<void> {
+    if (this.watcher) {
+      await this.watcher.close();
+      this.watcher = null;
+    }
+  }
+
+  private async handleFileEvent(eventType: string, filePath: string): Promise<void> {
+    if (!this.connected) return;
+    try {
+      const isDeleted = eventType.includes('deleted');
+      const stats = isDeleted ? null : await this.safeStats(filePath);
+      const homedir = app.getPath('home');
+      const relativePath = path.relative(homedir, filePath);
+      const ext = path.extname(filePath).toLowerCase();
+      const fileName = path.basename(filePath);
+
+      const trustImpact = this.computeTrustImpact(eventType, filePath, stats);
+
+      let sha256: string | undefined;
+      if (
+        this.shouldComputeHashes &&
+        stats &&
+        stats.isFile() &&
+        stats.size <= this.maxHashSize
+      ) {
+        sha256 = await this.hashFile(filePath);
+      }
+
+      const event: AdapterEvent = {
+        adapterId: this.id,
+        eventType,
+        timestamp: new Date().toISOString(),
+        data: {
+          path: relativePath,
+          fullPath: filePath,
+          fileName,
+          extension: ext,
+          size: stats?.size ?? null,
+          isDirectory: stats?.isDirectory() ?? eventType.includes('dir'),
+          sha256,
+          permissions: stats ? (stats.mode & 0o777).toString(8) : null,
+          isHidden: fileName.startsWith('.'),
+          watchedDir: this.getWatchedParent(filePath),
+        },
+        trustImpact,
+      };
+
+      this.emitEvent(event);
+    } catch (err) {
+      log.warn(`[FileWatcher] Error handling ${eventType} for ${filePath}:`, err);
+    }
+  }
+
+  private computeTrustImpact(
+    eventType: string,
+    filePath: string,
+    stats: fs.Stats | null,
+  ): number {
+    const ext = path.extname(filePath).toLowerCase();
+    const fileName = path.basename(filePath);
+    const inDownloads =
+      filePath.includes('/Downloads/') || filePath.includes('\\Downloads\\');
+
+    const sensitiveExts = new Set([
+      '.env', '.pem', '.key', '.p12', '.pfx', '.kdbx', '.keychain',
+    ]);
+    const executableExts = new Set([
+      '.exe', '.dmg', '.msi', '.app', '.sh', '.bat', '.cmd', '.ps1',
+    ]);
+    const archiveExts = new Set(['.zip', '.tar', '.gz', '.7z', '.rar']);
+
+    // Base impact by event type
+    let impact = 0;
+    switch (eventType) {
+      case 'file-created':
+        impact = 0;
+        break;
+      case 'file-modified':
+        impact = -3;
+        break;
+      case 'file-deleted':
+        impact = -8;
+        break;
+      case 'dir-created':
+        impact = 0;
+        break;
+      case 'dir-deleted':
+        impact = -5;
+        break;
+    }
+
+    // Modifiers
+    if (sensitiveExts.has(ext)) impact -= 20;
+    if (executableExts.has(ext) && inDownloads) impact -= 15;
+    if (archiveExts.has(ext) && inDownloads) impact -= 10;
+    if (fileName === '.env' || fileName === '.gitignore') impact -= 10;
+    if (stats && stats.size > this.largeFileThreshold) impact -= 25;
+
+    return Math.max(-100, Math.min(100, impact));
+  }
+
+  private hashFile(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(filePath);
+      stream.on('data', (chunk: Buffer) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+      stream.on('error', reject);
+    });
+  }
+
+  private async safeStats(filePath: string): Promise<fs.Stats | null> {
+    try {
+      return await fs.promises.stat(filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Find which configured watch directory contains this path. */
+  private getWatchedParent(filePath: string): string | null {
+    for (const wp of this.watchPaths) {
+      if (filePath.startsWith(wp)) return wp;
+    }
+    return null;
   }
 }

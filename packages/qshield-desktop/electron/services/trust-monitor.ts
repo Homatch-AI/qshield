@@ -10,6 +10,7 @@ import { EmailAdapter } from '../adapters/email';
 import { FileWatcherAdapter } from '../adapters/file-watcher';
 import { ApiListenerAdapter } from '../adapters/api-listener';
 import { PolicyEnforcer } from './policy-enforcer';
+import type { GoogleAuthService } from './google-auth';
 
 /** Events emitted by the TrustMonitor */
 export type TrustMonitorEvent = 'state-change' | 'signal' | 'alert';
@@ -51,17 +52,21 @@ export class TrustMonitor {
 
   /**
    * Create a new TrustMonitor with all adapters and a policy enforcer.
+   * @param googleAuth - optional GoogleAuthService for Gmail adapter (if omitted, email adapter starts idle)
    * @param policyEnforcer - optional policy enforcer instance (creates default if omitted)
    */
-  constructor(policyEnforcer?: PolicyEnforcer) {
+  constructor(googleAuth?: GoogleAuthService, policyEnforcer?: PolicyEnforcer) {
     this.sessionId = uuidv4();
     this.policyEnforcer = policyEnforcer ?? new PolicyEnforcer();
+
+    // GoogleAuthService is required by EmailAdapter; create a default if not provided
+    const authService = googleAuth ?? (new (require('./google-auth').GoogleAuthService)() as GoogleAuthService);
 
     this.adapters = [
       new ZoomAdapter(),
       new TeamsAdapter(),
-      new EmailAdapter(),
-      new FileWatcherAdapter(),
+      new EmailAdapter(authService),  // REAL — needs GoogleAuthService
+      new FileWatcherAdapter(),        // REAL — uses chokidar
       new ApiListenerAdapter(),
     ];
 

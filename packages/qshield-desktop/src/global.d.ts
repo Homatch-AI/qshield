@@ -246,6 +246,17 @@ interface QShieldApiInfoAPI {
   regenerateToken(): Promise<{ token: string }>;
 }
 
+interface QShieldGmailAPI {
+  connect(): Promise<{ email: string }>;
+  disconnect(): Promise<void>;
+  getStatus(): Promise<{ connected: boolean; email: string | null }>;
+}
+
+interface QShieldFileWatcherAPI {
+  configure(config: Record<string, unknown>): Promise<void>;
+  getWatchedPaths(): Promise<string[]>;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -262,6 +273,8 @@ interface QShieldAPI {
   auth: QShieldAuthAPI;
   secureMessage: QShieldSecureMessageAPI;
   api: QShieldApiInfoAPI;
+  gmail: QShieldGmailAPI;
+  fileWatcher: QShieldFileWatcherAPI;
   app: QShieldAppAPI;
 }
 
