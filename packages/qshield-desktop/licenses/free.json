@@ -1,0 +1,28 @@
+{
+  "licenseId": "mock-free-001",
+  "edition": "free",
+  "email": "free@free.com",
+  "name": "Free User",
+  "features": [
+    "shield_basic",
+    "verify_send",
+    "email_signature",
+    "timeline_24h",
+    "evidence_preview",
+    "alerts_basic"
+  ],
+  "limits": {
+    "maxDevices": 1,
+    "retentionDays": 7,
+    "certsPerMonth": 0,
+    "verificationsPerDay": 20,
+    "verificationHistoryDays": 7,
+    "secureMessagesPerMonth": 0,
+    "secureMessageMaxSize": 0,
+    "secureFilesPerMonth": 0,
+    "secureFileMaxSize": 0,
+    "zoomMeetingsPerMonth": 0
+  },
+  "validUntil": "2027-12-31T23:59:59.000Z",
+  "issuedAt": "2025-01-01T00:00:00.000Z"
+}

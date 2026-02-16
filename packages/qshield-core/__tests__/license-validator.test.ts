@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { verifyLicenseSignature, isLicenseExpired } from '../src/license-validator';
-import { EDITION_FEATURES, EDITION_LIMITS } from '../src/license-types';
+import { EDITION_FEATURES } from '../src/types/features';
+import { LICENSE_LIMITS } from '../src/license-types';
 import type { QShieldLicense } from '../src/license-types';
 
 /** Helper: create a valid license with sensible defaults. */
@@ -10,7 +11,7 @@ function makeLicense(overrides?: Partial<QShieldLicense>): QShieldLicense {
     edition: 'business',
     expires_at: new Date(Date.now() + 86_400_000).toISOString(),
     features: EDITION_FEATURES.business,
-    limits: EDITION_LIMITS.business,
+    limits: LICENSE_LIMITS.business,
     signature: 'sig-placeholder',
     ...overrides,
   };

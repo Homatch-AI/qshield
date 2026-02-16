@@ -1,5 +1,6 @@
-import type { Feature, QShieldEdition, QShieldLicense, EditionLimits } from './license-types';
-import { EDITION_LIMITS } from './license-types';
+import type { Feature, QShieldEdition } from './types/features';
+import type { QShieldLicense, LicenseLimits } from './license-types';
+import { LICENSE_LIMITS } from './license-types';
 import { verifyLicenseSignature, isLicenseExpired } from './license-validator';
 
 /**
@@ -15,7 +16,7 @@ const UNREGISTERED_FEATURES: Feature[] = ['shield_basic'];
  * only shield_basic is available. When a free license is set,
  * all free-tier features become available.
  */
-export class FeatureGate {
+export class LicenseFeatureGate {
   private license: QShieldLicense | null = null;
 
   /**
@@ -59,8 +60,8 @@ export class FeatureGate {
   }
 
   /** Return the current edition limits. Falls back to free limits. */
-  limits(): EditionLimits {
-    if (!this.license || isLicenseExpired(this.license)) return EDITION_LIMITS.free;
+  limits(): LicenseLimits {
+    if (!this.license || isLicenseExpired(this.license)) return LICENSE_LIMITS.free;
     return this.license.limits;
   }
 
@@ -70,7 +71,7 @@ export class FeatureGate {
    * @param key - The limit key to read
    * @returns The limit value, or the free-tier default if unlicensed
    */
-  limit(key: keyof EditionLimits): number {
+  limit(key: keyof LicenseLimits): number {
     return this.limits()[key];
   }
 
@@ -80,7 +81,7 @@ export class FeatureGate {
    * @param key - The limit key to check
    * @returns True if the limit value is -1
    */
-  isUnlimited(key: keyof EditionLimits): boolean {
+  isUnlimited(key: keyof LicenseLimits): boolean {
     return this.limit(key) === -1;
   }
 
@@ -96,5 +97,5 @@ export class FeatureGate {
   }
 }
 
-/** Singleton feature gate instance. */
-export const featureGate = new FeatureGate();
+/** Singleton license feature gate instance. */
+export const featureGate = new LicenseFeatureGate();

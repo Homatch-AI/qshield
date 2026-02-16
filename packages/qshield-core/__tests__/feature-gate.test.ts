@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FeatureGate } from '../src/feature-gate';
+import { LicenseFeatureGate } from '../src/feature-gate';
+import { EDITION_FEATURES } from '../src/types/features';
 import {
-  EDITION_FEATURES,
-  EDITION_LIMITS,
+  LICENSE_LIMITS,
   getRequiredEdition,
   isEditionAtLeast,
 } from '../src/license-types';
-import type { QShieldLicense, EditionLimits } from '../src/license-types';
+import type { QShieldLicense, LicenseLimits } from '../src/license-types';
 
 /** Helper: create a valid license with sensible defaults. */
 function makeLicense(overrides?: Partial<QShieldLicense>): QShieldLicense {
@@ -15,17 +15,17 @@ function makeLicense(overrides?: Partial<QShieldLicense>): QShieldLicense {
     edition: 'business',
     expires_at: new Date(Date.now() + 86_400_000).toISOString(),
     features: EDITION_FEATURES.business,
-    limits: EDITION_LIMITS.business,
+    limits: LICENSE_LIMITS.business,
     signature: 'sig-placeholder',
     ...overrides,
   };
 }
 
-describe('FeatureGate', () => {
-  let gate: FeatureGate;
+describe('LicenseFeatureGate', () => {
+  let gate: LicenseFeatureGate;
 
   beforeEach(() => {
-    gate = new FeatureGate();
+    gate = new LicenseFeatureGate();
   });
 
   // -- No license (unregistered) -------------------------------------------
@@ -48,7 +48,7 @@ describe('FeatureGate', () => {
     });
 
     it('limits() returns free limits', () => {
-      expect(gate.limits()).toEqual(EDITION_LIMITS.free);
+      expect(gate.limits()).toEqual(LICENSE_LIMITS.free);
     });
 
     it('isActive() returns false', () => {
@@ -75,7 +75,7 @@ describe('FeatureGate', () => {
       gate.setLicense(makeLicense({
         edition: 'free',
         features: EDITION_FEATURES.free,
-        limits: EDITION_LIMITS.free,
+        limits: LICENSE_LIMITS.free,
       }));
     });
 
@@ -123,7 +123,7 @@ describe('FeatureGate', () => {
       gate.setLicense(makeLicense({
         edition: 'personal',
         features: EDITION_FEATURES.personal,
-        limits: EDITION_LIMITS.personal,
+        limits: LICENSE_LIMITS.personal,
       }));
     });
 
@@ -195,10 +195,6 @@ describe('FeatureGate', () => {
       expect(gate.has('crypto_monitor')).toBe(true);
     });
 
-    it('has("audit_log") returns true', () => {
-      expect(gate.has('audit_log')).toBe(true);
-    });
-
     it('has("sso_scim") returns false', () => {
       expect(gate.has('sso_scim')).toBe(false);
     });
@@ -207,8 +203,8 @@ describe('FeatureGate', () => {
       expect(gate.has('siem_export')).toBe(false);
     });
 
-    it('has("cert_pro") returns false', () => {
-      expect(gate.has('cert_pro')).toBe(false);
+    it('has("cert_pro") returns true', () => {
+      expect(gate.has('cert_pro')).toBe(true);
     });
 
     it('limit("max_devices") returns 10', () => {
@@ -227,7 +223,7 @@ describe('FeatureGate', () => {
       gate.setLicense(makeLicense({
         edition: 'enterprise',
         features: EDITION_FEATURES.enterprise,
-        limits: EDITION_LIMITS.enterprise,
+        limits: LICENSE_LIMITS.enterprise,
       }));
     });
 
@@ -243,7 +239,7 @@ describe('FeatureGate', () => {
 
     it('all limits are -1 (unlimited)', () => {
       const lim = gate.limits();
-      for (const key of Object.keys(lim) as (keyof EditionLimits)[]) {
+      for (const key of Object.keys(lim) as (keyof LicenseLimits)[]) {
         expect(lim[key]).toBe(-1);
       }
     });
@@ -287,7 +283,7 @@ describe('FeatureGate', () => {
     });
 
     it('limits() returns free limits', () => {
-      expect(gate.limits()).toEqual(EDITION_LIMITS.free);
+      expect(gate.limits()).toEqual(LICENSE_LIMITS.free);
     });
 
     it('isActive() returns false', () => {

@@ -1,0 +1,39 @@
+{
+  "licenseId": "mock-personal-001",
+  "edition": "personal",
+  "email": "personal@personal.com",
+  "name": "Personal User",
+  "features": [
+    "shield_basic",
+    "shield_breathing",
+    "verify_send",
+    "verify_unlimited",
+    "verify_remove_branding",
+    "verify_custom_badge",
+    "email_signature",
+    "email_signature_custom",
+    "timeline_24h",
+    "timeline_full",
+    "evidence_preview",
+    "evidence_full",
+    "alerts_basic",
+    "secure_message_send",
+    "crypto_basic",
+    "zoom_verify_limited",
+    "cert_basic"
+  ],
+  "limits": {
+    "maxDevices": 2,
+    "retentionDays": 30,
+    "certsPerMonth": 3,
+    "verificationsPerDay": -1,
+    "verificationHistoryDays": 30,
+    "secureMessagesPerMonth": 10,
+    "secureMessageMaxSize": 1048576,
+    "secureFilesPerMonth": 0,
+    "secureFileMaxSize": 0,
+    "zoomMeetingsPerMonth": 5
+  },
+  "validUntil": "2027-12-31T23:59:59.000Z",
+  "issuedAt": "2025-01-01T00:00:00.000Z"
+}

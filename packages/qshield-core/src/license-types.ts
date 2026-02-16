@@ -1,61 +1,8 @@
-/** User edition tiers — each is a superset of the tier below. */
-export type QShieldEdition = 'free' | 'personal' | 'business' | 'enterprise';
+import type { Feature, QShieldEdition } from './types/features';
+import { EDITION_FEATURES } from './types/features';
 
-/** All feature flags in the system. */
-export type Feature =
-  // Shield
-  | 'shield_basic'
-  | 'shield_breathing'
-  // Email verification (viral engine)
-  | 'verify_send'
-  | 'verify_tls_check'
-  | 'verify_routing_check'
-  | 'verify_intercept_scan'
-  | 'verify_custom_badge'
-  | 'verify_remove_branding'
-  | 'verify_analytics'
-  | 'verify_bulk_api'
-  | 'verify_custom_domain'
-  // Timeline
-  | 'timeline_24h'
-  | 'timeline_full'
-  // Evidence
-  | 'evidence_preview'
-  | 'evidence_full'
-  | 'evidence_export'
-  | 'evidence_api_export'
-  // Crypto
-  | 'crypto_basic'
-  | 'crypto_monitor'
-  | 'crypto_analytics'
-  // Monitoring adapters
-  | 'zoom_monitor'
-  | 'teams_monitor'
-  | 'email_monitor'
-  | 'file_monitor'
-  | 'api_monitor'
-  // Certificates
-  | 'cert_basic'
-  | 'cert_pro'
-  | 'email_signature'
-  // Policy & alerts
-  | 'alerts_basic'
-  | 'alerts_full'
-  | 'policy_engine'
-  | 'auto_freeze'
-  | 'escalation_rules'
-  | 'policy_templates'
-  // Compliance & enterprise
-  | 'siem_export'
-  | 'audit_log'
-  | 'compliance_dashboard'
-  | 'sso_scim'
-  | 'org_dashboard'
-  | 'soc_routing'
-  | 'insurance_readiness';
-
-/** License limits per edition. Use -1 for unlimited. */
-export interface EditionLimits {
+/** License-specific limits (snake_case, used by QShieldLicense payloads). */
+export interface LicenseLimits {
   /** Maximum number of devices. -1 = unlimited. */
   max_devices: number;
   /** Evidence retention in days. -1 = unlimited. */
@@ -81,51 +28,15 @@ export interface QShieldLicense {
   /** Features granted by this license. */
   features: Feature[];
   /** Usage limits for this license. */
-  limits: EditionLimits;
+  limits: LicenseLimits;
   /** Cryptographic signature over the license payload. */
   signature: string;
 }
 
-// ── Edition feature sets ─────────────────────────────────────────────────────
+// ── Edition license limits ──────────────────────────────────────────────────
 
-const FREE_FEATURES: Feature[] = [
-  'shield_basic', 'verify_send', 'email_signature',
-  'timeline_24h', 'evidence_preview', 'alerts_basic',
-];
-
-const PERSONAL_FEATURES: Feature[] = [
-  ...FREE_FEATURES,
-  'shield_breathing', 'verify_tls_check', 'verify_routing_check',
-  'verify_custom_badge', 'verify_remove_branding',
-  'timeline_full', 'evidence_full', 'cert_basic', 'crypto_basic',
-];
-
-const BUSINESS_FEATURES: Feature[] = [
-  ...PERSONAL_FEATURES,
-  'verify_intercept_scan', 'verify_analytics', 'verify_bulk_api',
-  'zoom_monitor', 'teams_monitor', 'email_monitor',
-  'evidence_export', 'alerts_full', 'policy_engine', 'auto_freeze',
-  'audit_log', 'crypto_monitor',
-];
-
-const ENTERPRISE_FEATURES: Feature[] = [
-  ...BUSINESS_FEATURES,
-  'verify_custom_domain', 'file_monitor', 'api_monitor',
-  'evidence_api_export', 'cert_pro', 'escalation_rules', 'policy_templates',
-  'siem_export', 'compliance_dashboard', 'sso_scim', 'org_dashboard',
-  'soc_routing', 'insurance_readiness', 'crypto_analytics',
-];
-
-/** Features included in each edition. */
-export const EDITION_FEATURES: Record<QShieldEdition, Feature[]> = {
-  free: FREE_FEATURES,
-  personal: PERSONAL_FEATURES,
-  business: BUSINESS_FEATURES,
-  enterprise: ENTERPRISE_FEATURES,
-};
-
-/** Default limits for each edition. */
-export const EDITION_LIMITS: Record<QShieldEdition, EditionLimits> = {
+/** Default license limits for each edition. */
+export const LICENSE_LIMITS: Record<QShieldEdition, LicenseLimits> = {
   free:       { max_devices: 1,  evidence_retention_days: 7,   certs_per_month: 0,  integrations: 0,  verifications_per_day: 20, verification_history_days: 7 },
   personal:   { max_devices: 2,  evidence_retention_days: 30,  certs_per_month: 3,  integrations: 0,  verifications_per_day: -1, verification_history_days: 30 },
   business:   { max_devices: 10, evidence_retention_days: 365, certs_per_month: 50, integrations: 3,  verifications_per_day: -1, verification_history_days: 365 },
