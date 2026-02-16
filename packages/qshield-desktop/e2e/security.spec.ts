@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { _electron as electron } from 'playwright';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let page: Awaited<ReturnType<typeof electronApp.firstWindow>>;

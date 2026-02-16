@@ -15,6 +15,7 @@
  * - sandbox: true (always)
  * - All renderer communication via contextBridge + IPC invoke only
  */
+import dotenv from 'dotenv';
 import { app, BrowserWindow, clipboard, ipcMain, session, shell, Tray, Menu, nativeImage, screen, Notification } from 'electron';
 import path from 'node:path';
 import { createHmac, randomUUID } from 'node:crypto';
@@ -38,6 +39,8 @@ import { IPC_CHANNELS } from './ipc/channels';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 log.initialize();
 
