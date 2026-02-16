@@ -136,6 +136,16 @@ export interface ServiceRegistry {
     getInfo: () => { port: number; token: string; running: boolean };
     regenerateToken: () => { token: string };
   };
+  secureFileService: {
+    upload: (opts: { fileName: string; mimeType: string; data: Buffer; expiresIn: string; maxDownloads: number }, senderName: string, senderEmail: string) => unknown;
+    list: () => unknown;
+    get: (id: string) => unknown;
+    destroy: (id: string) => boolean;
+    getEncryptedData: (id: string) => { data: Buffer; iv: string; authTag: string } | null;
+    recordDownload: (id: string, entry: { action: 'downloaded'; ip: string; userAgent: string }) => boolean;
+    recordView: (id: string, entry: { action: 'viewed'; ip: string; userAgent: string }) => boolean;
+    getMaxFileSize: () => number;
+  };
   secureMessageService: {
     create: (opts: unknown, senderName: string, senderEmail: string) => unknown;
     list: () => unknown;
@@ -741,6 +751,46 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     const validId = validateString(id, 'id');
     services.secureMessageService.copyLink(validId);
     return ok(null);
+  });
+
+  // ── Secure Files ──────────────────────────────────────────────────
+  const validFileExpiresIn = ['1h', '24h', '7d', '30d'];
+
+  wrapHandler(IPC_CHANNELS.SECURE_FILE_UPLOAD, async (_event, opts) => {
+    if (!opts || typeof opts !== 'object') {
+      return fail('VALIDATION_ERROR', 'File upload options are required');
+    }
+    const { fileName, mimeType, data, expiresIn, maxDownloads } = opts as Record<string, unknown>;
+    if (!fileName || typeof fileName !== 'string') {
+      return fail('VALIDATION_ERROR', 'fileName is required');
+    }
+    if (!data || typeof data !== 'string') {
+      return fail('VALIDATION_ERROR', 'data (base64) is required');
+    }
+    if (!expiresIn || typeof expiresIn !== 'string' || !validFileExpiresIn.includes(expiresIn)) {
+      return fail('VALIDATION_ERROR', 'expiresIn must be one of: 1h, 24h, 7d, 30d');
+    }
+    const buf = Buffer.from(data as string, 'base64');
+    const user = services.authService.getUser() as { name?: string; email?: string } | null;
+    return ok(services.secureFileService.upload(
+      { fileName: fileName as string, mimeType: (mimeType as string) || 'application/octet-stream', data: buf, expiresIn: expiresIn as '1h' | '24h' | '7d' | '30d', maxDownloads: typeof maxDownloads === 'number' ? maxDownloads : -1 },
+      user?.name ?? 'QShield User',
+      user?.email ?? 'user@qshield.io',
+    ));
+  });
+
+  wrapHandler(IPC_CHANNELS.SECURE_FILE_LIST, async () => {
+    return ok(services.secureFileService.list());
+  });
+
+  wrapHandler(IPC_CHANNELS.SECURE_FILE_GET, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    return ok(services.secureFileService.get(validId));
+  });
+
+  wrapHandler(IPC_CHANNELS.SECURE_FILE_DESTROY, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    return ok(services.secureFileService.destroy(validId));
   });
 
   log.info('All IPC handlers registered');

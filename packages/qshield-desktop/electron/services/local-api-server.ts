@@ -140,6 +140,15 @@ export class LocalApiServer {
       return this.handleMessagePage(res);
     }
 
+    // Secure file endpoints — no auth required for info/download (public link access)
+    const fileMatch = url.match(/^\/api\/v1\/file\/([a-f0-9]{12})(\/download)?$/);
+    if (fileMatch && method === 'GET') {
+      const fileId = fileMatch[1];
+      const isDownload = !!fileMatch[2];
+      if (isDownload) return this.handleFileDownload(fileId, res);
+      return this.handleFileInfo(fileId, res);
+    }
+
     // Secure message endpoints — no auth required (public link access)
     const messageMatch = url.match(/^\/api\/v1\/message\/([a-f0-9]{12})$/);
     if (messageMatch && method === 'GET') {
@@ -173,6 +182,9 @@ export class LocalApiServer {
     }
     if (method === 'POST' && url === '/api/v1/message/create') {
       return this.handleCreateMessage(req, res);
+    }
+    if (method === 'POST' && url === '/api/v1/file/upload') {
+      return this.handleFileUpload(req, res);
     }
 
     this.sendJson(res, 404, { error: 'Not found' });
@@ -432,6 +444,142 @@ export class LocalApiServer {
     });
   }
 
+  // ── Secure file handlers ───────────────────────────────────────────────
+
+  private async handleFileUpload(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const services = this.deps.getServices();
+    if (!services) {
+      return this.sendJson(res, 503, { error: 'Desktop services not ready' });
+    }
+
+    const body = await this.readBody(req, 15 * 1024 * 1024); // 15 MB limit
+    if (!body) {
+      return this.sendJson(res, 400, { error: 'Request body is required (max 15 MB)' });
+    }
+
+    let parsed: {
+      fileName?: string;
+      mimeType?: string;
+      data?: string;
+      expiresIn?: string;
+      maxDownloads?: number;
+    };
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return this.sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+
+    if (!parsed.fileName || typeof parsed.fileName !== 'string') {
+      return this.sendJson(res, 400, { error: 'fileName is required' });
+    }
+    if (!parsed.data || typeof parsed.data !== 'string') {
+      return this.sendJson(res, 400, { error: 'data (base64) is required' });
+    }
+
+    const dataBuf = Buffer.from(parsed.data, 'base64');
+    const maxSize = services.secureFileService.getMaxFileSize();
+    if (dataBuf.length > maxSize) {
+      return this.sendJson(res, 413, { error: `File exceeds maximum size of ${Math.round(maxSize / (1024 * 1024))} MB` });
+    }
+
+    try {
+      const senderName = this.deps.getUserName();
+      const senderEmail = this.deps.getUserEmail();
+      const result = services.secureFileService.upload(
+        {
+          fileName: parsed.fileName,
+          mimeType: parsed.mimeType || 'application/octet-stream',
+          data: dataBuf,
+          expiresIn: (parsed.expiresIn as '1h' | '24h' | '7d' | '30d') || '24h',
+          maxDownloads: parsed.maxDownloads ?? -1,
+        },
+        senderName,
+        senderEmail,
+      );
+
+      log.info(`[LocalAPI] Secure file uploaded: id=${(result as { id: string }).id}`);
+
+      this.sendJson(res, 200, result);
+    } catch (err) {
+      log.error('[LocalAPI] File upload failed:', err);
+      this.sendJson(res, 500, { error: (err as Error).message || 'Failed to upload file' });
+    }
+  }
+
+  private handleFileInfo(id: string, res: ServerResponse): void {
+    const services = this.deps.getServices();
+    if (!services) {
+      return this.sendJson(res, 503, { error: 'Desktop services not ready' });
+    }
+
+    const file = services.secureFileService.get(id) as {
+      status: string;
+      expiresAt: string;
+      originalName: string;
+      mimeType: string;
+      sizeBytes: number;
+      senderName: string;
+      currentDownloads: number;
+      maxDownloads: number;
+    } | null;
+
+    if (!file) {
+      return this.sendJson(res, 404, { error: 'File not found' });
+    }
+    if (file.status === 'destroyed') {
+      return this.sendJson(res, 410, { error: 'File has been destroyed' });
+    }
+    if (file.status === 'expired' || new Date(file.expiresAt) <= new Date()) {
+      return this.sendJson(res, 410, { error: 'File has expired' });
+    }
+
+    services.secureFileService.recordView(id, {
+      action: 'viewed',
+      ip: 'local',
+      userAgent: 'api-client',
+    });
+
+    this.sendJson(res, 200, {
+      originalName: file.originalName,
+      mimeType: file.mimeType,
+      sizeBytes: file.sizeBytes,
+      senderName: file.senderName,
+      trustScore: this.deps.getTrustScore(),
+      expiresAt: file.expiresAt,
+      currentDownloads: file.currentDownloads,
+      maxDownloads: file.maxDownloads,
+    });
+  }
+
+  private handleFileDownload(id: string, res: ServerResponse): void {
+    const services = this.deps.getServices();
+    if (!services) {
+      return this.sendJson(res, 503, { error: 'Desktop services not ready' });
+    }
+
+    const encData = services.secureFileService.getEncryptedData(id);
+    if (!encData) {
+      return this.sendJson(res, 404, { error: 'File not found or no longer available' });
+    }
+
+    const recorded = services.secureFileService.recordDownload(id, {
+      action: 'downloaded',
+      ip: 'local',
+      userAgent: 'api-client',
+    });
+
+    if (!recorded) {
+      return this.sendJson(res, 410, { error: 'File is no longer available' });
+    }
+
+    this.sendJson(res, 200, {
+      encryptedData: encData.data.toString('base64'),
+      iv: encData.iv,
+      authTag: encData.authTag,
+    });
+  }
+
   private async handleCreateMessage(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const services = this.deps.getServices();
     if (!services) {
@@ -533,11 +681,11 @@ export class LocalApiServer {
     res.end(JSON.stringify(data));
   }
 
-  private readBody(req: IncomingMessage): Promise<string | null> {
+  private readBody(req: IncomingMessage, maxSize = 64 * 1024): Promise<string | null> {
     return new Promise((resolve) => {
       const chunks: Buffer[] = [];
       let size = 0;
-      const MAX_BODY = 64 * 1024; // 64KB limit
+      const MAX_BODY = maxSize;
 
       req.on('data', (chunk: Buffer) => {
         size += chunk.length;

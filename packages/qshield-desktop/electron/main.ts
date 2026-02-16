@@ -32,6 +32,7 @@ import { LicenseManager } from './services/license-manager';
 import { AuthService } from './services/auth-service';
 import { LocalApiServer } from './services/local-api-server';
 import { SecureMessageService } from './services/secure-message-service';
+import { SecureFileService } from './services/secure-file-service';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -782,6 +783,21 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
   secureMessageSvc.checkExpiration();
   setInterval(() => secureMessageSvc.checkExpiration(), 60_000);
 
+  // Initialize secure file service
+  const secureFileSvc = new SecureFileService(
+    path.join(app.getPath('userData'), 'secure-files'),
+  );
+  // Set file size limit based on edition
+  const fileSizeLimits: Record<string, number> = {
+    free: 5 * 1024 * 1024,        // 5 MB
+    personal: 10 * 1024 * 1024,    // 10 MB
+    business: 10 * 1024 * 1024,    // 10 MB
+    enterprise: 100 * 1024 * 1024, // 100 MB
+  };
+  secureFileSvc.setMaxFileSize(fileSizeLimits[licMgr.getEdition()] ?? 10 * 1024 * 1024);
+  secureFileSvc.checkExpiration();
+  setInterval(() => secureFileSvc.checkExpiration(), 60_000);
+
   return {
     trustMonitor: {
       getState: () => {
@@ -971,6 +987,19 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
       getUser: () => authSvc.getUser(),
       restore: () => authSvc.restoreSession(),
       switchEdition: (edition: string) => authSvc.switchEdition(edition as 'free' | 'personal' | 'business' | 'enterprise'),
+    },
+    secureFileService: {
+      upload: (opts: { fileName: string; mimeType: string; data: Buffer; expiresIn: string; maxDownloads: number }, senderName: string, senderEmail: string) =>
+        secureFileSvc.upload(opts as Parameters<typeof secureFileSvc.upload>[0], senderName, senderEmail),
+      list: () => secureFileSvc.list(),
+      get: (id: string) => secureFileSvc.get(id),
+      destroy: (id: string) => secureFileSvc.destroy(id),
+      getEncryptedData: (id: string) => secureFileSvc.getEncryptedData(id),
+      recordDownload: (id: string, entry: { action: 'downloaded'; ip: string; userAgent: string }) =>
+        secureFileSvc.recordDownload(id, entry),
+      recordView: (id: string, entry: { action: 'viewed'; ip: string; userAgent: string }) =>
+        secureFileSvc.recordView(id, entry),
+      getMaxFileSize: () => secureFileSvc.getMaxFileSize(),
     },
     secureMessageService: {
       create: (opts: unknown) => {

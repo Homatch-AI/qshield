@@ -172,6 +172,16 @@ export const IPC_CHANNELS = {
   SECURE_MSG_ACCESS_LOG: 'secure-msg:access-log',
   /** Copy the share link for a secure message to clipboard */
   SECURE_MSG_COPY_LINK: 'secure-msg:copy-link',
+
+  // ── Secure Files ──────────────────────────────────────────────
+  /** Upload and encrypt a new secure file */
+  SECURE_FILE_UPLOAD: 'secure-file:upload',
+  /** List all secure files */
+  SECURE_FILE_LIST: 'secure-file:list',
+  /** Get a secure file by ID */
+  SECURE_FILE_GET: 'secure-file:get',
+  /** Destroy a secure file */
+  SECURE_FILE_DESTROY: 'secure-file:destroy',
 } as const;
 
 /** Union type of all valid IPC channel strings */
