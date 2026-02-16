@@ -18,16 +18,36 @@ const FEATURE_LABELS: Record<Feature, string> = {
   // Shield
   shield_basic: 'Shield (Basic)',
   shield_breathing: 'Shield (Breathing)',
-  // Email verification
+  // Email Verification
   verify_send: 'Email Verification',
-  verify_tls_check: 'TLS Check',
-  verify_routing_check: 'Routing Check',
-  verify_intercept_scan: 'Intercept Scan',
-  verify_custom_badge: 'Custom Badge',
+  verify_unlimited: 'Unlimited Verifications',
   verify_remove_branding: 'Remove Branding',
+  verify_custom_badge: 'Custom Badge',
   verify_analytics: 'Verification Analytics',
-  verify_bulk_api: 'Bulk API',
   verify_custom_domain: 'Custom Domain',
+  // Secure Messages
+  secure_message_send: 'Secure Messages',
+  secure_message_files: 'Message File Attachments',
+  secure_message_thread: 'Message Threading',
+  secure_message_analytics: 'Message Analytics',
+  // Secure File Attachments
+  secure_file_send: 'Secure File Sharing',
+  secure_file_large: 'Large File Sharing',
+  // Email Signature
+  email_signature: 'Email Signature',
+  email_signature_custom: 'Custom Signature',
+  // Crypto
+  crypto_basic: 'Crypto Guard',
+  crypto_monitor: 'Crypto Monitor',
+  crypto_analytics: 'Crypto Analytics',
+  // Zoom / Teams
+  zoom_verify_limited: 'Zoom Verification',
+  zoom_monitor: 'Zoom Monitor',
+  teams_monitor: 'Teams Monitor',
+  // Monitoring
+  email_monitor: 'Email Monitor',
+  file_monitor: 'File Monitor',
+  api_monitor: 'API Monitor',
   // Timeline
   timeline_24h: 'Timeline (24h)',
   timeline_full: 'Timeline (Full)',
@@ -36,61 +56,53 @@ const FEATURE_LABELS: Record<Feature, string> = {
   evidence_full: 'Evidence Vault',
   evidence_export: 'Evidence Export',
   evidence_api_export: 'Evidence API Export',
-  // Crypto
-  crypto_basic: 'Crypto Guard',
-  crypto_monitor: 'Crypto Monitor',
-  crypto_analytics: 'Crypto Analytics',
-  // Monitoring
-  zoom_monitor: 'Zoom Monitor',
-  teams_monitor: 'Teams Monitor',
-  email_monitor: 'Email Monitor',
-  file_monitor: 'File Monitor',
-  api_monitor: 'API Monitor',
   // Certificates
   cert_basic: 'Trust Certificates',
   cert_pro: 'Certificates (Pro)',
-  email_signature: 'Email Signature',
-  // Policy & alerts
+  // Alerts & Policy
   alerts_basic: 'Alerts (Basic)',
   alerts_full: 'Alerts (Full)',
   policy_engine: 'Policy Engine',
-  auto_freeze: 'Auto Freeze',
   escalation_rules: 'Escalation Rules',
-  policy_templates: 'Policy Templates',
-  // Compliance & enterprise
+  // Compliance & Enterprise
   siem_export: 'SIEM Export',
-  audit_log: 'Audit Log',
-  compliance_dashboard: 'Compliance Dashboard',
   sso_scim: 'SSO / SCIM',
-  org_dashboard: 'Org Dashboard',
-  soc_routing: 'SOC Routing',
+  compliance_dashboard: 'Compliance Dashboard',
   insurance_readiness: 'Insurance Readiness',
+  org_dashboard: 'Org Dashboard',
+  audit_log: 'Audit Log',
 };
 
 /** Features grouped for display in the comparison table. */
 const DISPLAY_FEATURES: Feature[] = [
   // Shield
   'shield_basic', 'shield_breathing',
-  // Email verification
-  'verify_send', 'verify_tls_check', 'verify_routing_check',
-  'verify_intercept_scan', 'verify_custom_badge', 'verify_remove_branding',
-  'verify_analytics', 'verify_bulk_api', 'verify_custom_domain',
+  // Email Verification
+  'verify_send', 'verify_unlimited', 'verify_remove_branding',
+  'verify_custom_badge', 'verify_analytics', 'verify_custom_domain',
+  // Secure Messages
+  'secure_message_send', 'secure_message_files', 'secure_message_thread', 'secure_message_analytics',
+  // Secure File Attachments
+  'secure_file_send', 'secure_file_large',
+  // Email Signature
+  'email_signature', 'email_signature_custom',
+  // Crypto
+  'crypto_basic', 'crypto_monitor', 'crypto_analytics',
+  // Zoom / Teams
+  'zoom_verify_limited', 'zoom_monitor', 'teams_monitor',
+  // Monitoring
+  'email_monitor', 'file_monitor', 'api_monitor',
   // Timeline
   'timeline_24h', 'timeline_full',
   // Evidence
   'evidence_preview', 'evidence_full', 'evidence_export', 'evidence_api_export',
-  // Crypto
-  'crypto_basic', 'crypto_monitor', 'crypto_analytics',
-  // Monitoring
-  'zoom_monitor', 'teams_monitor', 'email_monitor', 'file_monitor', 'api_monitor',
   // Certificates
-  'cert_basic', 'cert_pro', 'email_signature',
-  // Policy & alerts
-  'alerts_basic', 'alerts_full', 'policy_engine', 'auto_freeze',
-  'escalation_rules', 'policy_templates',
-  // Compliance & enterprise
-  'siem_export', 'audit_log', 'compliance_dashboard', 'sso_scim',
-  'org_dashboard', 'soc_routing', 'insurance_readiness',
+  'cert_basic', 'cert_pro',
+  // Alerts & Policy
+  'alerts_basic', 'alerts_full', 'policy_engine', 'escalation_rules',
+  // Compliance & Enterprise
+  'siem_export', 'sso_scim', 'compliance_dashboard',
+  'insurance_readiness', 'org_dashboard', 'audit_log',
 ];
 
 function CheckIcon() {

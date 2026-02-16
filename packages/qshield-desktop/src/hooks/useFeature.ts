@@ -1,4 +1,4 @@
-import type { Feature, QShieldEdition } from '@qshield/core';
+import type { Feature, QShieldEdition } from '@/stores/license-store';
 import useLicenseStore from '@/stores/license-store';
 
 /** Check whether a feature is enabled under the current license. */

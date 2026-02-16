@@ -10,16 +10,36 @@ type Feature =
   // Shield
   | 'shield_basic'
   | 'shield_breathing'
-  // Email verification (viral engine)
+  // Email Verification
   | 'verify_send'
-  | 'verify_tls_check'
-  | 'verify_routing_check'
-  | 'verify_intercept_scan'
-  | 'verify_custom_badge'
+  | 'verify_unlimited'
   | 'verify_remove_branding'
+  | 'verify_custom_badge'
   | 'verify_analytics'
-  | 'verify_bulk_api'
   | 'verify_custom_domain'
+  // Secure Messages
+  | 'secure_message_send'
+  | 'secure_message_files'
+  | 'secure_message_thread'
+  | 'secure_message_analytics'
+  // Secure File Attachments
+  | 'secure_file_send'
+  | 'secure_file_large'
+  // Email Signature
+  | 'email_signature'
+  | 'email_signature_custom'
+  // Crypto
+  | 'crypto_basic'
+  | 'crypto_monitor'
+  | 'crypto_analytics'
+  // Zoom / Teams
+  | 'zoom_verify_limited'
+  | 'zoom_monitor'
+  | 'teams_monitor'
+  // Monitoring
+  | 'email_monitor'
+  | 'file_monitor'
+  | 'api_monitor'
   // Timeline
   | 'timeline_24h'
   | 'timeline_full'
@@ -28,71 +48,76 @@ type Feature =
   | 'evidence_full'
   | 'evidence_export'
   | 'evidence_api_export'
-  // Crypto
-  | 'crypto_basic'
-  | 'crypto_monitor'
-  | 'crypto_analytics'
-  // Monitoring adapters
-  | 'zoom_monitor'
-  | 'teams_monitor'
-  | 'email_monitor'
-  | 'file_monitor'
-  | 'api_monitor'
   // Certificates
   | 'cert_basic'
   | 'cert_pro'
-  | 'email_signature'
-  // Policy & alerts
+  // Alerts & Policy
   | 'alerts_basic'
   | 'alerts_full'
   | 'policy_engine'
-  | 'auto_freeze'
   | 'escalation_rules'
-  | 'policy_templates'
-  // Compliance & enterprise
+  // Compliance & Enterprise
   | 'siem_export'
-  | 'audit_log'
-  | 'compliance_dashboard'
   | 'sso_scim'
+  | 'compliance_dashboard'
+  | 'insurance_readiness'
   | 'org_dashboard'
-  | 'soc_routing'
-  | 'insurance_readiness';
+  | 'audit_log';
 
 const EDITION_ORDER: QShieldEdition[] = ['free', 'personal', 'business', 'enterprise'];
 
-const FREE_FEATURES: Feature[] = [
-  'shield_basic', 'verify_send', 'email_signature',
-  'timeline_24h', 'evidence_preview', 'alerts_basic',
-];
-
-const PERSONAL_FEATURES: Feature[] = [
-  ...FREE_FEATURES,
-  'shield_breathing', 'verify_tls_check', 'verify_routing_check',
-  'verify_custom_badge', 'verify_remove_branding',
-  'timeline_full', 'evidence_full', 'cert_basic', 'crypto_basic',
-];
-
-const BUSINESS_FEATURES: Feature[] = [
-  ...PERSONAL_FEATURES,
-  'verify_intercept_scan', 'verify_analytics', 'verify_bulk_api',
-  'zoom_monitor', 'teams_monitor', 'email_monitor',
-  'evidence_export', 'alerts_full', 'policy_engine', 'auto_freeze',
-  'audit_log', 'crypto_monitor',
-];
-
-const ENTERPRISE_FEATURES: Feature[] = [
-  ...BUSINESS_FEATURES,
-  'verify_custom_domain', 'file_monitor', 'api_monitor',
-  'evidence_api_export', 'cert_pro', 'escalation_rules', 'policy_templates',
-  'siem_export', 'compliance_dashboard', 'sso_scim', 'org_dashboard',
-  'soc_routing', 'insurance_readiness', 'crypto_analytics',
-];
-
 const EDITION_FEATURES: Record<QShieldEdition, Feature[]> = {
-  free: FREE_FEATURES,
-  personal: PERSONAL_FEATURES,
-  business: BUSINESS_FEATURES,
-  enterprise: ENTERPRISE_FEATURES,
+  free: [
+    'shield_basic',
+    'verify_send',
+    'email_signature',
+    'timeline_24h',
+    'evidence_preview',
+    'alerts_basic',
+  ],
+  personal: [
+    'shield_basic', 'shield_breathing',
+    'verify_send', 'verify_unlimited', 'verify_remove_branding', 'verify_custom_badge',
+    'email_signature', 'email_signature_custom',
+    'timeline_24h', 'timeline_full',
+    'evidence_preview', 'evidence_full',
+    'alerts_basic',
+    'secure_message_send',
+    'crypto_basic',
+    'zoom_verify_limited',
+    'cert_basic',
+  ],
+  business: [
+    'shield_basic', 'shield_breathing',
+    'verify_send', 'verify_unlimited', 'verify_remove_branding', 'verify_custom_badge', 'verify_analytics',
+    'email_signature', 'email_signature_custom',
+    'timeline_24h', 'timeline_full',
+    'evidence_preview', 'evidence_full', 'evidence_export',
+    'alerts_basic', 'alerts_full',
+    'secure_message_send', 'secure_message_files', 'secure_message_analytics',
+    'crypto_basic', 'crypto_monitor',
+    'zoom_verify_limited', 'zoom_monitor', 'teams_monitor',
+    'cert_basic', 'cert_pro',
+    'secure_file_send',
+    'email_monitor', 'file_monitor',
+    'policy_engine', 'escalation_rules',
+  ],
+  enterprise: [
+    'shield_basic', 'shield_breathing',
+    'verify_send', 'verify_unlimited', 'verify_remove_branding', 'verify_custom_badge', 'verify_analytics', 'verify_custom_domain',
+    'email_signature', 'email_signature_custom',
+    'timeline_24h', 'timeline_full',
+    'evidence_preview', 'evidence_full', 'evidence_export', 'evidence_api_export',
+    'alerts_basic', 'alerts_full',
+    'secure_message_send', 'secure_message_files', 'secure_message_thread', 'secure_message_analytics',
+    'crypto_basic', 'crypto_monitor', 'crypto_analytics',
+    'zoom_verify_limited', 'zoom_monitor', 'teams_monitor',
+    'cert_basic', 'cert_pro',
+    'secure_file_send', 'secure_file_large',
+    'email_monitor', 'file_monitor', 'api_monitor',
+    'policy_engine', 'escalation_rules',
+    'siem_export', 'sso_scim', 'compliance_dashboard', 'insurance_readiness', 'org_dashboard', 'audit_log',
+  ],
 };
 
 /** Get the minimum edition required for a feature. */
@@ -119,6 +144,8 @@ interface LicenseStoreState {
 interface LicenseStoreActions {
   fetchLicense: () => Promise<void>;
   hasFeature: (feature: Feature) => boolean;
+  /** Dev-only: switch edition locally without IPC. */
+  setDevEdition: (edition: QShieldEdition) => void;
 }
 
 type LicenseStore = LicenseStoreState & LicenseStoreActions;
@@ -154,6 +181,14 @@ const useLicenseStore = create<LicenseStore>((set, get) => ({
 
   hasFeature: (feature: Feature) => {
     return get().features.includes(feature);
+  },
+
+  setDevEdition: (edition: QShieldEdition) => {
+    set({
+      edition,
+      features: EDITION_FEATURES[edition] ?? [],
+      loading: false,
+    });
   },
 }));
 

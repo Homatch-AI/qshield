@@ -69,16 +69,22 @@ export interface NavItem {
   visibleFrom?: string;
 }
 
-export const NAV_ITEMS: NavItem[] = [
+export const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: 'gauge' },
-  { path: '/timeline', label: 'Timeline', icon: 'clock', requiredFeature: 'timeline_24h' },
-  { path: '/vault', label: 'Evidence Vault', icon: 'vault', requiredFeature: 'evidence_full', visibleFrom: 'evidence_preview' },
-  { path: '/certificates', label: 'Certificates', icon: 'certificate', requiredFeature: 'cert_basic' },
-  { path: '/alerts', label: 'Alerts', icon: 'bell', requiredFeature: 'alerts_full', visibleFrom: 'alerts_basic' },
-  { path: '/crypto', label: 'Crypto Security', icon: 'shield-check', requiredFeature: 'crypto_basic' },
-  { path: '/messages', label: 'Secure Messages', icon: 'lock' },
+  { path: '/timeline', label: 'Timeline', icon: 'clock',
+    requiredFeature: 'timeline_24h' as const },
+  { path: '/vault', label: 'Evidence Vault', icon: 'vault',
+    requiredFeature: 'evidence_full' as const, visibleFrom: 'evidence_preview' as const },
+  { path: '/messages', label: 'Secure Messages', icon: 'lock',
+    requiredFeature: 'secure_message_send' as const },
+  { path: '/certificates', label: 'Certificates', icon: 'certificate',
+    requiredFeature: 'cert_basic' as const },
+  { path: '/alerts', label: 'Alerts', icon: 'bell',
+    requiredFeature: 'alerts_full' as const, visibleFrom: 'alerts_basic' as const },
+  { path: '/crypto', label: 'Crypto Security', icon: 'shield-check',
+    requiredFeature: 'crypto_basic' as const },
   { path: '/settings', label: 'Settings', icon: 'settings' },
-];
+] as const;
 
 export const ADAPTER_LABELS: Record<string, string> = {
   zoom: 'Zoom',

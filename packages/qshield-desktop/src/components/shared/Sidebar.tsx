@@ -16,13 +16,6 @@ const EDITION_BADGE_STYLES: Record<QShieldEdition, string> = {
   enterprise: 'bg-amber-500/20 text-amber-400',
 };
 
-const NAV_BADGE_COLORS: Record<QShieldEdition, string> = {
-  free: 'bg-slate-500/20 text-slate-400',
-  personal: 'bg-sky-500/20 text-sky-400',
-  business: 'bg-purple-500/20 text-purple-400',
-  enterprise: 'bg-amber-500/20 text-amber-400',
-};
-
 function NavIcon({ icon, className = '' }: { icon: string; className?: string }) {
   const iconPaths: Record<string, React.ReactNode> = {
     gauge: (
@@ -106,6 +99,8 @@ export function Sidebar() {
   const level = useTrustStore((s) => s.level);
   const activeAlertCount = useAlertStore((s) => s.alerts.filter((a) => !a.dismissed).length);
   const hasFeature = useLicenseStore((s) => s.hasFeature);
+  const currentEdition = useLicenseStore((s) => s.edition);
+  const setDevEdition = useLicenseStore((s) => s.setDevEdition);
   const user = useAuthStore((s) => s.user);
   const authenticated = useAuthStore((s) => s.authenticated);
   const navigate = useNavigate();
@@ -138,7 +133,7 @@ export function Sidebar() {
         <ul className="space-y-1">
           {NAV_ITEMS.map((item) => {
             // No requiredFeature → always show as active NavLink
-            if (!item.requiredFeature) {
+            if (!('requiredFeature' in item)) {
               return (
                 <li key={item.path}>
                   <NavLink
@@ -159,7 +154,8 @@ export function Sidebar() {
               );
             }
 
-            const hasRequired = hasFeature(item.requiredFeature as Parameters<typeof hasFeature>[0]);
+            const requiredFeature = 'requiredFeature' in item ? item.requiredFeature : undefined;
+            const hasRequired = requiredFeature ? hasFeature(requiredFeature as Feature) : false;
 
             // User has the required feature → show as active NavLink
             if (hasRequired) {
@@ -188,22 +184,23 @@ export function Sidebar() {
             }
 
             // Has visibleFrom and user has it → show as locked (paywalled)
-            const hasVisible = item.visibleFrom && hasFeature(item.visibleFrom as Parameters<typeof hasFeature>[0]);
+            const hasVisible = 'visibleFrom' in item && item.visibleFrom && hasFeature(item.visibleFrom as Feature);
             if (hasVisible) {
               const reqEdition = getRequiredEdition(item.requiredFeature as Feature);
-              const badgeLabel = EDITION_LABELS[reqEdition]?.toUpperCase() ?? 'PRO';
-              const badgeColor = NAV_BADGE_COLORS[reqEdition] ?? 'bg-sky-500/20 text-sky-400';
+              const badgeLabel = EDITION_LABELS[reqEdition] ?? 'Pro';
               return (
                 <li key={item.path}>
                   <div
                     onClick={() => { setUpgradeFeature(item.requiredFeature); setUpgradeOpen(true); }}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-slate-400 opacity-50 cursor-pointer hover:bg-slate-800/50"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-slate-400 opacity-60 cursor-pointer hover:bg-slate-800/50"
                   >
                     <NavIcon icon={item.icon} className="shrink-0" />
                     {!collapsed && (
                       <>
                         <span className="truncate">{item.label}</span>
-                        <span className={`ml-auto text-[9px] font-bold uppercase ${badgeColor} px-1.5 rounded-full`}>{badgeLabel}</span>
+                        <span className="ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400">
+                          {badgeLabel}
+                        </span>
                       </>
                     )}
                   </div>
@@ -309,6 +306,23 @@ export function Sidebar() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Dev Edition Switcher */}
+      {import.meta.env.DEV && !collapsed && (
+        <div className="px-3 py-2 border-t border-slate-800">
+          <label className="text-[10px] text-slate-600 uppercase tracking-wider">Dev Edition</label>
+          <select
+            value={currentEdition}
+            onChange={(e) => setDevEdition(e.target.value as QShieldEdition)}
+            className="mt-1 w-full bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 px-2 py-1"
+          >
+            <option value="free">Free</option>
+            <option value="personal">Personal ($9/mo)</option>
+            <option value="business">Business ($29/seat)</option>
+            <option value="enterprise">Enterprise</option>
+          </select>
         </div>
       )}
 

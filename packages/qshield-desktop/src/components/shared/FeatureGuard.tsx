@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import type { Feature } from '@qshield/core';
-import { useFeature } from '@/hooks/useFeature';
+import type { Feature } from '@/stores/license-store';
 import { getRequiredEdition, EDITION_LABELS } from '@/stores/license-store';
-import type { Feature as LicenseFeature } from '@/stores/license-store';
+import { useFeature } from '@/hooks/useFeature';
 import { UpgradeModal } from './UpgradeModal';
 
 interface FeatureGuardProps {
@@ -20,7 +19,7 @@ export function FeatureGuard({ feature, children, fallback }: FeatureGuardProps)
 
   if (fallback) return <>{fallback}</>;
 
-  const requiredEdition = getRequiredEdition(feature as LicenseFeature);
+  const requiredEdition = getRequiredEdition(feature);
   const editionLabel = EDITION_LABELS[requiredEdition] ?? 'Business';
 
   return (
