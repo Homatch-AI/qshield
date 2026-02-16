@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch --mode development",
-    "build": "vite build",
+    "build": "vite build && CONTENT_ENTRY=gmail vite build && CONTENT_ENTRY=outlook vite build",
     "clean": "rm -rf dist",
     "test": "vitest run",
     "test:watch": "vitest"
