@@ -3,9 +3,28 @@ export type TrustScore = number;
 
 export type TrustLevel = 'critical' | 'warning' | 'elevated' | 'normal' | 'verified';
 
+/**
+ * Five independent trust verification dimensions, mirroring the patent's
+ * multi-dimensional quantum state encoding. Each scored 0–100.
+ */
+export interface TrustDimensions {
+  temporal: TrustScore;      // timing consistency
+  contextual: TrustScore;    // pattern matching
+  cryptographic: TrustScore; // seal/signature validity
+  spatial: TrustScore;       // network routing verification
+  behavioral: TrustScore;    // historical pattern matching
+}
+
+export type TrustDimensionKey = keyof TrustDimensions;
+
+export const TRUST_DIMENSION_KEYS: TrustDimensionKey[] = [
+  'temporal', 'contextual', 'cryptographic', 'spatial', 'behavioral',
+];
+
 export interface TrustState {
   score: TrustScore;
   level: TrustLevel;
+  dimensions: TrustDimensions;
   signals: TrustSignal[];
   lastUpdated: string; // ISO 8601
   sessionId: string;
@@ -17,19 +36,30 @@ export interface TrustSignal {
   weight: number;
   timestamp: string;
   metadata: Record<string, unknown>;
+  dimension?: TrustDimensionKey;
 }
 
 export type AdapterType = 'zoom' | 'teams' | 'email' | 'file' | 'api' | 'crypto';
 
+export interface DualPathVerification {
+  contentValid: boolean;
+  structureValid: boolean;
+  fullyVerified: boolean;
+}
+
 export interface EvidenceRecord {
   id: string; // UUID v4
-  hash: string; // HMAC-SHA256 hex
-  previousHash: string | null; // Hash chain
+  hash: string; // HMAC-SHA256 hex (Helix A — Content Chain)
+  previousHash: string | null; // Content chain link
+  structureHash: string; // HMAC-SHA256 hex (Helix B — Structure Chain)
+  previousStructureHash: string | null; // Structure chain link
+  vaultPosition: number; // Deterministic position = f(content, session, time, source)
   timestamp: string; // ISO 8601
   source: AdapterType;
   eventType: string;
   payload: Record<string, unknown>;
   verified: boolean;
+  dualPathResult?: DualPathVerification;
   signature?: string; // Future: Ed25519
 }
 
@@ -115,9 +145,13 @@ export interface TrustCertificate {
   generatedAt: string;
   trustScore: TrustScore;
   trustLevel: TrustLevel;
+  dimensions: TrustDimensions;
   evidenceCount: number;
   evidenceHashes: string[];
   signatureChain: string;
+  structureChainSignature: string;
+  dualPathVerified: boolean;
+  activeModules: string[];
   pdfPath?: string;
 }
 

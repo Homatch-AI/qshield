@@ -1,11 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { computeTrustScore, buildTrustState } from '../../src/trust-scorer';
 import { evaluatePolicy, createDefaultPolicy } from '../../src/policy-rules';
-import { createEvidenceRecord, verifyEvidenceChain, computeSignatureChain } from '../../src/evidence';
+import {
+  createEvidenceRecord,
+  verifyEvidenceChain,
+  computeSignatureChain,
+  computeVaultPosition,
+  hashStructureRecord,
+} from '../../src/evidence';
 import { hashEvidenceRecord } from '../../src/crypto';
 import type { TrustSignal, AdapterType, PolicyConfig } from '../../src/types';
 
 const HMAC_KEY = 'policy-integration-key';
+const SESSION_ID = 'policy-session';
 
 function makeSignal(source: AdapterType, score: number): TrustSignal {
   return {
@@ -17,7 +24,7 @@ function makeSignal(source: AdapterType, score: number): TrustSignal {
   };
 }
 
-/** Assign an explicit timestamp to a record and recompute its hash. */
+/** Assign an explicit timestamp to a record and recompute both hashes. */
 function setTimestamp(
   record: ReturnType<typeof createEvidenceRecord>,
   ts: string,
@@ -31,6 +38,18 @@ function setTimestamp(
       source: record.source,
       eventType: record.eventType,
       payload: JSON.stringify(record.payload),
+    },
+    HMAC_KEY,
+  );
+  record.vaultPosition = computeVaultPosition(record.hash, SESSION_ID, ts, record.source, HMAC_KEY);
+  record.structureHash = hashStructureRecord(
+    {
+      id: record.id,
+      vaultPosition: record.vaultPosition,
+      previousStructureHash: record.previousStructureHash,
+      timestamp: ts,
+      source: record.source,
+      eventType: record.eventType,
     },
     HMAC_KEY,
   );
@@ -83,14 +102,17 @@ describe('Policy Evaluation Integration', () => {
 
   it('auto-freeze triggers when overall trust score is critically low', () => {
     const signals = [
-      makeSignal('zoom', 5),
-      makeSignal('teams', 10),
-      makeSignal('email', 8),
+      makeSignal('zoom', 5),     // contextual
+      makeSignal('teams', 10),   // contextual (averaged)
+      makeSignal('email', 8),    // temporal
+      makeSignal('file', 5),     // cryptographic
+      makeSignal('api', 5),      // spatial
+      makeSignal('crypto', 5),   // behavioral
     ];
     const trustState = buildTrustState(signals, 'freeze-session');
 
     const policy = createDefaultPolicy();
-    // Trust score should be very low
+    // Trust score should be very low across all 5 dimensions
     expect(trustState.score).toBeLessThan(20);
 
     const result = evaluatePolicy(policy, trustState);
@@ -114,6 +136,7 @@ describe('Policy Evaluation Integration', () => {
     // Step 4: Record everything as evidence with explicit timestamps
     const records = [];
     let prevHash: string | null = null;
+    let prevStructureHash: string | null = null;
     const baseTime = new Date('2024-06-01T00:00:00Z').getTime();
     let recordIndex = 0;
 
@@ -123,11 +146,14 @@ describe('Policy Evaluation Integration', () => {
       'trust-computed',
       { score: trustState.score, level: trustState.level },
       prevHash,
+      prevStructureHash,
+      SESSION_ID,
       HMAC_KEY,
     );
     setTimestamp(trustRecord, new Date(baseTime + recordIndex++ * 1000).toISOString());
     records.push(trustRecord);
     prevHash = trustRecord.hash;
+    prevStructureHash = trustRecord.structureHash;
 
     // Record each triggered alert
     for (const alert of policyResult.alerts) {
@@ -136,15 +162,18 @@ describe('Policy Evaluation Integration', () => {
         'policy-alert',
         { alertId: alert.id, severity: alert.severity, title: alert.title },
         prevHash,
+        prevStructureHash,
+        SESSION_ID,
         HMAC_KEY,
       );
       setTimestamp(alertRecord, new Date(baseTime + recordIndex++ * 1000).toISOString());
       records.push(alertRecord);
       prevHash = alertRecord.hash;
+      prevStructureHash = alertRecord.structureHash;
     }
 
     // Step 5: Verify the complete evidence chain
-    const chainResult = verifyEvidenceChain(records, HMAC_KEY);
+    const chainResult = verifyEvidenceChain(records, SESSION_ID, HMAC_KEY);
     expect(chainResult.valid).toBe(true);
 
     // Step 6: Generate a signature chain

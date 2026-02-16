@@ -45,6 +45,7 @@ export class TrustMonitor {
   private currentState: TrustState;
   private sessionId: string;
   private lastEvidenceHash: string | null = null;
+  private lastStructureHash: string | null = null;
   private running = false;
   private policyEnforcer: PolicyEnforcer;
 
@@ -365,10 +366,13 @@ export class TrustMonitor {
           ...event.data,
         },
         this.lastEvidenceHash,
+        this.lastStructureHash,
+        this.sessionId,
         EVIDENCE_HMAC_KEY,
       );
 
       this.lastEvidenceHash = record.hash;
+      this.lastStructureHash = record.structureHash;
 
       log.info(
         `[TrustMonitor] Evidence record created: ${record.id} (${event.eventType}, chain: ${record.hash.substring(0, 12)}...)`,

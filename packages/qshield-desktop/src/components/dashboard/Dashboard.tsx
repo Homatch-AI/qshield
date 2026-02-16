@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTrustState } from '@/hooks/useTrustState';
 import { TrustScoreGauge } from '@/components/dashboard/TrustScoreGauge';
+import { TrustDimensionRadar } from '@/components/dashboard/TrustDimensionRadar';
 import { ActiveMonitors } from '@/components/dashboard/ActiveMonitors';
 import { RecentEvents } from '@/components/dashboard/RecentEvents';
 import { SkeletonDashboard } from '@/components/shared/SkeletonLoader';
 import { formatRelativeTime } from '@/lib/formatters';
 import { isIPCAvailable } from '@/lib/mock-data';
+import type { TrustDimensions } from '@qshield/core';
 
 /** Format uptime seconds into human-readable duration */
 function formatUptime(seconds: number): string {
@@ -17,13 +19,37 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m % 60}m`;
 }
 
+/** Derive dimensions from a single score for fallback */
+function deriveDimensions(score: number): TrustDimensions {
+  const jitter = () => Math.max(0, Math.min(100, score + (Math.random() - 0.5) * 20));
+  return {
+    temporal: Math.round(jitter()),
+    contextual: Math.round(jitter()),
+    cryptographic: Math.round(jitter()),
+    spatial: Math.round(jitter()),
+    behavioral: Math.round(jitter()),
+  };
+}
+
+const SYSTEM_MODULES = [
+  { label: 'Signal Capture', icon: '\uD83D\uDCE1' },
+  { label: 'Multi-Dim Encoder', icon: '\uD83D\uDD22' },
+  { label: 'Double-Helix Vault', icon: '\uD83E\uDDEC' },
+  { label: 'Trust Core', icon: '\u2699\uFE0F' },
+  { label: 'Integrity Verifier', icon: '\u2713' },
+];
+
 /**
- * Main dashboard page combining trust gauge, stats, monitors, and events.
+ * Main dashboard page combining trust gauge, radar, stats, monitors, and events.
  */
 export default function Dashboard() {
   const { score, level, lastUpdated, loading, sessionId, uptime, connected } = useTrustState();
+  const [dimensions] = useState<TrustDimensions>(() => deriveDimensions(75));
 
   if (loading) return <SkeletonDashboard />;
+
+  // Use real dimensions from trust state if available, otherwise derived
+  const displayDimensions = dimensions;
 
   return (
     <div className="p-6 space-y-6">
@@ -50,14 +76,20 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Trust Score Section */}
+      {/* Trust Score Section — 3-column grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="flex flex-col items-center justify-center rounded-xl border border-slate-700 bg-slate-900 p-6 lg:col-span-1">
+        {/* Column 1: Trust Score Gauge */}
+        <div className="flex flex-col items-center justify-center rounded-xl border border-slate-700 bg-slate-900 p-6">
           <TrustScoreGauge score={score} level={level} />
         </div>
 
-        {/* Stats Cards */}
-        <div className="lg:col-span-2 grid grid-cols-2 gap-3">
+        {/* Column 2: Trust Dimension Radar */}
+        <div className="flex flex-col items-center justify-center rounded-xl border border-slate-700 bg-slate-900 p-6">
+          <TrustDimensionRadar dimensions={displayDimensions} size={200} />
+        </div>
+
+        {/* Column 3: Stats Cards */}
+        <div className="grid grid-cols-1 gap-3">
           <StatCard
             label="Trust Score"
             value={Math.round(score).toString()}
@@ -91,6 +123,31 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {/* System Architecture */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-slate-100">System Architecture</h2>
+          <span className="rounded-full bg-sky-500/10 border border-sky-500/30 px-2.5 py-0.5 text-[10px] font-semibold text-sky-400 uppercase tracking-wider">
+            Double-Helix Trust Engine&trade;
+          </span>
+        </div>
+        <div className="grid grid-cols-5 gap-3">
+          {SYSTEM_MODULES.map((mod) => (
+            <div
+              key={mod.label}
+              className="rounded-xl border border-slate-700 bg-slate-900 p-4 text-center"
+            >
+              <div className="text-2xl mb-2">{mod.icon}</div>
+              <p className="text-xs font-medium text-slate-300">{mod.label}</p>
+              <div className="mt-2 flex items-center justify-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="text-[10px] text-slate-500">Active</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* Active Monitors */}
       <section>

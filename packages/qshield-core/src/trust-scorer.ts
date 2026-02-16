@@ -1,9 +1,12 @@
-import type { AdapterType, TrustLevel, TrustSignal, TrustState } from './types';
+import type { AdapterType, TrustDimensionKey, TrustDimensions, TrustLevel, TrustSignal, TrustState } from './types';
+import { TRUST_DIMENSION_KEYS } from './types';
 
 /** Configuration for the trust scoring engine. */
 export interface TrustScorerConfig {
   /** Weight map per signal source. Weights are normalized at scoring time. */
   weights: Record<AdapterType, number>;
+  /** Weight map per trust dimension. Weights are normalized at scoring time. */
+  dimensionWeights: Record<TrustDimensionKey, number>;
   /** Signal decay half-life in milliseconds (default: 3,600,000 = 1 hour). */
   decayHalfLifeMs: number;
   /** Maximum signal age in milliseconds. Signals older than this are ignored entirely. */
@@ -38,9 +41,29 @@ const DEFAULT_WEIGHTS: Record<AdapterType, number> = {
   crypto: 0.15,
 };
 
+/** Default weights for each trust dimension. */
+const DEFAULT_DIMENSION_WEIGHTS: Record<TrustDimensionKey, number> = {
+  temporal: 0.20,
+  contextual: 0.20,
+  cryptographic: 0.25,
+  spatial: 0.15,
+  behavioral: 0.20,
+};
+
+/** Adapter → dimension mapping. */
+export const ADAPTER_DIMENSION_MAP: Record<AdapterType, TrustDimensionKey> = {
+  zoom: 'contextual',
+  teams: 'contextual',
+  email: 'temporal',
+  file: 'cryptographic',
+  api: 'spatial',
+  crypto: 'behavioral',
+};
+
 /** Default trust scorer configuration. */
 export const DEFAULT_TRUST_SCORER_CONFIG: TrustScorerConfig = {
   weights: { ...DEFAULT_WEIGHTS },
+  dimensionWeights: { ...DEFAULT_DIMENSION_WEIGHTS },
   decayHalfLifeMs: 60 * 60 * 1000, // 1 hour
   maxSignalAgeMs: 4 * 60 * 60 * 1000, // 4 hours
   anomalyDropThreshold: 30,
@@ -70,10 +93,10 @@ function clampScore(value: number): number {
  * Compute the trust level for a given score.
  *
  * The score is first clamped to [0, 100], then mapped to a trust level
- * based on fixed thresholds: verified (≥90), normal (≥70), elevated (≥50),
- * warning (≥30), critical (<30).
+ * based on fixed thresholds: verified (>=90), normal (>=70), elevated (>=50),
+ * warning (>=30), critical (<30).
  *
- * @param score - The trust score (will be clamped to 0–100)
+ * @param score - The trust score (will be clamped to 0-100)
  * @returns The corresponding trust level
  */
 export function computeTrustLevel(score: number): TrustLevel {
@@ -187,6 +210,93 @@ export function computeTrustScore(
 }
 
 /**
+ * Compute the 5-dimension trust scores from signals.
+ *
+ * Each signal is mapped to a dimension via signal.dimension (if set)
+ * or via ADAPTER_DIMENSION_MAP. Dimensions with no contributing signals
+ * default to 100 (no news = good news).
+ *
+ * @param signals - Array of trust signals from various adapters
+ * @param config - Optional partial configuration (merged with defaults)
+ * @param now - Optional current timestamp in ms (default: Date.now())
+ * @returns TrustDimensions with all 5 dimension scores
+ */
+export function computeTrustDimensions(
+  signals: TrustSignal[],
+  config?: Partial<TrustScorerConfig>,
+  now?: number,
+): TrustDimensions {
+  const cfg: TrustScorerConfig = { ...DEFAULT_TRUST_SCORER_CONFIG, ...config };
+  const currentTime = now ?? Date.now();
+
+  // Filter out signals older than the max age
+  const activeSignals = signals.filter((s) => {
+    const ageMs = currentTime - new Date(s.timestamp).getTime();
+    return ageMs <= cfg.maxSignalAgeMs;
+  });
+
+  // Group signals by dimension
+  const dimensionSignals = new Map<TrustDimensionKey, { score: number; decay: number }[]>();
+  for (const key of TRUST_DIMENSION_KEYS) {
+    dimensionSignals.set(key, []);
+  }
+
+  for (const signal of activeSignals) {
+    const dim = signal.dimension ?? ADAPTER_DIMENSION_MAP[signal.source];
+    const decayFactor = computeDecayFactor(signal.timestamp, currentTime, cfg.decayHalfLifeMs);
+    dimensionSignals.get(dim)!.push({ score: signal.score, decay: decayFactor });
+  }
+
+  // Compute average score per dimension (default 100 if no signals)
+  const dimensions: TrustDimensions = {
+    temporal: 100,
+    contextual: 100,
+    cryptographic: 100,
+    spatial: 100,
+    behavioral: 100,
+  };
+
+  for (const key of TRUST_DIMENSION_KEYS) {
+    const entries = dimensionSignals.get(key)!;
+    if (entries.length > 0) {
+      const totalDecayedScore = entries.reduce((sum, e) => sum + e.score * e.decay, 0);
+      const totalDecay = entries.reduce((sum, e) => sum + e.decay, 0);
+      dimensions[key] = Math.round(clampScore(totalDecayedScore / totalDecay) * 100) / 100;
+    }
+  }
+
+  return dimensions;
+}
+
+/**
+ * Compute a composite trust score as a weighted average of all 5 dimensions.
+ *
+ * @param dimensions - The 5-dimension trust scores
+ * @param config - Optional partial configuration (merged with defaults)
+ * @returns Composite trust score, clamped to [0, 100]
+ */
+export function computeCompositeScore(
+  dimensions: TrustDimensions,
+  config?: Partial<TrustScorerConfig>,
+): number {
+  const cfg: TrustScorerConfig = { ...DEFAULT_TRUST_SCORER_CONFIG, ...config };
+  const dimWeights = config?.dimensionWeights
+    ? { ...DEFAULT_DIMENSION_WEIGHTS, ...config.dimensionWeights }
+    : cfg.dimensionWeights;
+
+  let totalWeight = 0;
+  let score = 0;
+  for (const key of TRUST_DIMENSION_KEYS) {
+    const w = dimWeights[key];
+    totalWeight += w;
+    score += dimensions[key] * w;
+  }
+
+  if (totalWeight === 0) return 0;
+  return Math.round(clampScore(score / totalWeight) * 100) / 100;
+}
+
+/**
  * Detect anomalous score drops over a short time window.
  *
  * Compares the current score against the maximum score seen in the
@@ -259,23 +369,26 @@ export function computeRunningAverage(
 /**
  * Build a complete TrustState from signals.
  *
- * Combines score computation, level determination, and signal data
- * into a single state object suitable for rendering and policy evaluation.
+ * Combines 5-dimension scoring, composite score computation, level
+ * determination, and signal data into a single state object suitable
+ * for rendering and policy evaluation.
  *
  * @param signals - Array of trust signals from various adapters
  * @param sessionId - The current session identifier
  * @param config - Optional partial trust scorer configuration
- * @returns Complete trust state with score, level, and metadata
+ * @returns Complete trust state with score, level, dimensions, and metadata
  */
 export function buildTrustState(
   signals: TrustSignal[],
   sessionId: string,
   config?: Partial<TrustScorerConfig>,
 ): TrustState {
-  const score = computeTrustScore(signals, config);
+  const dimensions = computeTrustDimensions(signals, config);
+  const score = computeCompositeScore(dimensions, config);
   return {
     score,
     level: computeTrustLevel(score),
+    dimensions,
     signals,
     lastUpdated: new Date().toISOString(),
     sessionId,

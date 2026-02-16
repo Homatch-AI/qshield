@@ -73,7 +73,7 @@ export const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: 'gauge' },
   { path: '/timeline', label: 'Timeline', icon: 'clock',
     requiredFeature: 'timeline_24h' as const },
-  { path: '/vault', label: 'Evidence Vault', icon: 'vault',
+  { path: '/vault', label: 'Double-Helix Vault', icon: 'vault',
     requiredFeature: 'evidence_full' as const, visibleFrom: 'evidence_preview' as const },
   { path: '/messages', label: 'Secure Messages', icon: 'lock',
     requiredFeature: 'secure_message_send' as const },

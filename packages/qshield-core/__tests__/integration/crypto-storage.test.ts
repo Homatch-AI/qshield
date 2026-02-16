@@ -57,6 +57,8 @@ describe('Crypto-Storage Integration', () => {
       'meeting-encrypted',
       { meetingId: 'abc', participants: ['alice', 'bob'] },
       null,
+      null,
+      'crypto-test-session',
       HMAC_KEY,
     );
 
@@ -75,7 +77,8 @@ describe('Crypto-Storage Integration', () => {
     expect(JSON.parse(decryptedPayload)).toEqual(record.payload);
 
     // Original record should still verify
-    expect(verifyEvidenceRecord(record, HMAC_KEY)).toBe(true);
+    const verifyResult = verifyEvidenceRecord(record, 'crypto-test-session', HMAC_KEY);
+    expect(verifyResult.fullyVerified).toBe(true);
   });
 
   it('wrong password fails to decrypt stored data', () => {

@@ -7,9 +7,13 @@ import {
   computeDecayFactor,
   detectAnomaly,
   computeRunningAverage,
+  computeTrustDimensions,
+  computeCompositeScore,
   DEFAULT_TRUST_SCORER_CONFIG,
+  ADAPTER_DIMENSION_MAP,
 } from '../src/trust-scorer';
-import type { TrustLevel, TrustSignal } from '../src/types';
+import type { TrustLevel, TrustSignal, TrustDimensionKey } from '../src/types';
+import { TRUST_DIMENSION_KEYS } from '../src/types';
 
 const NOW = Date.now();
 
@@ -351,7 +355,7 @@ describe('computeRunningAverage', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildTrustState', () => {
-  it('builds a complete trust state', () => {
+  it('builds a complete trust state with dimensions', () => {
     const signals = [makeSignal('zoom', 85)];
     const state = buildTrustState(signals, 'session-1');
     expect(state.score).toBeGreaterThan(0);
@@ -359,19 +363,32 @@ describe('buildTrustState', () => {
     expect(state.sessionId).toBe('session-1');
     expect(state.signals).toEqual(signals);
     expect(state.lastUpdated).toBeTruthy();
+    expect(state.dimensions).toBeDefined();
+    for (const key of TRUST_DIMENSION_KEYS) {
+      expect(state.dimensions[key]).toBeTypeOf('number');
+    }
   });
 
-  it('builds critical state for low scores', () => {
-    const signals = [makeSignal('zoom', 10)];
+  it('builds critical state for low scores across all dimensions', () => {
+    const signals = [
+      makeSignal('zoom', 10),   // contextual
+      makeSignal('email', 10),  // temporal
+      makeSignal('file', 10),   // cryptographic
+      makeSignal('api', 10),    // spatial
+      makeSignal('crypto', 10), // behavioral
+    ];
     const state = buildTrustState(signals, 'session-2');
     expect(state.level).toBe('critical');
   });
 
-  it('builds state with empty signals (score 0, critical)', () => {
+  it('builds state with empty signals — dimensions default to 100', () => {
     const state = buildTrustState([], 'session-4');
-    expect(state.score).toBe(0);
-    expect(state.level).toBe('critical');
+    expect(state.score).toBe(100);
+    expect(state.level).toBe('verified');
     expect(state.signals).toEqual([]);
+    for (const key of TRUST_DIMENSION_KEYS) {
+      expect(state.dimensions[key]).toBe(100);
+    }
   });
 
   it('returns ISO 8601 lastUpdated', () => {
@@ -389,6 +406,89 @@ describe('buildTrustState', () => {
     const state = buildTrustState(signals, 's');
     expect(state.signals).toHaveLength(3);
     expect(state.signals).toBe(signals);
+  });
+
+  it('dimensions object has all 5 keys', () => {
+    const signals = [makeSignal('zoom', 80), makeSignal('email', 60)];
+    const state = buildTrustState(signals, 'session-5');
+    expect(Object.keys(state.dimensions)).toHaveLength(5);
+    expect(state.dimensions).toHaveProperty('temporal');
+    expect(state.dimensions).toHaveProperty('contextual');
+    expect(state.dimensions).toHaveProperty('cryptographic');
+    expect(state.dimensions).toHaveProperty('spatial');
+    expect(state.dimensions).toHaveProperty('behavioral');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeTrustDimensions
+// ---------------------------------------------------------------------------
+
+describe('computeTrustDimensions', () => {
+  it('returns all dimensions at 100 when no signals', () => {
+    const dims = computeTrustDimensions([], undefined, NOW);
+    for (const key of TRUST_DIMENSION_KEYS) {
+      expect(dims[key]).toBe(100);
+    }
+  });
+
+  it('maps adapter types to correct dimensions', () => {
+    const emailSignal = makeSignal('email', 50);
+    const dims = computeTrustDimensions([emailSignal], undefined, NOW);
+    // email maps to 'temporal' — should be 50
+    expect(dims.temporal).toBe(50);
+    // Others should remain 100
+    expect(dims.cryptographic).toBe(100);
+    expect(dims.spatial).toBe(100);
+    expect(dims.behavioral).toBe(100);
+  });
+
+  it('respects signal.dimension override', () => {
+    const signal: TrustSignal = {
+      ...makeSignal('zoom', 40),
+      dimension: 'spatial' as TrustDimensionKey,
+    };
+    const dims = computeTrustDimensions([signal], undefined, NOW);
+    // Should override ADAPTER_DIMENSION_MAP (zoom -> contextual) with explicit 'spatial'
+    expect(dims.spatial).toBe(40);
+    expect(dims.contextual).toBe(100); // not populated since override applies
+  });
+
+  it('averages multiple signals in same dimension', () => {
+    const signals = [
+      makeSignal('zoom', 60),
+      makeSignal('teams', 80),
+    ];
+    // Both map to 'contextual'
+    const dims = computeTrustDimensions(signals, undefined, NOW);
+    expect(dims.contextual).toBe(70);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeCompositeScore
+// ---------------------------------------------------------------------------
+
+describe('computeCompositeScore', () => {
+  it('returns 100 when all dimensions are 100', () => {
+    const dims = { temporal: 100, contextual: 100, cryptographic: 100, spatial: 100, behavioral: 100 };
+    expect(computeCompositeScore(dims)).toBe(100);
+  });
+
+  it('returns 0 when all dimensions are 0', () => {
+    const dims = { temporal: 0, contextual: 0, cryptographic: 0, spatial: 0, behavioral: 0 };
+    expect(computeCompositeScore(dims)).toBe(0);
+  });
+
+  it('reflects dimension weights', () => {
+    // cryptographic has highest default weight (0.25), set it low
+    const dims = { temporal: 100, contextual: 100, cryptographic: 0, spatial: 100, behavioral: 100 };
+    const score = computeCompositeScore(dims);
+    // Should be < 100 since cryptographic is 0
+    expect(score).toBeLessThan(100);
+    expect(score).toBeGreaterThan(0);
+    // With crypto weight 0.25 and all others at 100: score = 75
+    expect(score).toBe(75);
   });
 });
 

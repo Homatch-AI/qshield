@@ -43,9 +43,9 @@ export default function EvidenceVault() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Evidence Vault</h1>
+          <h1 className="text-2xl font-bold text-slate-100">{'\uD83E\uDDEC'} Double-Helix Vault</h1>
           <p className="text-sm text-slate-400 mt-1">
-            Tamper-proof evidence chain with cryptographic verification
+            Dual-chain tamper-proof evidence with structural position verification
           </p>
         </div>
         <button

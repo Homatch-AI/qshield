@@ -171,9 +171,18 @@ export function mockTrustState(): TrustState {
     score >= 50 ? 'elevated' :
     score >= 30 ? 'warning' : 'critical';
 
+  const jitter = () => Math.max(0, Math.min(100, Math.round(score + (Math.random() - 0.5) * 20)));
+
   return {
     score,
     level,
+    dimensions: {
+      temporal: jitter(),
+      contextual: jitter(),
+      cryptographic: jitter(),
+      spatial: jitter(),
+      behavioral: jitter(),
+    },
     signals: mockSignals(25),
     lastUpdated: minutesAgo(Math.floor(Math.random() * 3)),
     sessionId: SESSION_ID,
@@ -181,13 +190,18 @@ export function mockTrustState(): TrustState {
 }
 
 /** Generate a single mock EvidenceRecord, optionally chained to a previous hash */
-export function mockEvidence(prevHash: string | null = null, overrides?: Partial<EvidenceRecord>): EvidenceRecord {
+export function mockEvidence(prevHash: string | null = null, prevStructureHash: string | null = null, overrides?: Partial<EvidenceRecord>): EvidenceRecord {
   const source = randomItem(ADAPTERS);
   const eventType = randomItem(EVENT_TYPES[source]);
+  const hash = fakeHash();
+  const structureHash = fakeHash();
   return {
     id: uid(),
-    hash: fakeHash(),
+    hash,
     previousHash: prevHash,
+    structureHash,
+    previousStructureHash: prevStructureHash,
+    vaultPosition: parseInt(hash.slice(0, 8), 16) >>> 0,
     timestamp: minutesAgo(Math.floor(Math.random() * 1440)),
     source,
     eventType,
@@ -207,11 +221,13 @@ export function mockEvidence(prevHash: string | null = null, overrides?: Partial
 export function mockEvidenceChain(count: number = 25): EvidenceRecord[] {
   const records: EvidenceRecord[] = [];
   let prevHash: string | null = null;
+  let prevStructureHash: string | null = null;
   for (let i = 0; i < count; i++) {
-    const record = mockEvidence(prevHash, {
+    const record = mockEvidence(prevHash, prevStructureHash, {
       timestamp: minutesAgo((count - i) * 10 + Math.floor(Math.random() * 10)),
     });
     prevHash = record.hash;
+    prevStructureHash = record.structureHash;
     records.push(record);
   }
   return records.reverse(); // newest first
@@ -460,16 +476,30 @@ export function mockAdapterStatuses(): AdapterStatus[] {
 
 /** Generate mock TrustCertificates */
 export function mockCertificates(count: number = 5): TrustCertificate[] {
-  return Array.from({ length: count }, (_, i) => ({
-    id: uid(),
-    sessionId: i === 0 ? SESSION_ID : uid(),
-    generatedAt: daysAgo(i),
-    trustScore: 70 + Math.floor(Math.random() * 25),
-    trustLevel: randomItem(['verified', 'normal', 'elevated'] as TrustLevel[]),
-    evidenceCount: 10 + Math.floor(Math.random() * 40),
-    evidenceHashes: Array.from({ length: 3 }, () => fakeHash()),
-    signatureChain: fakeHash(),
-  }));
+  return Array.from({ length: count }, (_, i) => {
+    const certScore = 70 + Math.floor(Math.random() * 25);
+    const jitter = () => Math.max(0, Math.min(100, Math.round(certScore + (Math.random() - 0.5) * 20)));
+    return {
+      id: uid(),
+      sessionId: i === 0 ? SESSION_ID : uid(),
+      generatedAt: daysAgo(i),
+      trustScore: certScore,
+      trustLevel: randomItem(['verified', 'normal', 'elevated'] as TrustLevel[]),
+      dimensions: {
+        temporal: jitter(),
+        contextual: jitter(),
+        cryptographic: jitter(),
+        spatial: jitter(),
+        behavioral: jitter(),
+      },
+      evidenceCount: 10 + Math.floor(Math.random() * 40),
+      evidenceHashes: Array.from({ length: 3 }, () => fakeHash()),
+      signatureChain: fakeHash(),
+      structureChainSignature: fakeHash(),
+      dualPathVerified: true,
+      activeModules: ['Signal Capture', 'Multi-Dim Encoder', 'Double-Helix Vault', 'Trust Core', 'Integrity Verifier'],
+    };
+  });
 }
 
 /** Generate mock default config */
