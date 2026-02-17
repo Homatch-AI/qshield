@@ -140,7 +140,8 @@ export class FileWatcherAdapter extends BaseAdapter {
         stabilityThreshold: 500,
         pollInterval: 100,
       },
-      depth: 5,
+      depth: 1,           // shallow watch to avoid FD exhaustion on large directories
+      usePolling: false,   // native FSEvents, not polling
     });
 
     this.watcher

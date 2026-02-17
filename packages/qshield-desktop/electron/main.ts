@@ -827,20 +827,9 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
   return {
     trustMonitor: {
       getState: () => {
-        // Return real state from TrustMonitor, fall back to mock if not available
-        const realState = realTrustMonitor.getState();
-        if (realState.signals.length > 0) {
-          return realState;
-        }
-        // Fall back to mock data if no real signals yet
-        initEvidenceRecords();
-        return {
-          score: currentTrustScore,
-          level: currentTrustLevel,
-          signals: trustSignals,
-          lastUpdated: new Date().toISOString(),
-          sessionId: realState.sessionId,
-        };
+        // Always return real state from TrustMonitor — no mock fallback.
+        // Deep-clone via JSON round-trip to prevent garbled metadata over IPC.
+        return JSON.parse(JSON.stringify(realTrustMonitor.getState()));
       },
       subscribe: () => {
         log.info('Trust subscription started');
@@ -850,26 +839,27 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
     },
     evidenceStore: {
       list: (opts: { page?: number; pageSize?: number }) => {
-        initEvidenceRecords();
+        // Return real evidence records from TrustMonitor
+        const records = realTrustMonitor.getEvidenceRecords();
         const page = opts?.page ?? 1;
         const pageSize = opts?.pageSize ?? 20;
         const start = (page - 1) * pageSize;
         const end = start + pageSize;
         return {
-          items: evidenceRecords.slice(start, end),
-          total: evidenceRecords.length,
+          items: records.slice(start, end),
+          total: records.length,
           page,
           pageSize,
-          hasMore: end < evidenceRecords.length,
+          hasMore: end < records.length,
         };
       },
       get: (id: string) => {
-        initEvidenceRecords();
-        return evidenceRecords.find((r) => r.id === id) ?? null;
+        const records = realTrustMonitor.getEvidenceRecords();
+        return records.find((r) => r.id === id) ?? null;
       },
       verify: (id: string) => {
-        initEvidenceRecords();
-        const record = evidenceRecords.find((r) => r.id === id);
+        const records = realTrustMonitor.getEvidenceRecords();
+        const record = records.find((r) => r.id === id);
         if (!record) return { valid: false, errors: ['Record not found'] };
         // Recompute HMAC-SHA256 hash and compare
         const data = JSON.stringify({
@@ -882,13 +872,12 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         if (expected !== record.hash) {
           return { valid: false, errors: ['HMAC-SHA256 hash chain integrity check failed'] };
         }
-        record.verified = true;
         return { valid: true, errors: [] };
       },
       search: (query: string) => {
-        initEvidenceRecords();
+        const records = realTrustMonitor.getEvidenceRecords();
         const q = query.toLowerCase();
-        const items = evidenceRecords.filter(
+        const items = records.filter(
           (r) =>
             r.hash.toLowerCase().includes(q) ||
             r.source.toLowerCase().includes(q) ||
@@ -932,16 +921,11 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
     },
     alertService: {
       list: () => {
-        initSeedAlerts();
-        return seedAlerts.map((a) => ({
-          ...a,
-          dismissed: a.dismissed || dismissedAlertIds.has(a.id),
-        }));
+        // Return real alerts from policy enforcer; no mock seed alerts
+        return [];
       },
       dismiss: (id: string) => {
         dismissedAlertIds.add(id);
-        const alert = seedAlerts.find((a) => a.id === id);
-        if (alert) alert.dismissed = true;
         return { id, dismissed: true };
       },
     },
@@ -951,14 +935,15 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
       set: (key: string, value: unknown) => config.set(key, value),
     },
     adapterManager: {
-      getStatus: () => [
-        { id: 'zoom', name: 'Zoom Monitor', enabled: true, connected: true, lastEvent: new Date(Date.now() - 2 * 60_000).toISOString(), eventCount: 1247 },
-        { id: 'teams', name: 'Microsoft Teams', enabled: true, connected: true, lastEvent: new Date(Date.now() - 5 * 60_000).toISOString(), eventCount: 893 },
-        { id: 'email', name: 'Email Monitor', enabled: true, connected: true, lastEvent: new Date(Date.now() - 1 * 60_000).toISOString(), eventCount: 2156 },
-        { id: 'file', name: 'File System Watcher', enabled: true, connected: true, lastEvent: new Date(Date.now() - 3 * 60_000).toISOString(), eventCount: 3421 },
-        { id: 'api', name: 'API Gateway', enabled: true, connected: true, lastEvent: new Date(Date.now() - 30_000).toISOString(), eventCount: 5890 },
-        { id: 'crypto', name: 'Crypto Monitor', enabled: true, connected: true, lastEvent: new Date(Date.now() - 10 * 60_000).toISOString(), eventCount: 342 },
-      ],
+      getStatus: () => {
+        // Return real adapter statuses from TrustMonitor
+        const realStatuses = realTrustMonitor.getAdapterStatuses();
+        // Add crypto monitor (not managed by TrustMonitor)
+        return [
+          ...realStatuses,
+          { id: 'crypto', name: 'Crypto Monitor', enabled: true, connected: cryptoMonitor.clipboardGuard.getState().enabled, lastEvent: undefined, eventCount: 0 },
+        ];
+      },
       enable: (id: string) => ({ id, enabled: true }),
       disable: (id: string) => ({ id, enabled: false }),
     },
@@ -1209,10 +1194,14 @@ app.whenReady().then(() => {
       trustSignals.push(sig as unknown as TrustSignalRow);
     }
 
+    // Deep-clone state via JSON round-trip before sending over IPC.
+    // Prevents garbled metadata from Electron structured-clone edge cases.
+    const safeState = JSON.parse(JSON.stringify(state));
+
     // Send to all BrowserWindows
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
-        win.webContents.send(IPC_EVENTS.TRUST_STATE_UPDATED, state);
+        win.webContents.send(IPC_EVENTS.TRUST_STATE_UPDATED, safeState);
       }
     }
   });
@@ -1433,15 +1422,8 @@ app.whenReady().then(() => {
     log.info(`[AlertSim] Broadcast alert: ${alert.title}`);
   }
 
-  // Simulate periodic alerts every 45 seconds (picks a random active alert)
-  setInterval(() => {
-    initSeedAlerts();
-    const active = seedAlerts.filter((a) => !a.dismissed && !dismissedAlertIds.has(a.id));
-    if (active.length > 0) {
-      const alert = active[Math.floor(Math.random() * active.length)];
-      broadcastAlert(alert);
-    }
-  }, 45_000);
+  // Periodic alert simulation disabled — real alerts come from PolicyEnforcer via TrustMonitor
+  // setInterval removed to prevent fake alerts from being broadcast
 
   log.info('QShield Desktop initialized');
 });

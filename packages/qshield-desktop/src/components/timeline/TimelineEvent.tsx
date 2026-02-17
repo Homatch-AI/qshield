@@ -60,6 +60,12 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
                 {formatAdapterName(signal.source)}
               </span>
 
+              {typeof signal.metadata?.eventType === 'string' && (
+                <span className="text-sm text-slate-300 font-medium">
+                  {signal.metadata.eventType}
+                </span>
+              )}
+
               <span
                 className={`text-sm font-semibold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}
               >

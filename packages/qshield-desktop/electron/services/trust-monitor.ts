@@ -1,6 +1,6 @@
 import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
-import type { TrustState, TrustSignal, AdapterEvent, Alert } from '@qshield/core';
+import type { TrustState, TrustSignal, AdapterEvent, Alert, EvidenceRecord } from '@qshield/core';
 import { buildTrustState, createEvidenceRecord } from '@qshield/core';
 import type { QShieldAdapter } from '../adapters/adapter-interface';
 import type { AdapterOptions } from '../adapters/adapter-interface';
@@ -27,6 +27,9 @@ const EVIDENCE_HMAC_KEY = 'qshield-evidence-hmac-key-v1';
 /** Maximum number of signals to retain in the rolling window */
 const MAX_SIGNALS = 200;
 
+/** Maximum number of evidence records to retain */
+const MAX_EVIDENCE = 200;
+
 /**
  * Central trust monitoring orchestrator.
  *
@@ -45,6 +48,7 @@ export class TrustMonitor {
   private eventListeners: MonitorEventCallback[] = [];
   private currentState: TrustState;
   private sessionId: string;
+  private evidenceRecords: EvidenceRecord[] = [];
   private lastEvidenceHash: string | null = null;
   private lastStructureHash: string | null = null;
   private running = false;
@@ -66,7 +70,10 @@ export class TrustMonitor {
       new ZoomAdapter(),
       new TeamsAdapter(),
       new EmailAdapter(authService),  // REAL — needs GoogleAuthService
-      new FileWatcherAdapter(),        // REAL — uses chokidar
+      // FileWatcherAdapter disabled — chokidar opens thousands of FDs on
+      // large directories, exhausting the FD pool and causing EBADF errors
+      // for all other adapters that use execSync (Zoom, Teams).
+      // new FileWatcherAdapter(),
       new ApiListenerAdapter(),
     ];
 
@@ -152,6 +159,14 @@ export class TrustMonitor {
    */
   getSessionId(): string {
     return this.sessionId;
+  }
+
+  /**
+   * Get all stored evidence records (newest first).
+   * @returns array of evidence records
+   */
+  getEvidenceRecords(): EvidenceRecord[] {
+    return [...this.evidenceRecords];
   }
 
   /**
@@ -317,15 +332,23 @@ export class TrustMonitor {
     const baseScore = 50;
     const score = Math.max(0, Math.min(100, baseScore + event.trustImpact));
 
+    // Deep-clone metadata via JSON round-trip to ensure all values are
+    // plain JSON-safe primitives. Without this, Electron's structured clone
+    // serialisation over IPC can produce garbled Unicode replacement
+    // characters (U+FFFD) for certain value types (e.g. Buffers leaking
+    // from child_process, or object prototypes that don't survive cloning).
+    const rawMetadata = {
+      eventType: event.eventType,
+      ...event.data,
+    };
+    const metadata: Record<string, unknown> = JSON.parse(JSON.stringify(rawMetadata));
+
     return {
       source: event.adapterId,
       score,
       weight: 1.0,
       timestamp: event.timestamp,
-      metadata: {
-        eventType: event.eventType,
-        ...event.data,
-      },
+      metadata,
     };
   }
 
@@ -378,6 +401,12 @@ export class TrustMonitor {
 
       this.lastEvidenceHash = record.hash;
       this.lastStructureHash = record.structureHash;
+
+      // Store the record (newest first, capped)
+      this.evidenceRecords.unshift(record);
+      if (this.evidenceRecords.length > MAX_EVIDENCE) {
+        this.evidenceRecords = this.evidenceRecords.slice(0, MAX_EVIDENCE);
+      }
 
       log.info(
         `[TrustMonitor] Evidence record created: ${record.id} (${event.eventType}, chain: ${record.hash.substring(0, 12)}...)`,

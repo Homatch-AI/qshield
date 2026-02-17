@@ -1,29 +1,13 @@
+import { execSync } from 'node:child_process';
 import log from 'electron-log';
 import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
-import {
-  isProcessPatternRunning,
-  hasProcessEstablishedConnections,
-  isCameraActive,
-  isMicrophoneActive,
-  isScreenSharing,
-} from '../services/process-monitor';
 
 /** Zoom process state machine */
 type ZoomState = 'idle' | 'running' | 'in-meeting';
 
 /** Poll interval for process checks (5 seconds) */
 const POLL_INTERVAL = 5000;
-
-/** Zoom-related process patterns by platform */
-const ZOOM_PROCESS_PATTERNS: Record<string, string[]> = {
-  darwin: ['zoom.us'],
-  win32: ['Zoom.exe', 'Zoom'],
-  linux: ['zoom', 'ZoomLauncher'],
-};
-
-/** Zoom process names to look for in lsof ESTABLISHED connections */
-const ZOOM_LSOF_NAMES = ['zoom.us', 'zoom_us', 'Zoom'];
 
 /**
  * Real Zoom process monitoring adapter.
@@ -98,6 +82,81 @@ export class ZoomAdapter extends BaseAdapter {
   }
 
   // ---------------------------------------------------------------------------
+  // Simple inline detection (no process-monitor dependency)
+  // ---------------------------------------------------------------------------
+
+  private isZoomRunning(): boolean {
+    try {
+      const result = execSync(
+        'pgrep -x "zoom.us" 2>/dev/null',
+        { encoding: 'utf-8', timeout: 3000 },
+      );
+      const found = result.trim().length > 0;
+      log.info(`[ZoomAdapter] pgrep result: found=${found} pids="${result.trim().split('\n').join(',')}"`)
+      return found;
+    } catch (e) {
+      log.info(`[ZoomAdapter] pgrep FAILED:`, (e as Error).message?.slice(0, 120));
+      return false;
+    }
+  }
+
+  private isInMeeting(): boolean {
+    try {
+      const result = execSync(
+        'lsof -i -nP 2>/dev/null | grep "zoom.us" | grep "ESTABLISHED" | wc -l',
+        { encoding: 'utf-8', timeout: 5000 },
+      );
+      const count = parseInt(result.trim(), 10);
+      log.info(`[ZoomAdapter] lsof ESTABLISHED count: ${count}`);
+      // More than 3 established connections = likely in a meeting
+      // Zoom idle typically has 0-2, in-meeting has 5+
+      return count >= 3;
+    } catch (e) {
+      log.info(`[ZoomAdapter] lsof FAILED:`, (e as Error).message?.slice(0, 120));
+      return false;
+    }
+  }
+
+  private checkCamera(): boolean {
+    if (process.platform !== 'darwin') return false;
+    try {
+      const result = execSync(
+        'pgrep -f "VDCAssistant|AppleCameraAssistant" 2>/dev/null',
+        { encoding: 'utf-8', timeout: 3000 },
+      );
+      return result.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private checkMic(): boolean {
+    if (process.platform !== 'darwin') return false;
+    try {
+      const result = execSync(
+        'ioreg -l | grep -i "IOAudioEngineState" 2>/dev/null | head -5',
+        { encoding: 'utf-8', timeout: 3000 },
+      );
+      return result.includes('1');
+    } catch {
+      return false;
+    }
+  }
+
+  private checkScreenShare(): boolean {
+    if (process.platform !== 'darwin') return false;
+    try {
+      const result = execSync(
+        'pgrep -f "screencapture|CptHost" 2>/dev/null',
+        { encoding: 'utf-8', timeout: 3000 },
+      );
+      return result.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Polling & State Machine
   // ---------------------------------------------------------------------------
 
@@ -105,25 +164,20 @@ export class ZoomAdapter extends BaseAdapter {
     if (!this.connected) return;
 
     try {
-      const platform = process.platform as string;
-      const patterns = ZOOM_PROCESS_PATTERNS[platform] ?? ZOOM_PROCESS_PATTERNS.linux;
+      const zoomRunning = this.isZoomRunning();
+      const inMeeting = this.isInMeeting();
+      const camera = this.checkCamera();
+      const mic = this.checkMic();
+      const screenShare = this.checkScreenShare();
 
-      const zoomRunning = patterns.some((p) => isProcessPatternRunning(p));
-      const hasZoomConnections = hasProcessEstablishedConnections(ZOOM_LSOF_NAMES);
-      const camera = isCameraActive();
-      const mic = isMicrophoneActive();
-      const screenShare = isScreenSharing();
-
-      log.info('[ZoomAdapter] Poll:', {
-        state: this.zoomState, zoomRunning, hasZoomConnections, camera, mic, screenShare,
-      });
+      log.info(`[ZoomAdapter] Poll: state=${this.zoomState} running=${zoomRunning} inMeeting=${inMeeting} camera=${camera} mic=${mic} screenShare=${screenShare}`);
 
       const previousState = this.zoomState;
 
       // Determine new state
       if (!zoomRunning) {
         this.zoomState = 'idle';
-      } else if (hasZoomConnections || camera || mic) {
+      } else if (inMeeting || camera || mic) {
         this.zoomState = 'in-meeting';
       } else {
         this.zoomState = 'running';
@@ -173,9 +227,9 @@ export class ZoomAdapter extends BaseAdapter {
       case 'in-meeting':
         this.meetingStartTime = new Date().toISOString();
         this.emitEvent(this.createEvent('meeting-started', -10, {
-          cameraActive: isCameraActive(),
-          micActive: isMicrophoneActive(),
-          screenSharing: isScreenSharing(),
+          cameraActive: this.checkCamera(),
+          micActive: this.checkMic(),
+          screenSharing: this.checkScreenShare(),
         }));
         break;
 
@@ -237,6 +291,7 @@ export class ZoomAdapter extends BaseAdapter {
     trustImpact: number,
     data: Record<string, unknown>,
   ): AdapterEvent {
+    log.info('[ZoomAdapter] REAL EVENT:', eventType, JSON.stringify(data));
     return {
       adapterId: this.id,
       eventType,

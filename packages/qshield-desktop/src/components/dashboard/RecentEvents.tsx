@@ -83,6 +83,9 @@ function EventRow({ signal, isNew }: { signal: TrustSignal; isNew: boolean }) {
             <span className="inline-flex items-center rounded-md bg-slate-700/50 px-2 py-0.5 text-[11px] font-medium text-slate-300 uppercase tracking-wider">
               {formatAdapterName(signal.source)}
             </span>
+            {typeof signal.metadata?.eventType === 'string' && (
+              <span className="text-xs text-slate-300 font-medium">{signal.metadata.eventType}</span>
+            )}
             <span className="text-xs text-slate-500">Score: {signal.score}</span>
           </div>
           {typeof signal.metadata?.description === 'string' && (
