@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { TrustSignal } from '@qshield/core';
 import { formatDate, formatAdapterName } from '@/lib/formatters';
+import { describeEvent } from '@/lib/event-descriptions';
 
 interface TimelineEventProps {
   signal: TrustSignal;
@@ -21,6 +22,7 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
     email: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
     file: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
     api: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
+    crypto: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
   };
 
   const dotColor = isPositive ? 'bg-emerald-500' : signal.score < 30 ? 'bg-red-500' : 'bg-amber-500';
@@ -62,7 +64,7 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
 
               {typeof signal.metadata?.eventType === 'string' && (
                 <span className="text-sm text-slate-300 font-medium">
-                  {signal.metadata.eventType}
+                  {describeEvent(signal.source, signal.metadata.eventType as string, signal.metadata as Record<string, unknown>)}
                 </span>
               )}
 

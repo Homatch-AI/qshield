@@ -24,6 +24,9 @@ const EVENT_DESCRIPTIONS: Record<string, Record<string, string>> = {
     'file.moved': 'File moved',
     'high-trust:asset-modified': 'High-trust asset modified',
     'high-trust:asset-created': 'High-trust asset created',
+    'high-trust:asset-deleted': 'High-trust asset deleted',
+    'high-trust:asset-renamed': 'High-trust asset renamed',
+    'high-trust:asset-permission-changed': 'High-trust asset permissions changed',
   },
   api: {
     'auth.success': 'API authentication successful',
@@ -55,6 +58,8 @@ const NEGATIVE_EVENTS = new Set([
   'chain-mismatch',
   'high-trust:asset-modified',
   'high-trust:asset-deleted',
+  'high-trust:asset-renamed',
+  'high-trust:asset-permission-changed',
 ]);
 
 function titleCase(eventType: string): string {
@@ -79,6 +84,9 @@ export function describeEvent(
     }
     if (source === 'file' && eventType === 'file.created' && payload?.filename) {
       return `${base}: ${payload.filename}`;
+    }
+    if (source === 'file' && eventType.startsWith('high-trust:') && payload?.assetName) {
+      return `${base}: ${payload.assetName}`;
     }
     return base;
   }
@@ -137,6 +145,9 @@ const EVENT_ICONS: Record<string, Record<string, string>> = {
     'file.accessed': 'eye',
     'high-trust:asset-modified': 'alert-triangle',
     'high-trust:asset-created': 'shield-plus',
+    'high-trust:asset-deleted': 'file-minus',
+    'high-trust:asset-renamed': 'file-arrow',
+    'high-trust:asset-permission-changed': 'shield-alert',
   },
   api: {
     'auth.success': 'key',

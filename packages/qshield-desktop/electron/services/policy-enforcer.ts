@@ -124,6 +124,18 @@ export class PolicyEnforcer {
       // Record trigger time
       this.ruleCooldowns.set(rule.id, new Date().toISOString());
 
+      // Extract metadata from the latest signal to enrich the alert
+      const latestSignal = this.getLatestSignal(trustState.signals, rule.condition.signal);
+      const meta = latestSignal?.metadata as Record<string, unknown> | undefined;
+      const sourceMetadata = meta
+        ? {
+            fileName: meta.assetName as string | undefined,
+            filePath: meta.path as string | undefined,
+            operation: meta.eventType as string | undefined,
+            rawEvent: meta,
+          }
+        : undefined;
+
       // Create alert
       const alert: Alert = {
         id: uuidv4(),
@@ -133,6 +145,7 @@ export class PolicyEnforcer {
         source: rule.condition.signal,
         timestamp: new Date().toISOString(),
         dismissed: false,
+        sourceMetadata,
       };
 
       alerts.push(alert);
@@ -227,13 +240,24 @@ export class PolicyEnforcer {
    * @returns latest score or null if no signals from this source
    */
   private getLatestSignalScore(signals: TrustSignal[], source: AdapterType): number | null {
+    const signal = this.getLatestSignal(signals, source);
+    return signal?.score ?? null;
+  }
+
+  /**
+   * Get the latest trust signal for a given adapter source.
+   * @param signals - array of trust signals
+   * @param source - adapter type to filter by
+   * @returns latest signal or null if no signals from this source
+   */
+  private getLatestSignal(signals: TrustSignal[], source: AdapterType): TrustSignal | null {
     const sourceSignals = signals.filter((s) => s.source === source);
     if (sourceSignals.length === 0) return null;
 
     sourceSignals.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
-    return sourceSignals[0].score;
+    return sourceSignals[0];
   }
 
   /**

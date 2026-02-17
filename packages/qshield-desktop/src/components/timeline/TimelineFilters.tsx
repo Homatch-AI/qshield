@@ -1,7 +1,7 @@
 import type { AdapterType } from '@qshield/core';
 import { ADAPTER_LABELS } from '@/lib/constants';
 
-const ADAPTER_OPTIONS: AdapterType[] = ['zoom', 'teams', 'email', 'file', 'api'];
+const ADAPTER_OPTIONS: AdapterType[] = ['zoom', 'teams', 'email', 'file', 'api', 'crypto'];
 const SEVERITY_OPTIONS = ['all', 'high', 'medium', 'low'] as const;
 
 interface TimelineFiltersProps {

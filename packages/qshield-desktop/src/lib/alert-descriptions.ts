@@ -48,6 +48,21 @@ export function describeAlert(alert: Alert): DescribedAlert {
     const fileName = meta?.fileName ?? 'a monitored file';
     const operation = meta?.operation;
     const filePath = meta?.filePath;
+    const isHighTrust = typeof operation === 'string' && operation.startsWith('high-trust:');
+
+    // High-trust asset change alerts
+    if (isHighTrust) {
+      const changeType = operation.replace('high-trust:asset-', '').replace(/-/g, ' ');
+      return {
+        title: `High-trust asset ${changeType}: ${fileName}`,
+        description: `A protected high-trust asset "${fileName}" was ${changeType}${filePath ? ` at ${filePath}` : ''}. This event has a significant impact on your trust score.`,
+        actions: [
+          { label: 'View Asset', variant: 'primary', navigateTo: '/assets' },
+          { label: 'View Activity', variant: 'secondary', navigateTo: '/timeline' },
+          { label: 'Dismiss', variant: 'secondary', actionType: 'dismiss' },
+        ],
+      };
+    }
 
     if (alert.title.toLowerCase().includes('exfiltration') || operation === 'copy-to-external' || operation === 'move-to-usb') {
       return {
