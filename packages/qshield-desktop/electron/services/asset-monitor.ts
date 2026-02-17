@@ -61,7 +61,9 @@ export class AssetMonitor {
     this.watcher = chokidar.watch(paths, {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
-      depth: 10,
+      depth: 2,
+      usePolling: true,
+      interval: 5000,
     });
 
     this.watcher
