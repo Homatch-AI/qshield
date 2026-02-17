@@ -91,24 +91,40 @@ export class TeamsAdapter extends BaseAdapter {
         'pgrep -f "MSTeams|Microsoft Teams" 2>/dev/null',
         { encoding: 'utf-8', timeout: 3000 },
       );
-      return result.trim().length > 0;
-    } catch {
+      const found = result.trim().length > 0;
+      log.info(`[TeamsAdapter] pgrep result: found=${found} pids="${result.trim().split('\n').join(',')}"`)
+      return found;
+    } catch (e) {
+      log.info(`[TeamsAdapter] pgrep FAILED:`, (e as Error).message?.slice(0, 120));
       return false;
     }
   }
 
   private isInCall(): boolean {
     try {
-      // Teams appears as "Microsoft" (truncated) in lsof output
-      const result = execSync(
-        'lsof -i -nP 2>/dev/null | grep "Microsoft" | grep "ESTABLISHED" | wc -l',
+      // Check for UDP connections — Teams uses UDP for real-time media (audio/video)
+      // during calls. Idle Teams has 0 UDP connections; a call opens several.
+      const udpResult = execSync(
+        'lsof -i UDP -nP 2>/dev/null | grep -i "MSTeams\\|Microsoft" | wc -l',
         { encoding: 'utf-8', timeout: 5000 },
       );
-      const count = parseInt(result.trim(), 10);
-      // Teams maintains many background connections (~8-10 when idle).
-      // During a call it opens additional media connections (15+).
-      return count >= 15;
-    } catch {
+      const udpCount = parseInt(udpResult.trim(), 10);
+
+      // Also count TCP ESTABLISHED as a secondary signal
+      const tcpResult = execSync(
+        'lsof -i TCP -nP 2>/dev/null | grep -i "MSTeams\\|Microsoft" | grep "ESTABLISHED" | wc -l',
+        { encoding: 'utf-8', timeout: 5000 },
+      );
+      const tcpCount = parseInt(tcpResult.trim(), 10);
+
+      log.info(`[TeamsAdapter] lsof UDP: ${udpCount}, TCP ESTABLISHED: ${tcpCount}`);
+
+      // During a call Teams opens multiple UDP media streams (3+).
+      // Idle Teams may keep ~1 UDP connection open.
+      // TCP count >= 18 is a secondary signal (idle is typically 10-13).
+      return udpCount >= 3 || tcpCount >= 18;
+    } catch (e) {
+      log.info(`[TeamsAdapter] lsof FAILED:`, (e as Error).message?.slice(0, 120));
       return false;
     }
   }
