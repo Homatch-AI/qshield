@@ -1,168 +1,256 @@
 import log from 'electron-log';
 import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
+import {
+  isProcessPatternRunning,
+  hasActiveConnections,
+  isCameraActive,
+  isMicrophoneActive,
+  isScreenSharing,
+} from '../services/process-monitor';
 
-interface TeamsEventTemplate {
-  eventType: string;
-  trustImpact: number;
-  dataGenerator: () => Record<string, unknown>;
-}
+/** Teams process state machine */
+type TeamsState = 'idle' | 'running' | 'in-call';
 
-const USER_NAMES = [
-  'Sarah Kim', 'James Liu', 'Maria Garcia', 'Tom Brown',
-  'Priya Patel', 'Alex Novak', 'Yuki Tanaka', 'Omar Hassan',
-];
-const CHANNEL_NAMES = [
-  '#general', '#engineering', '#security', '#random',
-  '#incidents', '#design', '#devops', '#announcements',
-];
+/** Poll interval for process checks (5 seconds) */
+const POLL_INTERVAL = 5000;
 
-function pickRandom<T>(items: T[]): T {
-  return items[Math.floor(Math.random() * items.length)];
-}
+/** Teams-related process patterns by platform */
+const TEAMS_PROCESS_PATTERNS: Record<string, string[]> = {
+  darwin: ['Microsoft Teams', 'MSTeams'],
+  win32: ['Teams.exe', 'ms-teams.exe', 'MSTeams.exe'],
+  linux: ['teams', 'teams-for-linux'],
+};
 
-const TEAMS_EVENTS: TeamsEventTemplate[] = [
-  {
-    eventType: 'presence-changed',
-    trustImpact: 0,
-    dataGenerator: () => ({
-      userId: `user-${Math.floor(Math.random() * 500)}`,
-      userName: pickRandom(USER_NAMES),
-      previousStatus: pickRandom(['available', 'busy', 'dnd', 'away', 'offline']),
-      newStatus: pickRandom(['available', 'busy', 'dnd', 'away', 'offline']),
-      device: pickRandom(['desktop', 'mobile', 'web']),
-      lastSeen: new Date(Date.now() - Math.floor(Math.random() * 3600000)).toISOString(),
-    }),
-  },
-  {
-    eventType: 'message-sent',
-    trustImpact: -5,
-    dataGenerator: () => ({
-      channelId: `ch-${Math.floor(Math.random() * 500)}`,
-      channelName: pickRandom(CHANNEL_NAMES),
-      sender: pickRandom(USER_NAMES),
-      hasAttachment: Math.random() > 0.7,
-      containsLink: Math.random() > 0.5,
-      messageLength: Math.floor(Math.random() * 500) + 10,
-      isExternal: Math.random() > 0.8,
-      mentionsCount: Math.floor(Math.random() * 5),
-    }),
-  },
-  {
-    eventType: 'message-received',
-    trustImpact: 0,
-    dataGenerator: () => ({
-      channelId: `ch-${Math.floor(Math.random() * 500)}`,
-      channelName: pickRandom(CHANNEL_NAMES),
-      sender: pickRandom(USER_NAMES),
-      hasAttachment: Math.random() > 0.7,
-      containsLink: Math.random() > 0.5,
-      messageLength: Math.floor(Math.random() * 500) + 10,
-      isExternal: Math.random() > 0.8,
-    }),
-  },
-  {
-    eventType: 'call-started',
-    trustImpact: 5,
-    dataGenerator: () => ({
-      callId: `call-${Math.floor(Math.random() * 100000)}`,
-      callType: pickRandom(['audio', 'video', 'screen-share']),
-      callerName: pickRandom(USER_NAMES),
-      isInternal: Math.random() > 0.2,
-      encrypted: Math.random() > 0.1,
-      participants: Math.floor(Math.random() * 8) + 2,
-    }),
-  },
-  {
-    eventType: 'call-ended',
-    trustImpact: 5,
-    dataGenerator: () => ({
-      callId: `call-${Math.floor(Math.random() * 100000)}`,
-      duration: Math.floor(Math.random() * 3600) + 60,
-      peakParticipants: Math.floor(Math.random() * 8) + 2,
-      qualityScore: Math.round((Math.random() * 2 + 3) * 10) / 10, // 3.0-5.0
-      recordingCreated: Math.random() > 0.7,
-    }),
-  },
-  {
-    eventType: 'file-shared',
-    trustImpact: -20,
-    dataGenerator: () => ({
-      fileName: pickRandom([
-        'Q4-report.xlsx', 'architecture-diagram.png', 'meeting-notes.docx',
-        'credentials.txt', 'budget-2026.pdf', 'customer-data.csv',
-      ]),
-      fileSize: Math.floor(Math.random() * 50000000),
-      sharedBy: pickRandom(USER_NAMES),
-      sharedTo: pickRandom(['team', 'channel', 'external', 'organization']),
-      channelName: pickRandom(CHANNEL_NAMES),
-      isSensitive: Math.random() > 0.7,
-      dlpClassification: pickRandom(['public', 'internal', 'confidential', 'restricted']),
-    }),
-  },
+/** Teams network domain patterns */
+const TEAMS_DOMAINS = [
+  'teams.microsoft.com',
+  'teams.live.com',
+  '.teams.microsoft',
+  'trouter.teams',
+  'skype.com',
 ];
 
 /**
- * Microsoft Teams adapter.
- * Monitors Teams presence changes, messaging, calls, and file sharing
- * to generate trust signals for the collaboration channel.
- * Produces simulated events at a configurable interval (default 20 seconds).
+ * Real Microsoft Teams process monitoring adapter.
+ *
+ * Detects whether Teams is running locally, whether a call/meeting is
+ * active (via network connections + camera/mic heuristics), and emits
+ * trust signals for state transitions. Uses a three-state machine:
+ *
+ *   IDLE → RUNNING → IN_CALL
+ *
+ * Polls every 5 seconds via setInterval (no simulation timer).
  */
 export class TeamsAdapter extends BaseAdapter {
   readonly id: AdapterType = 'teams';
   readonly name = 'Microsoft Teams';
-  protected override defaultInterval = 20000;
+  protected override defaultInterval = POLL_INTERVAL;
+
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private teamsState: TeamsState = 'idle';
+  private callStartTime: string | null = null;
+  private cameraOn = false;
+  private micOn = false;
+  private screenShareOn = false;
 
   constructor() {
     super();
     this.pollInterval = this.defaultInterval;
   }
 
-  /**
-   * Initialize the Teams adapter with optional configuration.
-   * @param config - may include pollInterval override
-   */
   async initialize(config: Record<string, unknown>): Promise<void> {
     await super.initialize(config);
-    log.info('[TeamsAdapter] Configured for Microsoft Teams monitoring');
+    log.info('[TeamsAdapter] Configured for real Teams process monitoring');
   }
 
   /**
-   * Start monitoring Microsoft Teams events.
+   * Start real process monitoring via setInterval.
+   * Does NOT call super.start() — bypasses the simulation timer entirely.
    */
   async start(): Promise<void> {
-    await super.start();
-    log.info('[TeamsAdapter] Monitoring Microsoft Teams');
+    if (!this.enabled) {
+      log.warn('[TeamsAdapter] Cannot start: adapter not initialized');
+      return;
+    }
+    this.connected = true;
+    this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL);
+    // Run an initial poll immediately
+    this.poll();
+    log.info('[TeamsAdapter] Real process monitoring started');
   }
 
-  /**
-   * Stop monitoring Microsoft Teams events.
-   */
   async stop(): Promise<void> {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
     await super.stop();
     log.info('[TeamsAdapter] Stopped Teams monitoring');
   }
 
-  /**
-   * Destroy the Teams adapter and release all resources.
-   */
   async destroy(): Promise<void> {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
     await super.destroy();
-    log.info('[TeamsAdapter] Teams adapter destroyed');
+    log.info('[TeamsAdapter] Adapter destroyed');
   }
 
-  /**
-   * Generate a simulated Teams event with realistic metadata.
-   * @returns an AdapterEvent representing a Teams activity
-   */
+  /** Required by BaseAdapter but never called — real events come from polling. */
   protected generateSimulatedEvent(): AdapterEvent {
-    const template = pickRandom(TEAMS_EVENTS);
+    throw new Error('TeamsAdapter uses real process monitoring, not simulation');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Polling & State Machine
+  // ---------------------------------------------------------------------------
+
+  private poll(): void {
+    if (!this.connected) return;
+
+    try {
+      const platform = process.platform as string;
+      const patterns = TEAMS_PROCESS_PATTERNS[platform] ?? TEAMS_PROCESS_PATTERNS.linux;
+
+      const teamsRunning = patterns.some((p) => isProcessPatternRunning(p));
+      const hasNetwork = hasActiveConnections(TEAMS_DOMAINS);
+      const camera = isCameraActive();
+      const mic = isMicrophoneActive();
+      const screenShare = isScreenSharing();
+
+      const previousState = this.teamsState;
+
+      // Determine new state
+      if (!teamsRunning) {
+        this.teamsState = 'idle';
+      } else if (hasNetwork && (camera || mic)) {
+        // Teams is always connected to network when running, so require
+        // camera or mic to distinguish a call from normal usage
+        this.teamsState = 'in-call';
+      } else {
+        this.teamsState = 'running';
+      }
+
+      // State transitions
+      if (previousState !== this.teamsState) {
+        this.handleStateTransition(previousState, this.teamsState);
+      }
+
+      // Track peripheral changes during a call
+      if (this.teamsState === 'in-call') {
+        this.trackPeripheralChanges(camera, mic, screenShare);
+      }
+    } catch (err) {
+      this.errorCount++;
+      this.lastError = err instanceof Error ? err.message : String(err);
+      log.error('[TeamsAdapter] Poll error:', err);
+    }
+  }
+
+  private handleStateTransition(from: TeamsState, to: TeamsState): void {
+    log.info(`[TeamsAdapter] State: ${from} → ${to}`);
+
+    switch (to) {
+      case 'running':
+        if (from === 'idle') {
+          this.emitEvent(this.createEvent('teams-app-opened', 5, {
+            previousState: from,
+          }));
+        } else if (from === 'in-call') {
+          // Call ended but Teams still open
+          const duration = this.callStartTime
+            ? Math.round((Date.now() - new Date(this.callStartTime).getTime()) / 1000)
+            : 0;
+          this.emitEvent(this.createEvent('call-ended', 5, {
+            duration,
+            callStartTime: this.callStartTime,
+          }));
+          this.callStartTime = null;
+          this.cameraOn = false;
+          this.micOn = false;
+          this.screenShareOn = false;
+        }
+        break;
+
+      case 'in-call':
+        this.callStartTime = new Date().toISOString();
+        this.emitEvent(this.createEvent('call-started', -10, {
+          cameraActive: isCameraActive(),
+          micActive: isMicrophoneActive(),
+          screenSharing: isScreenSharing(),
+        }));
+        break;
+
+      case 'idle':
+        if (from === 'in-call') {
+          const duration = this.callStartTime
+            ? Math.round((Date.now() - new Date(this.callStartTime).getTime()) / 1000)
+            : 0;
+          this.emitEvent(this.createEvent('call-ended', 5, {
+            duration,
+            callStartTime: this.callStartTime,
+            abrupt: true, // Teams closed during call
+          }));
+          this.callStartTime = null;
+        }
+        if (from !== 'idle') {
+          this.emitEvent(this.createEvent('teams-app-closed', 5, {
+            previousState: from,
+          }));
+        }
+        this.cameraOn = false;
+        this.micOn = false;
+        this.screenShareOn = false;
+        break;
+    }
+  }
+
+  private trackPeripheralChanges(camera: boolean, mic: boolean, screenShare: boolean): void {
+    if (camera !== this.cameraOn) {
+      this.cameraOn = camera;
+      this.emitEvent(this.createEvent(
+        camera ? 'camera-activated' : 'camera-deactivated',
+        camera ? -5 : 0,
+        { cameraActive: camera },
+      ));
+    }
+
+    if (mic !== this.micOn) {
+      this.micOn = mic;
+      this.emitEvent(this.createEvent(
+        mic ? 'mic-activated' : 'mic-deactivated',
+        mic ? -3 : 0,
+        { micActive: mic },
+      ));
+    }
+
+    if (screenShare !== this.screenShareOn) {
+      this.screenShareOn = screenShare;
+      this.emitEvent(this.createEvent(
+        screenShare ? 'screen-share-started' : 'screen-share-stopped',
+        screenShare ? -15 : 5,
+        { screenSharing: screenShare },
+      ));
+    }
+  }
+
+  private createEvent(
+    eventType: string,
+    trustImpact: number,
+    data: Record<string, unknown>,
+  ): AdapterEvent {
     return {
       adapterId: this.id,
-      eventType: template.eventType,
+      eventType,
       timestamp: new Date().toISOString(),
-      data: template.dataGenerator(),
-      trustImpact: template.trustImpact,
+      data: {
+        ...data,
+        teamsState: this.teamsState,
+        platform: process.platform,
+      },
+      trustImpact,
     };
   }
 }

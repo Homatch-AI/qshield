@@ -269,8 +269,8 @@ export class TrustMonitor {
    * @param event - the adapter event to process
    */
   private handleAdapterEvent(event: AdapterEvent): void {
-    log.debug(
-      `[TrustMonitor] Event from ${event.adapterId}: ${event.eventType} (impact: ${event.trustImpact})`,
+    log.info(
+      `[TrustMonitor] EVENT RECEIVED: ${event.adapterId} ${event.eventType} (impact: ${event.trustImpact})`,
     );
 
     // Convert AdapterEvent to TrustSignal

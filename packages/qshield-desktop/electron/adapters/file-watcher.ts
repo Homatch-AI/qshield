@@ -204,6 +204,7 @@ export class FileWatcherAdapter extends BaseAdapter {
         trustImpact,
       };
 
+      log.info('[FileWatcher] REAL EVENT:', eventType, filePath);
       this.emitEvent(event);
     } catch (err) {
       log.warn(`[FileWatcher] Error handling ${eventType} for ${filePath}:`, err);

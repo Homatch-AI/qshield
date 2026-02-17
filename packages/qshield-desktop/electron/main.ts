@@ -35,12 +35,33 @@ import { LocalApiServer } from './services/local-api-server';
 import { SecureMessageService } from './services/secure-message-service';
 import { SecureFileService } from './services/secure-file-service';
 import { GoogleAuthService } from './services/google-auth';
-import { IPC_CHANNELS } from './ipc/channels';
+import { TrustMonitor } from './services/trust-monitor';
+import { IPC_CHANNELS, IPC_EVENTS } from './ipc/channels';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+// Try multiple possible .env locations
+const possiblePaths = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(__dirname, '../../../.env'),
+  path.resolve(__dirname, '../../.env'),
+  '/Users/johnwang/.claude/qshield/.env',
+];
+
+for (const p of possiblePaths) {
+  const result = dotenv.config({ path: p });
+  if (!result.error) {
+    console.log('Loaded .env from:', p);
+    break;
+  }
+}
+
+console.log('DOTENV DEBUG:', {
+  cwd: process.cwd(),
+  QSHIELD_GOOGLE_CLIENT_ID: process.env.QSHIELD_GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET',
+  QSHIELD_GOOGLE_CLIENT_SECRET: process.env.QSHIELD_GOOGLE_CLIENT_SECRET ? 'SET' : 'NOT SET',
+});
 
 log.initialize();
 
@@ -737,7 +758,7 @@ function initSeedAlerts(): void {
 // ── Service registry ─────────────────────────────────────────────────────────
 
 /** Create service registry for IPC handlers */
-function createServiceRegistry(config: ConfigManager): ServiceRegistry {
+function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMonitor): ServiceRegistry {
   const certGen = new StandaloneCertGenerator();
   const verificationService = new VerificationRecordService();
   const licMgr = new LicenseManager(config);
@@ -806,16 +827,25 @@ function createServiceRegistry(config: ConfigManager): ServiceRegistry {
   return {
     trustMonitor: {
       getState: () => {
-        initEvidenceRecords(); // ensure signals are populated
+        // Return real state from TrustMonitor, fall back to mock if not available
+        const realState = realTrustMonitor.getState();
+        if (realState.signals.length > 0) {
+          return realState;
+        }
+        // Fall back to mock data if no real signals yet
+        initEvidenceRecords();
         return {
           score: currentTrustScore,
           level: currentTrustLevel,
           signals: trustSignals,
           lastUpdated: new Date().toISOString(),
-          sessionId: 'default',
+          sessionId: realState.sessionId,
         };
       },
-      subscribe: () => log.info('Trust subscription started'),
+      subscribe: () => {
+        log.info('Trust subscription started');
+        // Real subscription is already wired in app.whenReady() via realTrustMonitor.subscribe()
+      },
       unsubscribe: () => log.info('Trust subscription stopped'),
     },
     evidenceStore: {
@@ -1165,8 +1195,35 @@ app.whenReady().then(() => {
     log.info('[Gmail] Loaded saved tokens');
   }
 
+  // Initialize real TrustMonitor with all adapters (File Watcher, Email, etc.)
+  const realTrustMonitor = new TrustMonitor(googleAuth);
+
+  // Subscribe to trust state changes and push to all renderer windows
+  realTrustMonitor.subscribe((state) => {
+    currentTrustScore = state.score;
+    currentTrustLevel = state.level as typeof currentTrustLevel;
+
+    // Push real signals into trustSignals array so mock-based views also update
+    trustSignals.length = 0;
+    for (const sig of state.signals) {
+      trustSignals.push(sig as unknown as TrustSignalRow);
+    }
+
+    // Send to all BrowserWindows
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_EVENTS.TRUST_STATE_UPDATED, state);
+      }
+    }
+  });
+
+  // Start monitoring (async, fire-and-forget)
+  realTrustMonitor.start().catch((err) => {
+    log.error('[TrustMonitor] Failed to start:', err);
+  });
+
   // Register IPC handlers
-  services = createServiceRegistry(configManager);
+  services = createServiceRegistry(configManager, realTrustMonitor);
   registerIpcHandlers(services);
 
   // ── Gmail IPC handlers ────────────────────────────────────────────

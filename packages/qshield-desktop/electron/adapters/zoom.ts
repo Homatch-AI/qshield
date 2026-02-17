@@ -1,173 +1,253 @@
 import log from 'electron-log';
 import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
+import {
+  isProcessPatternRunning,
+  hasActiveConnections,
+  isCameraActive,
+  isMicrophoneActive,
+  isScreenSharing,
+} from '../services/process-monitor';
 
-interface ZoomEventTemplate {
-  eventType: string;
-  trustImpact: number;
-  dataGenerator: () => Record<string, unknown>;
-}
+/** Zoom process state machine */
+type ZoomState = 'idle' | 'running' | 'in-meeting';
 
-/** Active meeting IDs for realistic state tracking */
-const MEETING_IDS = Array.from({ length: 5 }, (_, i) => `mtg-${100000 + i}`);
-const PARTICIPANT_NAMES = [
-  'Alice Chen', 'Bob Martinez', 'Carol Park', 'Dave Wilson',
-  'Eve Thompson', 'Frank Zhang', 'Grace Lee', 'Hiro Nakamura',
-];
+/** Poll interval for process checks (5 seconds) */
+const POLL_INTERVAL = 5000;
 
-function pickRandom<T>(items: T[]): T {
-  return items[Math.floor(Math.random() * items.length)];
-}
+/** Zoom-related process patterns by platform */
+const ZOOM_PROCESS_PATTERNS: Record<string, string[]> = {
+  darwin: ['zoom.us'],
+  win32: ['Zoom.exe', 'Zoom'],
+  linux: ['zoom', 'ZoomLauncher'],
+};
 
-const ZOOM_EVENTS: ZoomEventTemplate[] = [
-  {
-    eventType: 'meeting-started',
-    trustImpact: 10,
-    dataGenerator: () => ({
-      meetingId: pickRandom(MEETING_IDS),
-      topic: pickRandom([
-        'Sprint Planning', 'Design Review', 'Client Sync',
-        'Weekly Standup', 'Architecture Discussion',
-      ]),
-      host: pickRandom(PARTICIPANT_NAMES),
-      scheduledDuration: pickRandom([30, 45, 60, 90]) * 60,
-      isRecurring: Math.random() > 0.4,
-      hasPassword: Math.random() > 0.2,
-      waitingRoomEnabled: Math.random() > 0.3,
-    }),
-  },
-  {
-    eventType: 'meeting-ended',
-    trustImpact: 5,
-    dataGenerator: () => ({
-      meetingId: pickRandom(MEETING_IDS),
-      actualDuration: Math.floor(Math.random() * 5400) + 300,
-      peakParticipants: Math.floor(Math.random() * 12) + 2,
-      totalParticipants: Math.floor(Math.random() * 20) + 2,
-      recordingCreated: Math.random() > 0.6,
-    }),
-  },
-  {
-    eventType: 'participant-joined',
-    trustImpact: 5,
-    dataGenerator: () => ({
-      meetingId: pickRandom(MEETING_IDS),
-      participantId: `user-${Math.floor(Math.random() * 1000)}`,
-      displayName: pickRandom(PARTICIPANT_NAMES),
-      joinMethod: pickRandom(['link', 'calendar', 'phone', 'room-system']),
-      authenticated: Math.random() > 0.2,
-      isInternal: Math.random() > 0.3,
-    }),
-  },
-  {
-    eventType: 'participant-left',
-    trustImpact: -5,
-    dataGenerator: () => ({
-      meetingId: pickRandom(MEETING_IDS),
-      participantId: `user-${Math.floor(Math.random() * 1000)}`,
-      displayName: pickRandom(PARTICIPANT_NAMES),
-      duration: Math.floor(Math.random() * 3600),
-      reason: pickRandom(['left', 'disconnected', 'host-removed', 'timeout']),
-    }),
-  },
-  {
-    eventType: 'screen-share-started',
-    trustImpact: -10,
-    dataGenerator: () => ({
-      meetingId: pickRandom(MEETING_IDS),
-      sharedBy: pickRandom(PARTICIPANT_NAMES),
-      shareType: pickRandom(['screen', 'window', 'application', 'whiteboard']),
-      applicationName: pickRandom(['Chrome', 'VS Code', 'Slack', 'Excel', 'Terminal', 'Figma']),
-      resolution: pickRandom(['1920x1080', '2560x1440', '3840x2160']),
-    }),
-  },
-  {
-    eventType: 'recording-started',
-    trustImpact: -15,
-    dataGenerator: () => ({
-      meetingId: pickRandom(MEETING_IDS),
-      recordingType: pickRandom(['cloud', 'local']),
-      initiatedBy: pickRandom(['host', 'co-host', 'participant']),
-      consentGiven: Math.random() > 0.3,
-      autoTranscription: Math.random() > 0.5,
-    }),
-  },
-  {
-    eventType: 'encryption-verified',
-    trustImpact: 20,
-    dataGenerator: () => ({
-      meetingId: pickRandom(MEETING_IDS),
-      encryptionType: pickRandom(['e2ee', 'enhanced', 'standard']),
-      protocolVersion: pickRandom(['5.0', '5.1', '5.2']),
-      verified: true,
-      keyExchangeMethod: pickRandom(['ECDH-P256', 'ECDH-P384', 'X25519']),
-      cipherSuite: pickRandom(['AES-256-GCM', 'ChaCha20-Poly1305']),
-    }),
-  },
+/** Zoom network domain patterns */
+const ZOOM_DOMAINS = [
+  'zoom.us',
+  'zoom.com',
+  'zoomgov.com',
+  '*.zoom.us',
 ];
 
 /**
- * Zoom Meetings adapter.
- * Monitors Zoom meeting activity and generates trust signals based on
- * participant behavior, recording status, screen sharing, and encryption
- * verification. Produces simulated events at a configurable interval
- * (default 15 seconds).
+ * Real Zoom process monitoring adapter.
+ *
+ * Detects whether Zoom is running locally, whether a meeting is active
+ * (via network connections + camera/mic heuristics), and emits trust
+ * signals for state transitions. Uses a three-state machine:
+ *
+ *   IDLE → RUNNING → IN_MEETING
+ *
+ * Polls every 5 seconds via setInterval (no simulation timer).
  */
 export class ZoomAdapter extends BaseAdapter {
   readonly id: AdapterType = 'zoom';
   readonly name = 'Zoom Meetings';
-  protected override defaultInterval = 15000;
+  protected override defaultInterval = POLL_INTERVAL;
+
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private zoomState: ZoomState = 'idle';
+  private meetingStartTime: string | null = null;
+  private cameraOn = false;
+  private micOn = false;
+  private screenShareOn = false;
 
   constructor() {
     super();
     this.pollInterval = this.defaultInterval;
   }
 
-  /**
-   * Initialize the Zoom adapter with optional configuration.
-   * @param config - may include pollInterval override
-   */
   async initialize(config: Record<string, unknown>): Promise<void> {
     await super.initialize(config);
-    log.info('[ZoomAdapter] Configured for Zoom meeting monitoring');
+    log.info('[ZoomAdapter] Configured for real Zoom process monitoring');
   }
 
   /**
-   * Start monitoring Zoom meeting events.
+   * Start real process monitoring via setInterval.
+   * Does NOT call super.start() — bypasses the simulation timer entirely.
    */
   async start(): Promise<void> {
-    await super.start();
-    log.info('[ZoomAdapter] Monitoring Zoom meetings');
+    if (!this.enabled) {
+      log.warn('[ZoomAdapter] Cannot start: adapter not initialized');
+      return;
+    }
+    this.connected = true;
+    this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL);
+    // Run an initial poll immediately
+    this.poll();
+    log.info('[ZoomAdapter] Real process monitoring started');
   }
 
-  /**
-   * Stop monitoring Zoom meeting events.
-   */
   async stop(): Promise<void> {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
     await super.stop();
     log.info('[ZoomAdapter] Stopped Zoom monitoring');
   }
 
-  /**
-   * Destroy the Zoom adapter and release all resources.
-   */
   async destroy(): Promise<void> {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
     await super.destroy();
-    log.info('[ZoomAdapter] Zoom adapter destroyed');
+    log.info('[ZoomAdapter] Adapter destroyed');
   }
 
-  /**
-   * Generate a simulated Zoom meeting event with realistic metadata.
-   * @returns an AdapterEvent representing a Zoom meeting activity
-   */
+  /** Required by BaseAdapter but never called — real events come from polling. */
   protected generateSimulatedEvent(): AdapterEvent {
-    const template = pickRandom(ZOOM_EVENTS);
+    throw new Error('ZoomAdapter uses real process monitoring, not simulation');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Polling & State Machine
+  // ---------------------------------------------------------------------------
+
+  private poll(): void {
+    if (!this.connected) return;
+
+    try {
+      const platform = process.platform as string;
+      const patterns = ZOOM_PROCESS_PATTERNS[platform] ?? ZOOM_PROCESS_PATTERNS.linux;
+
+      const zoomRunning = patterns.some((p) => isProcessPatternRunning(p));
+      const hasNetwork = hasActiveConnections(ZOOM_DOMAINS);
+      const camera = isCameraActive();
+      const mic = isMicrophoneActive();
+      const screenShare = isScreenSharing();
+
+      const previousState = this.zoomState;
+
+      // Determine new state
+      if (!zoomRunning) {
+        this.zoomState = 'idle';
+      } else if (hasNetwork || camera || mic) {
+        this.zoomState = 'in-meeting';
+      } else {
+        this.zoomState = 'running';
+      }
+
+      // State transitions
+      if (previousState !== this.zoomState) {
+        this.handleStateTransition(previousState, this.zoomState);
+      }
+
+      // Track peripheral changes during a meeting
+      if (this.zoomState === 'in-meeting') {
+        this.trackPeripheralChanges(camera, mic, screenShare);
+      }
+    } catch (err) {
+      this.errorCount++;
+      this.lastError = err instanceof Error ? err.message : String(err);
+      log.error('[ZoomAdapter] Poll error:', err);
+    }
+  }
+
+  private handleStateTransition(from: ZoomState, to: ZoomState): void {
+    log.info(`[ZoomAdapter] State: ${from} → ${to}`);
+
+    switch (to) {
+      case 'running':
+        if (from === 'idle') {
+          this.emitEvent(this.createEvent('zoom-app-opened', 5, {
+            previousState: from,
+          }));
+        } else if (from === 'in-meeting') {
+          // Meeting ended but Zoom still open
+          const duration = this.meetingStartTime
+            ? Math.round((Date.now() - new Date(this.meetingStartTime).getTime()) / 1000)
+            : 0;
+          this.emitEvent(this.createEvent('meeting-ended', 5, {
+            duration,
+            meetingStartTime: this.meetingStartTime,
+          }));
+          this.meetingStartTime = null;
+          this.cameraOn = false;
+          this.micOn = false;
+          this.screenShareOn = false;
+        }
+        break;
+
+      case 'in-meeting':
+        this.meetingStartTime = new Date().toISOString();
+        this.emitEvent(this.createEvent('meeting-started', -10, {
+          cameraActive: isCameraActive(),
+          micActive: isMicrophoneActive(),
+          screenSharing: isScreenSharing(),
+        }));
+        break;
+
+      case 'idle':
+        if (from === 'in-meeting') {
+          const duration = this.meetingStartTime
+            ? Math.round((Date.now() - new Date(this.meetingStartTime).getTime()) / 1000)
+            : 0;
+          this.emitEvent(this.createEvent('meeting-ended', 5, {
+            duration,
+            meetingStartTime: this.meetingStartTime,
+            abrupt: true, // Zoom closed during meeting
+          }));
+          this.meetingStartTime = null;
+        }
+        if (from !== 'idle') {
+          this.emitEvent(this.createEvent('zoom-app-closed', 5, {
+            previousState: from,
+          }));
+        }
+        this.cameraOn = false;
+        this.micOn = false;
+        this.screenShareOn = false;
+        break;
+    }
+  }
+
+  private trackPeripheralChanges(camera: boolean, mic: boolean, screenShare: boolean): void {
+    if (camera !== this.cameraOn) {
+      this.cameraOn = camera;
+      this.emitEvent(this.createEvent(
+        camera ? 'camera-activated' : 'camera-deactivated',
+        camera ? -5 : 0,
+        { cameraActive: camera },
+      ));
+    }
+
+    if (mic !== this.micOn) {
+      this.micOn = mic;
+      this.emitEvent(this.createEvent(
+        mic ? 'mic-activated' : 'mic-deactivated',
+        mic ? -3 : 0,
+        { micActive: mic },
+      ));
+    }
+
+    if (screenShare !== this.screenShareOn) {
+      this.screenShareOn = screenShare;
+      this.emitEvent(this.createEvent(
+        screenShare ? 'screen-share-started' : 'screen-share-stopped',
+        screenShare ? -15 : 5,
+        { screenSharing: screenShare },
+      ));
+    }
+  }
+
+  private createEvent(
+    eventType: string,
+    trustImpact: number,
+    data: Record<string, unknown>,
+  ): AdapterEvent {
     return {
       adapterId: this.id,
-      eventType: template.eventType,
+      eventType,
       timestamp: new Date().toISOString(),
-      data: template.dataGenerator(),
-      trustImpact: template.trustImpact,
+      data: {
+        ...data,
+        zoomState: this.zoomState,
+        platform: process.platform,
+      },
+      trustImpact,
     };
   }
 }
