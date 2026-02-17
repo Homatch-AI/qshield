@@ -1,7 +1,8 @@
 import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
-import type { TrustState, TrustSignal, AdapterEvent, Alert, EvidenceRecord } from '@qshield/core';
-import { buildTrustState, createEvidenceRecord } from '@qshield/core';
+import type { TrustState, TrustSignal, AdapterEvent, Alert, EvidenceRecord, AssetChangeEvent, AssetSensitivity } from '@qshield/core';
+import { buildTrustState, createEvidenceRecord, SENSITIVITY_MULTIPLIERS } from '@qshield/core';
+import type { AssetMonitor } from './asset-monitor';
 import type { QShieldAdapter } from '../adapters/adapter-interface';
 import type { AdapterOptions } from '../adapters/adapter-interface';
 import { ZoomAdapter } from '../adapters/zoom';
@@ -29,6 +30,26 @@ const MAX_SIGNALS = 200;
 
 /** Maximum number of evidence records to retain */
 const MAX_EVIDENCE = 200;
+
+/** Base trust impact for high-trust asset event types */
+const ASSET_BASE_IMPACT: Record<string, number> = {
+  'asset-created': -5,
+  'asset-modified': -15,
+  'asset-deleted': -30,
+  'asset-renamed': -10,
+  'asset-permission-changed': -20,
+};
+
+/**
+ * Compute global trust impact for a high-trust asset change event.
+ * Uses SENSITIVITY_MULTIPLIERS (normal: 1.5x, strict: 3x, critical: 5x)
+ * to amplify the base impact for higher sensitivity assets.
+ */
+function computeAssetTrustImpact(event: AssetChangeEvent): number {
+  const base = ASSET_BASE_IMPACT[event.eventType] ?? -10;
+  const multiplier = SENSITIVITY_MULTIPLIERS[event.sensitivity as AssetSensitivity] ?? 1.5;
+  return Math.round(base * multiplier);
+}
 
 /**
  * Central trust monitoring orchestrator.
@@ -206,6 +227,34 @@ export class TrustMonitor {
    */
   onEvent(callback: MonitorEventCallback): void {
     this.eventListeners.push(callback);
+  }
+
+  /**
+   * Connect an AssetMonitor so that high-trust asset changes feed into
+   * the global trust scoring pipeline as AdapterEvents.
+   * @param assetMonitor - the asset monitor instance to wire up
+   */
+  connectAssetMonitor(assetMonitor: AssetMonitor): void {
+    assetMonitor.onAssetChange((event, asset) => {
+      const adapterEvent: AdapterEvent = {
+        adapterId: 'file',
+        eventType: `high-trust:${event.eventType}`,
+        timestamp: event.timestamp,
+        data: {
+          assetId: event.assetId,
+          assetName: asset.name,
+          sensitivity: event.sensitivity,
+          previousHash: event.previousHash,
+          newHash: event.newHash,
+          trustStateBefore: event.trustStateBefore,
+          trustStateAfter: event.trustStateAfter,
+          path: event.path,
+        },
+        trustImpact: computeAssetTrustImpact(event),
+      };
+      this.handleAdapterEvent(adapterEvent);
+    });
+    log.info('[TrustMonitor] AssetMonitor connected — high-trust asset changes feed into trust score');
   }
 
   /**

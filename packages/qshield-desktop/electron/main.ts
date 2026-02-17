@@ -1227,6 +1227,9 @@ app.whenReady().then(() => {
   moduleAssetMonitor = assetMonitor;
   moduleAssetStore = assetStore;
 
+  // Connect asset monitor to trust monitor so asset changes affect global trust score
+  realTrustMonitor.connectAssetMonitor(assetMonitor);
+
   // Subscribe to trust state changes and push to all renderer windows
   realTrustMonitor.subscribe((state) => {
     currentTrustScore = state.score;

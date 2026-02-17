@@ -157,6 +157,9 @@ export default function Dashboard() {
         <ActiveMonitors />
       </section>
 
+      {/* Asset Health */}
+      <AssetHealthCard />
+
       {/* Crypto Security Overview */}
       <CryptoSecurityCard />
 
@@ -222,6 +225,73 @@ function CryptoSecurityCard() {
             {cryptoStatus?.activeAlerts ?? '--'}
           </p>
           <span className="text-xs text-slate-600">crypto alerts</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AssetHealthCard() {
+  const navigate = useNavigate();
+  const [stats, setStats] = useState<{
+    total: number;
+    verified: number;
+    changed: number;
+    unverified: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isIPCAvailable()) return;
+    window.qshield.assets.stats()
+      .then((s) => setStats(s))
+      .catch(() => { /* ignore if assets API not ready */ });
+  }, []);
+
+  const needAttention = (stats?.changed ?? 0) + (stats?.unverified ?? 0);
+  const hasWarning = needAttention > 0;
+
+  return (
+    <section
+      className="rounded-xl border border-slate-700 bg-slate-900 p-5 cursor-pointer hover:border-slate-600 transition-colors"
+      onClick={() => navigate('/assets')}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter') navigate('/assets'); }}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-slate-100">Asset Health</h2>
+          {hasWarning && (
+            <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-semibold text-amber-400 uppercase tracking-wider">
+              Needs Attention
+            </span>
+          )}
+        </div>
+        <span className="text-xs text-slate-500">View details &rarr;</span>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wider">Monitored</span>
+          <p className="mt-1 text-sm font-semibold text-sky-500">
+            {stats?.total ?? '--'}
+          </p>
+          <span className="text-xs text-slate-600">high-trust assets</span>
+        </div>
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wider">Verified</span>
+          <p className="mt-1 text-sm font-semibold text-emerald-500">
+            {stats?.verified ?? '--'}
+          </p>
+          <span className="text-xs text-slate-600">integrity confirmed</span>
+        </div>
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wider">Need Attention</span>
+          <p className={`mt-1 text-sm font-semibold ${hasWarning ? 'text-amber-500' : 'text-emerald-500'}`}>
+            {stats ? needAttention : '--'}
+          </p>
+          <span className="text-xs text-slate-600">
+            {hasWarning ? 'changed or unverified' : 'all clear'}
+          </span>
         </div>
       </div>
     </section>
