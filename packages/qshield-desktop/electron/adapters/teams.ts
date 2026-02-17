@@ -1,29 +1,13 @@
+import { execSync } from 'node:child_process';
 import log from 'electron-log';
 import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
-import {
-  isProcessPatternRunning,
-  hasProcessEstablishedConnections,
-  isCameraActive,
-  isMicrophoneActive,
-  isScreenSharing,
-} from '../services/process-monitor';
 
 /** Teams process state machine */
 type TeamsState = 'idle' | 'running' | 'in-call';
 
 /** Poll interval for process checks (5 seconds) */
 const POLL_INTERVAL = 5000;
-
-/** Teams-related process patterns by platform */
-const TEAMS_PROCESS_PATTERNS: Record<string, string[]> = {
-  darwin: ['Microsoft Teams', 'MSTeams'],
-  win32: ['Teams.exe', 'ms-teams.exe', 'MSTeams.exe'],
-  linux: ['teams', 'teams-for-linux'],
-};
-
-/** Teams process names to look for in lsof ESTABLISHED connections */
-const TEAMS_LSOF_NAMES = ['Microsoft Teams', 'MSTeams', 'ms-teams'];
 
 /**
  * Real Microsoft Teams process monitoring adapter.
@@ -98,6 +82,77 @@ export class TeamsAdapter extends BaseAdapter {
   }
 
   // ---------------------------------------------------------------------------
+  // Simple inline detection (no process-monitor dependency)
+  // ---------------------------------------------------------------------------
+
+  private isTeamsRunning(): boolean {
+    try {
+      const result = execSync(
+        'pgrep -f "MSTeams|Microsoft Teams" 2>/dev/null',
+        { encoding: 'utf-8', timeout: 3000 },
+      );
+      return result.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private isInCall(): boolean {
+    try {
+      // Teams appears as "Microsoft" (truncated) in lsof output
+      const result = execSync(
+        'lsof -i -nP 2>/dev/null | grep "Microsoft" | grep "ESTABLISHED" | wc -l',
+        { encoding: 'utf-8', timeout: 5000 },
+      );
+      const count = parseInt(result.trim(), 10);
+      // Teams maintains many background connections (~8-10 when idle).
+      // During a call it opens additional media connections (15+).
+      return count >= 15;
+    } catch {
+      return false;
+    }
+  }
+
+  private checkCamera(): boolean {
+    if (process.platform !== 'darwin') return false;
+    try {
+      const result = execSync(
+        'pgrep -f "VDCAssistant|AppleCameraAssistant" 2>/dev/null',
+        { encoding: 'utf-8', timeout: 3000 },
+      );
+      return result.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private checkMic(): boolean {
+    if (process.platform !== 'darwin') return false;
+    try {
+      const result = execSync(
+        'ioreg -l | grep -i "IOAudioEngineState" 2>/dev/null | head -5',
+        { encoding: 'utf-8', timeout: 3000 },
+      );
+      return result.includes('1');
+    } catch {
+      return false;
+    }
+  }
+
+  private checkScreenShare(): boolean {
+    if (process.platform !== 'darwin') return false;
+    try {
+      const result = execSync(
+        'pgrep -f "screencapture|CptHost" 2>/dev/null',
+        { encoding: 'utf-8', timeout: 3000 },
+      );
+      return result.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Polling & State Machine
   // ---------------------------------------------------------------------------
 
@@ -105,27 +160,20 @@ export class TeamsAdapter extends BaseAdapter {
     if (!this.connected) return;
 
     try {
-      const platform = process.platform as string;
-      const patterns = TEAMS_PROCESS_PATTERNS[platform] ?? TEAMS_PROCESS_PATTERNS.linux;
+      const teamsRunning = this.isTeamsRunning();
+      const inCall = this.isInCall();
+      const camera = this.checkCamera();
+      const mic = this.checkMic();
+      const screenShare = this.checkScreenShare();
 
-      const teamsRunning = patterns.some((p) => isProcessPatternRunning(p));
-      const hasTeamsConnections = hasProcessEstablishedConnections(TEAMS_LSOF_NAMES);
-      const camera = isCameraActive();
-      const mic = isMicrophoneActive();
-      const screenShare = isScreenSharing();
-
-      log.info('[TeamsAdapter] Poll:', {
-        state: this.teamsState, teamsRunning, hasTeamsConnections, camera, mic, screenShare,
-      });
+      log.info(`[TeamsAdapter] Poll: state=${this.teamsState} running=${teamsRunning} inCall=${inCall} camera=${camera} mic=${mic} screenShare=${screenShare}`);
 
       const previousState = this.teamsState;
 
       // Determine new state
       if (!teamsRunning) {
         this.teamsState = 'idle';
-      } else if (hasTeamsConnections && (camera || mic)) {
-        // Teams is always connected to network when running, so require
-        // camera or mic to distinguish a call from normal usage
+      } else if (inCall || camera || mic) {
         this.teamsState = 'in-call';
       } else {
         this.teamsState = 'running';
@@ -175,9 +223,9 @@ export class TeamsAdapter extends BaseAdapter {
       case 'in-call':
         this.callStartTime = new Date().toISOString();
         this.emitEvent(this.createEvent('call-started', -10, {
-          cameraActive: isCameraActive(),
-          micActive: isMicrophoneActive(),
-          screenSharing: isScreenSharing(),
+          cameraActive: this.checkCamera(),
+          micActive: this.checkMic(),
+          screenSharing: this.checkScreenShare(),
         }));
         break;
 
@@ -239,6 +287,7 @@ export class TeamsAdapter extends BaseAdapter {
     trustImpact: number,
     data: Record<string, unknown>,
   ): AdapterEvent {
+    log.info('[TeamsAdapter] REAL EVENT:', eventType, JSON.stringify(data));
     return {
       adapterId: this.id,
       eventType,
