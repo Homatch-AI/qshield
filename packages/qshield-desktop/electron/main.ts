@@ -36,6 +36,8 @@ import { SecureMessageService } from './services/secure-message-service';
 import { SecureFileService } from './services/secure-file-service';
 import { GoogleAuthService } from './services/google-auth';
 import { TrustMonitor } from './services/trust-monitor';
+import { AssetStore } from './services/asset-store';
+import { AssetMonitor } from './services/asset-monitor';
 import { IPC_CHANNELS, IPC_EVENTS } from './ipc/channels';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -93,6 +95,8 @@ let currentTrustLevel: 'critical' | 'warning' | 'elevated' | 'normal' | 'verifie
 let currentTrustScore = 85;
 let services: ServiceRegistry | null = null;
 let localApi: LocalApiServer | null = null;
+let moduleAssetMonitor: AssetMonitor | null = null;
+let moduleAssetStore: AssetStore | null = null;
 
 const isDev = !app.isPackaged;
 
@@ -758,7 +762,7 @@ function initSeedAlerts(): void {
 // ── Service registry ─────────────────────────────────────────────────────────
 
 /** Create service registry for IPC handlers */
-function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMonitor): ServiceRegistry {
+function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMonitor, assetMonitor: AssetMonitor, assetStore: AssetStore): ServiceRegistry {
   const certGen = new StandaloneCertGenerator();
   const verificationService = new VerificationRecordService();
   const licMgr = new LicenseManager(config);
@@ -1049,6 +1053,32 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         secureMessageSvc.recordAccess(id, entry),
       getDecryptedContent: (id: string) => secureMessageSvc.getDecryptedContent(id),
     },
+    assetService: {
+      list: () => assetStore.listAssets(),
+      add: (assetPath: string, type: 'file' | 'directory', sensitivity: string, name?: string) =>
+        assetMonitor.addAsset(assetPath, type, sensitivity as 'normal' | 'strict' | 'critical', name),
+      remove: (id: string) => assetMonitor.removeAsset(id),
+      get: (id: string) => assetStore.getAsset(id),
+      verify: (id: string) => assetMonitor.verifyAsset(id),
+      accept: (id: string) => assetMonitor.acceptChanges(id),
+      updateSensitivity: (id: string, sensitivity: string) =>
+        assetStore.updateSensitivity(id, sensitivity as 'normal' | 'strict' | 'critical'),
+      enable: (id: string, enabled: boolean) => assetStore.enableAsset(id, enabled),
+      stats: () => assetStore.getStats(),
+      changeLog: (id: string, limit?: number) => assetStore.getChangeLog(id, limit),
+      browse: async (type: 'file' | 'directory') => {
+        const { BrowserWindow: BW } = await import('electron');
+        const visibleWindows = BW.getAllWindows().filter((w) => w.isVisible() && !w.isDestroyed());
+        const win = visibleWindows[0];
+        if (!win) return null;
+        const result = await dialog.showOpenDialog(win, {
+          properties: type === 'directory' ? ['openDirectory'] : ['openFile'],
+          title: type === 'directory' ? 'Select Directory to Monitor' : 'Select File to Monitor',
+        });
+        if (result.canceled || result.filePaths.length === 0) return null;
+        return result.filePaths[0];
+      },
+    },
     // Stub — overridden in app.whenReady() after localApi is created
     localApiManager: {
       getInfo: () => ({ port: 3847, token: '', running: false }),
@@ -1115,9 +1145,17 @@ async function gracefulShutdown(): Promise<void> {
   // TODO: When real adapter manager is integrated, call adapterManager.stopAll()
   log.info('Adapters stopped (stub)');
 
-  // 3. Close database connections
-  // TODO: When real database service is integrated, close connections here
-  log.info('Database connections closed (stub)');
+  // 3b. Stop asset monitoring and close database
+  if (moduleAssetMonitor) {
+    await moduleAssetMonitor.stop();
+    moduleAssetMonitor = null;
+    log.info('Asset monitor stopped');
+  }
+  if (moduleAssetStore) {
+    moduleAssetStore.close();
+    moduleAssetStore = null;
+    log.info('Asset store closed');
+  }
 
   // 4. Destroy tray
   if (tray) {
@@ -1183,6 +1221,12 @@ app.whenReady().then(() => {
   // Initialize real TrustMonitor with all adapters (File Watcher, Email, etc.)
   const realTrustMonitor = new TrustMonitor(googleAuth);
 
+  // Initialize high-trust asset monitoring (SQLite store + chokidar watcher)
+  const assetStore = new AssetStore();
+  const assetMonitor = new AssetMonitor(assetStore);
+  moduleAssetMonitor = assetMonitor;
+  moduleAssetStore = assetStore;
+
   // Subscribe to trust state changes and push to all renderer windows
   realTrustMonitor.subscribe((state) => {
     currentTrustScore = state.score;
@@ -1211,8 +1255,23 @@ app.whenReady().then(() => {
     log.error('[TrustMonitor] Failed to start:', err);
   });
 
+  // Wire asset change events to renderer push notifications
+  assetMonitor.onAssetChange((changeEvent, asset) => {
+    const safeData = JSON.parse(JSON.stringify({ event: changeEvent, asset }));
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_EVENTS.ASSET_CHANGED, safeData);
+      }
+    }
+  });
+
+  // Start asset monitor (watches all registered assets)
+  assetMonitor.start().catch((err) => {
+    log.error('[AssetMonitor] Failed to start:', err);
+  });
+
   // Register IPC handlers
-  services = createServiceRegistry(configManager, realTrustMonitor);
+  services = createServiceRegistry(configManager, realTrustMonitor, assetMonitor, assetStore);
   registerIpcHandlers(services);
 
   // ── Gmail IPC handlers ────────────────────────────────────────────

@@ -147,6 +147,45 @@ interface GatewayStatus {
   url: string;
 }
 
+interface HighTrustAsset {
+  id: string;
+  path: string;
+  name: string;
+  type: 'file' | 'directory';
+  sensitivity: 'normal' | 'strict' | 'critical';
+  trustState: 'verified' | 'changed' | 'unverified';
+  trustScore: number;
+  contentHash: string | null;
+  verifiedHash: string | null;
+  createdAt: string;
+  lastVerified: string | null;
+  lastChanged: string | null;
+  changeCount: number;
+  evidenceCount: number;
+  enabled: boolean;
+}
+
+interface AssetChangeEvent {
+  assetId: string;
+  path: string;
+  sensitivity: 'normal' | 'strict' | 'critical';
+  eventType: string;
+  previousHash: string | null;
+  newHash: string | null;
+  trustStateBefore: string;
+  trustStateAfter: string;
+  timestamp: string;
+  metadata: Record<string, unknown>;
+}
+
+interface AssetStats {
+  total: number;
+  verified: number;
+  changed: number;
+  unverified: number;
+  bySensitivity: Record<string, number>;
+}
+
 type EventCallback<T> = (data: T) => void;
 
 // ── Subscription management ──────────────────────────────────────────────────
@@ -417,6 +456,49 @@ contextBridge.exposeInMainWorld('qshield', {
 
     getWatchedPaths: (): Promise<string[]> =>
       invoke<string[]>(IPC_CHANNELS.FILE_WATCHER_PATHS),
+  },
+
+  assets: {
+    list: (): Promise<HighTrustAsset[]> =>
+      invoke<HighTrustAsset[]>(IPC_CHANNELS.ASSET_LIST),
+
+    add: (assetPath: string, type: 'file' | 'directory', sensitivity: 'normal' | 'strict' | 'critical', name?: string): Promise<HighTrustAsset> =>
+      invoke<HighTrustAsset>(IPC_CHANNELS.ASSET_ADD, { path: assetPath, type, sensitivity, name }),
+
+    remove: (id: string): Promise<void> =>
+      invoke<void>(IPC_CHANNELS.ASSET_REMOVE, id),
+
+    get: (id: string): Promise<HighTrustAsset | null> =>
+      invoke<HighTrustAsset | null>(IPC_CHANNELS.ASSET_GET, id),
+
+    verify: (id: string): Promise<HighTrustAsset | null> =>
+      invoke<HighTrustAsset | null>(IPC_CHANNELS.ASSET_VERIFY, id),
+
+    accept: (id: string): Promise<HighTrustAsset | null> =>
+      invoke<HighTrustAsset | null>(IPC_CHANNELS.ASSET_ACCEPT, id),
+
+    updateSensitivity: (id: string, sensitivity: 'normal' | 'strict' | 'critical'): Promise<HighTrustAsset | null> =>
+      invoke<HighTrustAsset | null>(IPC_CHANNELS.ASSET_UPDATE_SENSITIVITY, id, sensitivity),
+
+    enable: (id: string, enabled: boolean): Promise<boolean> =>
+      invoke<boolean>(IPC_CHANNELS.ASSET_ENABLE, id, enabled),
+
+    stats: (): Promise<AssetStats> =>
+      invoke<AssetStats>(IPC_CHANNELS.ASSET_STATS),
+
+    changeLog: (id: string, limit?: number): Promise<AssetChangeEvent[]> =>
+      invoke<AssetChangeEvent[]>(IPC_CHANNELS.ASSET_CHANGE_LOG, id, limit),
+
+    browse: (type: 'file' | 'directory'): Promise<string | null> =>
+      invoke<string | null>(IPC_CHANNELS.ASSET_BROWSE, type),
+
+    onChanged: (callback: EventCallback<{ event: AssetChangeEvent; asset: HighTrustAsset }>): void => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { event: AssetChangeEvent; asset: HighTrustAsset }) => callback(data);
+      ipcRenderer.on(IPC_EVENTS.ASSET_CHANGED, handler);
+      unsubscribers.set('asset-changed', () => {
+        ipcRenderer.removeListener(IPC_EVENTS.ASSET_CHANGED, handler);
+      });
+    },
   },
 
   app: {

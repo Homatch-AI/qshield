@@ -250,3 +250,67 @@ export interface ClipboardGuardState {
   lastDetectedAddress?: string;
   lastDetectedChain?: CryptoChain;
 }
+
+// ---------------------------------------------------------------------------
+// High-Trust Asset Monitoring
+// ---------------------------------------------------------------------------
+
+/** Sensitivity level determines monitoring intensity and trust impact */
+export type AssetSensitivity = 'normal' | 'strict' | 'critical';
+
+/** Trust state of a monitored asset */
+export type AssetTrustState = 'verified' | 'changed' | 'unverified';
+
+/** A file or directory registered as a high-trust asset */
+export interface HighTrustAsset {
+  id: string;
+  /** Absolute path to the file or directory */
+  path: string;
+  /** Display name (defaults to basename) */
+  name: string;
+  /** 'file' or 'directory' */
+  type: 'file' | 'directory';
+  /** Monitoring sensitivity level */
+  sensitivity: AssetSensitivity;
+  /** Current trust state */
+  trustState: AssetTrustState;
+  /** Per-asset trust score 0-100 */
+  trustScore: number;
+  /** SHA-256 hash of file content (files only), or merkle root of directory contents */
+  contentHash: string | null;
+  /** SHA-256 hash at the time it was last verified */
+  verifiedHash: string | null;
+  /** When the asset was registered */
+  createdAt: string;
+  /** Last time the hash was verified to match */
+  lastVerified: string | null;
+  /** Last time any change was detected */
+  lastChanged: string | null;
+  /** Number of changes detected since registration */
+  changeCount: number;
+  /** Total evidence records linked to this asset */
+  evidenceCount: number;
+  /** Whether monitoring is currently active */
+  enabled: boolean;
+}
+
+/** Event emitted when an asset changes */
+export interface AssetChangeEvent {
+  assetId: string;
+  path: string;
+  sensitivity: AssetSensitivity;
+  eventType: 'asset-created' | 'asset-modified' | 'asset-deleted' | 'asset-renamed' | 'asset-permission-changed';
+  previousHash: string | null;
+  newHash: string | null;
+  trustStateBefore: AssetTrustState;
+  trustStateAfter: AssetTrustState;
+  timestamp: string;
+  metadata: Record<string, unknown>;
+}
+
+/** Trust impact multipliers by sensitivity */
+export const SENSITIVITY_MULTIPLIERS: Record<AssetSensitivity, number> = {
+  normal: 1.5,
+  strict: 3.0,
+  critical: 5.0,
+};

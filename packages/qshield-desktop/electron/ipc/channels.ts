@@ -196,6 +196,30 @@ export const IPC_CHANNELS = {
   SECURE_FILE_GET: 'secure-file:get',
   /** Destroy a secure file */
   SECURE_FILE_DESTROY: 'secure-file:destroy',
+
+  // ── High-Trust Assets ──────────────────────────────────────────
+  /** List all registered high-trust assets */
+  ASSET_LIST: 'asset:list',
+  /** Add a new high-trust asset (file or directory) */
+  ASSET_ADD: 'asset:add',
+  /** Remove a high-trust asset by ID */
+  ASSET_REMOVE: 'asset:remove',
+  /** Get a single high-trust asset by ID */
+  ASSET_GET: 'asset:get',
+  /** Verify an asset's hash integrity */
+  ASSET_VERIFY: 'asset:verify',
+  /** Accept current state of an asset as verified */
+  ASSET_ACCEPT: 'asset:accept',
+  /** Update sensitivity level of an asset */
+  ASSET_UPDATE_SENSITIVITY: 'asset:update-sensitivity',
+  /** Enable or disable monitoring for an asset */
+  ASSET_ENABLE: 'asset:enable',
+  /** Get aggregate asset monitoring stats */
+  ASSET_STATS: 'asset:stats',
+  /** Get the change log for a specific asset */
+  ASSET_CHANGE_LOG: 'asset:change-log',
+  /** Open a native file/folder picker dialog */
+  ASSET_BROWSE: 'asset:browse',
 } as const;
 
 /** Union type of all valid IPC channel strings */
@@ -214,6 +238,10 @@ export const IPC_EVENTS = {
   ADAPTER_STATUS_CHANGED: 'event:adapter-status-changed',
   /** Fired when gateway connection state changes */
   GATEWAY_CONNECTION_CHANGED: 'event:gateway-connection-changed',
+  /** Fired when a high-trust asset changes (file modified, deleted, etc.) */
+  ASSET_CHANGED: 'event:asset-changed',
+  /** Fired when an asset's trust state is updated (verified → changed, etc.) */
+  ASSET_STATE_UPDATED: 'event:asset-state-updated',
 } as const;
 
 /** Union type of all valid IPC event strings */

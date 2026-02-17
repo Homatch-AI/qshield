@@ -156,6 +156,19 @@ export interface ServiceRegistry {
     recordAccess: (id: string, entry: { ip: string; userAgent: string; recipientEmail?: string; action: 'viewed' | 'downloaded' | 'file_downloaded' | 'verified' | 'expired' | 'destroyed' }) => boolean;
     getDecryptedContent: (id: string) => string | null;
   };
+  assetService: {
+    list: () => unknown;
+    add: (assetPath: string, type: 'file' | 'directory', sensitivity: string, name?: string) => Promise<unknown>;
+    remove: (id: string) => Promise<void>;
+    get: (id: string) => unknown;
+    verify: (id: string) => Promise<unknown>;
+    accept: (id: string) => Promise<unknown>;
+    updateSensitivity: (id: string, sensitivity: string) => unknown;
+    enable: (id: string, enabled: boolean) => boolean;
+    stats: () => unknown;
+    changeLog: (id: string, limit?: number) => unknown;
+    browse: (type: 'file' | 'directory') => Promise<string | null>;
+  };
 }
 
 // ── Rate limiter ─────────────────────────────────────────────────────────────
@@ -791,6 +804,90 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
   wrapHandler(IPC_CHANNELS.SECURE_FILE_DESTROY, async (_event, id) => {
     const validId = validateString(id, 'id');
     return ok(services.secureFileService.destroy(validId));
+  });
+
+  // ── High-Trust Assets ──────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.ASSET_LIST, async () => {
+    return ok(services.assetService.list());
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_ADD, async (_event, opts) => {
+    if (!opts || typeof opts !== 'object') {
+      return fail('VALIDATION_ERROR', 'Asset options are required');
+    }
+    const { path: assetPath, type, sensitivity, name } = opts as Record<string, unknown>;
+    if (!assetPath || typeof assetPath !== 'string') {
+      return fail('VALIDATION_ERROR', 'path is required');
+    }
+    if (type !== 'file' && type !== 'directory') {
+      return fail('VALIDATION_ERROR', 'type must be "file" or "directory"');
+    }
+    const validSensitivities = ['normal', 'strict', 'critical'];
+    if (!sensitivity || typeof sensitivity !== 'string' || !validSensitivities.includes(sensitivity)) {
+      return fail('VALIDATION_ERROR', 'sensitivity must be "normal", "strict", or "critical"');
+    }
+    const result = await services.assetService.add(
+      assetPath as string,
+      type as 'file' | 'directory',
+      sensitivity as string,
+      typeof name === 'string' ? name : undefined,
+    );
+    return ok(result);
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_REMOVE, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    await services.assetService.remove(validId);
+    return ok(null);
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_GET, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    return ok(services.assetService.get(validId));
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_VERIFY, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    return ok(await services.assetService.verify(validId));
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_ACCEPT, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    return ok(await services.assetService.accept(validId));
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_UPDATE_SENSITIVITY, async (_event, id, sensitivity) => {
+    const validId = validateString(id, 'id');
+    const validSensitivities = ['normal', 'strict', 'critical'];
+    if (typeof sensitivity !== 'string' || !validSensitivities.includes(sensitivity)) {
+      return fail('VALIDATION_ERROR', 'sensitivity must be "normal", "strict", or "critical"');
+    }
+    return ok(services.assetService.updateSensitivity(validId, sensitivity));
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_ENABLE, async (_event, id, enabled) => {
+    const validId = validateString(id, 'id');
+    if (typeof enabled !== 'boolean') {
+      return fail('VALIDATION_ERROR', 'enabled must be a boolean');
+    }
+    return ok(services.assetService.enable(validId, enabled));
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_STATS, async () => {
+    return ok(services.assetService.stats());
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_CHANGE_LOG, async (_event, id, limit) => {
+    const validId = validateString(id, 'id');
+    const validLimit = typeof limit === 'number' && limit > 0 ? limit : 50;
+    return ok(services.assetService.changeLog(validId, validLimit));
+  });
+
+  wrapHandler(IPC_CHANNELS.ASSET_BROWSE, async (_event, type) => {
+    if (type !== 'file' && type !== 'directory') {
+      return fail('VALIDATION_ERROR', 'type must be "file" or "directory"');
+    }
+    return ok(await services.assetService.browse(type));
   });
 
   log.info('All IPC handlers registered');
