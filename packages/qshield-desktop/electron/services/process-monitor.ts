@@ -21,17 +21,36 @@ export function isProcessPatternRunning(pattern: string): boolean {
 }
 
 /**
- * Get active network connections matching specific patterns.
- * Returns true if there are active connections to the specified domains/IPs.
+ * Check if a process has ESTABLISHED TCP connections.
+ * Searches lsof output by process name (not domain), which works
+ * regardless of -n flag (IP vs hostname).
+ * @param processNames - process name patterns to grep for in lsof output
  */
-export function hasActiveConnections(domainPatterns: string[]): boolean {
+export function hasProcessEstablishedConnections(processNames: string[]): boolean {
+  if (process.platform === 'win32') {
+    // Windows: use netstat + tasklist correlation (simplified)
+    try {
+      for (const name of processNames) {
+        const result = execSync(
+          `tasklist /FI "IMAGENAME eq ${name}" /NH 2>NUL`,
+          { encoding: 'utf-8', timeout: 3000 },
+        );
+        if (!result.includes('No tasks are running')) return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  // macOS/Linux: grep lsof output for process name + ESTABLISHED
   try {
-    const cmd =
-      process.platform === 'win32'
-        ? 'netstat -an'
-        : 'lsof -i -nP 2>/dev/null | head -200';
-    const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 });
-    return domainPatterns.some((pattern) => result.includes(pattern));
+    const grepPattern = processNames.join('\\|');
+    const result = execSync(
+      `lsof -i -nP 2>/dev/null | grep "${grepPattern}" | grep "ESTABLISHED" | head -1`,
+      { encoding: 'utf-8', timeout: 5000 },
+    );
+    return result.trim().length > 0;
   } catch {
     return false;
   }

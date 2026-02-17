@@ -3,7 +3,7 @@ import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
 import {
   isProcessPatternRunning,
-  hasActiveConnections,
+  hasProcessEstablishedConnections,
   isCameraActive,
   isMicrophoneActive,
   isScreenSharing,
@@ -22,13 +22,8 @@ const ZOOM_PROCESS_PATTERNS: Record<string, string[]> = {
   linux: ['zoom', 'ZoomLauncher'],
 };
 
-/** Zoom network domain patterns */
-const ZOOM_DOMAINS = [
-  'zoom.us',
-  'zoom.com',
-  'zoomgov.com',
-  '*.zoom.us',
-];
+/** Zoom process names to look for in lsof ESTABLISHED connections */
+const ZOOM_LSOF_NAMES = ['zoom.us', 'zoom_us', 'Zoom'];
 
 /**
  * Real Zoom process monitoring adapter.
@@ -114,17 +109,21 @@ export class ZoomAdapter extends BaseAdapter {
       const patterns = ZOOM_PROCESS_PATTERNS[platform] ?? ZOOM_PROCESS_PATTERNS.linux;
 
       const zoomRunning = patterns.some((p) => isProcessPatternRunning(p));
-      const hasNetwork = hasActiveConnections(ZOOM_DOMAINS);
+      const hasZoomConnections = hasProcessEstablishedConnections(ZOOM_LSOF_NAMES);
       const camera = isCameraActive();
       const mic = isMicrophoneActive();
       const screenShare = isScreenSharing();
+
+      log.info('[ZoomAdapter] Poll:', {
+        state: this.zoomState, zoomRunning, hasZoomConnections, camera, mic, screenShare,
+      });
 
       const previousState = this.zoomState;
 
       // Determine new state
       if (!zoomRunning) {
         this.zoomState = 'idle';
-      } else if (hasNetwork || camera || mic) {
+      } else if (hasZoomConnections || camera || mic) {
         this.zoomState = 'in-meeting';
       } else {
         this.zoomState = 'running';

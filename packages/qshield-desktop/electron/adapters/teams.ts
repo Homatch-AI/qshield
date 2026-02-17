@@ -3,7 +3,7 @@ import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
 import {
   isProcessPatternRunning,
-  hasActiveConnections,
+  hasProcessEstablishedConnections,
   isCameraActive,
   isMicrophoneActive,
   isScreenSharing,
@@ -22,14 +22,8 @@ const TEAMS_PROCESS_PATTERNS: Record<string, string[]> = {
   linux: ['teams', 'teams-for-linux'],
 };
 
-/** Teams network domain patterns */
-const TEAMS_DOMAINS = [
-  'teams.microsoft.com',
-  'teams.live.com',
-  '.teams.microsoft',
-  'trouter.teams',
-  'skype.com',
-];
+/** Teams process names to look for in lsof ESTABLISHED connections */
+const TEAMS_LSOF_NAMES = ['Microsoft Teams', 'MSTeams', 'ms-teams'];
 
 /**
  * Real Microsoft Teams process monitoring adapter.
@@ -115,17 +109,21 @@ export class TeamsAdapter extends BaseAdapter {
       const patterns = TEAMS_PROCESS_PATTERNS[platform] ?? TEAMS_PROCESS_PATTERNS.linux;
 
       const teamsRunning = patterns.some((p) => isProcessPatternRunning(p));
-      const hasNetwork = hasActiveConnections(TEAMS_DOMAINS);
+      const hasTeamsConnections = hasProcessEstablishedConnections(TEAMS_LSOF_NAMES);
       const camera = isCameraActive();
       const mic = isMicrophoneActive();
       const screenShare = isScreenSharing();
+
+      log.info('[TeamsAdapter] Poll:', {
+        state: this.teamsState, teamsRunning, hasTeamsConnections, camera, mic, screenShare,
+      });
 
       const previousState = this.teamsState;
 
       // Determine new state
       if (!teamsRunning) {
         this.teamsState = 'idle';
-      } else if (hasNetwork && (camera || mic)) {
+      } else if (hasTeamsConnections && (camera || mic)) {
         // Teams is always connected to network when running, so require
         // camera or mic to distinguish a call from normal usage
         this.teamsState = 'in-call';
