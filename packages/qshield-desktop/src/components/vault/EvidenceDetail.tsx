@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import type { EvidenceRecord } from '@qshield/core';
 import { formatDate, formatAdapterName, truncateHash } from '@/lib/formatters';
+import { describeEvent, getImpactLabel, SOURCE_COLORS } from '@/lib/event-descriptions';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { TrustImpactBadge } from '@/components/shared/TrustImpactBadge';
+import { ProofBadge } from '@/components/shared/ProofBadge';
 
 interface EvidenceDetailProps {
   record: EvidenceRecord | null;
@@ -10,13 +13,16 @@ interface EvidenceDetailProps {
   onClose: () => void;
 }
 
+const PAYLOAD_DISPLAY_KEYS = ['sender', 'recipient', 'filename', 'subject', 'address', 'chain', 'url', 'method', 'status', 'meetingId', 'participant'];
+
 /**
- * Detail panel showing full evidence record with hash chain visualization,
- * all metadata fields, verify button, and export button.
+ * Detail panel with two sections: "What Happened" (always visible)
+ * and "Technical Proof" (collapsed by default).
  */
 export function EvidenceDetail({ record, loading, onVerify, onClose }: EvidenceDetailProps) {
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{ valid: boolean; message: string } | null>(null);
+  const [techExpanded, setTechExpanded] = useState(false);
 
   if (!record && !loading) {
     return (
@@ -47,11 +53,19 @@ export function EvidenceDetail({ record, loading, onVerify, onClose }: EvidenceD
     setVerifying(false);
   };
 
+  const impact = getImpactLabel(record.source, record.eventType);
+  const colors = SOURCE_COLORS[record.source] ?? { bg: 'bg-slate-700/50', text: 'text-slate-400' };
+  const description = describeEvent(record.source, record.eventType, record.payload as Record<string, unknown>);
+  const payload = record.payload as Record<string, unknown> | null | undefined;
+  const meaningfulFields = payload
+    ? Object.entries(payload).filter(([key]) => PAYLOAD_DISPLAY_KEYS.includes(key))
+    : [];
+
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-900 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
-        <h3 className="text-sm font-semibold text-slate-100">Evidence Detail</h3>
+        <h3 className="text-sm font-semibold text-slate-100">Event Details</h3>
         <button
           onClick={onClose}
           className="rounded-md p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition-colors"
@@ -64,112 +78,32 @@ export function EvidenceDetail({ record, loading, onVerify, onClose }: EvidenceD
       </div>
 
       <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-300px)]">
-        <DetailField label="Record ID" value={record.id} mono />
-        <DetailField label="Hash (HMAC-SHA256)" value={record.hash} mono />
+        {/* Section A: What Happened */}
+        <div className="space-y-3">
+          <h4 className="text-base font-semibold text-slate-100">{description}</h4>
 
-        {/* Double-Helix Chain Visualization */}
-        <div>
-          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-            Double-Helix Chain
-          </span>
-
-          {/* Helix A — Content (sky/blue) */}
-          <div className="mt-1.5">
-            <span className="text-[9px] font-semibold text-sky-400 uppercase tracking-wider">Helix A &mdash; Content</span>
-            <div className="mt-1 flex items-center gap-2 overflow-x-auto">
-              {record.previousHash ? (
-                <>
-                  <div className="shrink-0 rounded-md border border-slate-700 bg-slate-800/50 px-2.5 py-1.5">
-                    <span className="text-[9px] text-slate-500 block">Previous</span>
-                    <span className="font-mono text-[11px] text-slate-400">{truncateHash(record.previousHash, 10)}</span>
-                  </div>
-                  <svg className="h-4 w-6 shrink-0 text-sky-600" viewBox="0 0 24 16" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2 8h16m0 0l-4-4m4 4l-4 4" />
-                  </svg>
-                  <div className="shrink-0 rounded-md border border-sky-500/30 bg-sky-500/5 px-2.5 py-1.5">
-                    <span className="text-[9px] text-sky-400 block">Current</span>
-                    <span className="font-mono text-[11px] text-sky-300">{truncateHash(record.hash, 10)}</span>
-                  </div>
-                </>
-              ) : (
-                <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-2.5 py-1.5">
-                  <span className="text-[9px] text-emerald-400 block">Genesis</span>
-                  <span className="font-mono text-[11px] text-emerald-300">{truncateHash(record.hash, 10)}</span>
-                </div>
-              )}
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex items-center rounded-md ${colors.bg} px-2 py-0.5 text-[11px] font-medium ${colors.text} uppercase tracking-wider`}>
+              {formatAdapterName(record.source)}
+            </span>
+            <TrustImpactBadge impact={impact} />
+            <ProofBadge status={record.verified ? 'verified' : 'unverified'} />
           </div>
 
-          {/* Helix B — Structure (purple) */}
-          <div className="mt-2">
-            <span className="text-[9px] font-semibold text-purple-400 uppercase tracking-wider">Helix B &mdash; Structure</span>
-            <div className="mt-1 flex items-center gap-2 overflow-x-auto">
-              {'previousStructureHash' in record && record.previousStructureHash ? (
-                <>
-                  <div className="shrink-0 rounded-md border border-slate-700 bg-slate-800/50 px-2.5 py-1.5">
-                    <span className="text-[9px] text-slate-500 block">Previous</span>
-                    <span className="font-mono text-[11px] text-slate-400">{truncateHash(record.previousStructureHash as string, 10)}</span>
-                  </div>
-                  <svg className="h-4 w-6 shrink-0 text-purple-600" viewBox="0 0 24 16" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2 8h16m0 0l-4-4m4 4l-4 4" />
-                  </svg>
-                  <div className="shrink-0 rounded-md border border-purple-500/30 bg-purple-500/5 px-2.5 py-1.5">
-                    <span className="text-[9px] text-purple-400 block">Current</span>
-                    <span className="font-mono text-[11px] text-purple-300">{truncateHash(('structureHash' in record ? record.structureHash : '') as string, 10)}</span>
-                  </div>
-                </>
-              ) : (
-                <div className="rounded-md border border-purple-500/30 bg-purple-500/5 px-2.5 py-1.5">
-                  <span className="text-[9px] text-purple-400 block">Structure Genesis</span>
-                  <span className="font-mono text-[11px] text-purple-300">{truncateHash(('structureHash' in record ? record.structureHash : '') as string, 10)}</span>
-                </div>
-              )}
-            </div>
-          </div>
+          <DetailField label="When" value={formatDate(record.timestamp)} />
 
-          {/* Vault Position */}
-          {'vaultPosition' in record && (
-            <div className="mt-2">
-              <span className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Vault Position</span>
-              <div className="mt-0.5 flex items-center gap-2">
-                <span className="font-mono text-[11px] text-amber-400">0x{((record.vaultPosition as number) >>> 0).toString(16).padStart(8, '0')}</span>
-                <span className="text-[9px] text-slate-600 italic">f(content, session, time, source)</span>
-              </div>
+          {meaningfulFields.length > 0 ? (
+            <div className="space-y-2">
+              {meaningfulFields.map(([key, value]) => (
+                <DetailField key={key} label={key.charAt(0).toUpperCase() + key.slice(1)} value={String(value)} />
+              ))}
             </div>
+          ) : (
+            <p className="text-xs text-slate-500 italic">No additional details</p>
           )}
         </div>
 
-        <DetailField label="Source" value={formatAdapterName(record.source)} />
-        <DetailField label="Event Type" value={record.eventType} />
-        <DetailField label="Timestamp" value={formatDate(record.timestamp)} />
-
-        {/* Verified Status */}
-        <div>
-          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Verified</span>
-          <div className="mt-1 flex items-center gap-2">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                record.verified
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                  : 'bg-slate-800 text-slate-400 border border-slate-700'
-              }`}
-            >
-              {record.verified ? 'Verified' : 'Unverified'}
-            </span>
-          </div>
-        </div>
-
-        {record.signature && <DetailField label="Signature" value={record.signature} mono />}
-
-        {/* Payload */}
-        <div>
-          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Payload</span>
-          <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-800/70 border border-slate-700/50 p-3 text-xs text-slate-300 font-mono leading-relaxed">
-            {JSON.stringify(record.payload, null, 2)}
-          </pre>
-        </div>
-
-        {/* Actions */}
+        {/* Verify Action */}
         <div className="pt-2 border-t border-slate-700/50 space-y-2">
           <button
             onClick={handleVerify}
@@ -204,6 +138,116 @@ export function EvidenceDetail({ record, loading, onVerify, onClose }: EvidenceD
               }`}
             >
               {verifyResult.message}
+            </div>
+          )}
+        </div>
+
+        {/* Section B: Technical Proof (collapsed by default) */}
+        <div className="border-t border-slate-700/50 pt-3">
+          <button
+            onClick={() => setTechExpanded(!techExpanded)}
+            className="flex w-full items-center justify-between text-left group"
+          >
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider group-hover:text-slate-300 transition-colors">
+              Technical Proof
+            </span>
+            <svg
+              className={`h-4 w-4 text-slate-500 transition-transform ${techExpanded ? 'rotate-180' : ''}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              strokeWidth={2}
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+          </button>
+
+          {techExpanded && (
+            <div className="mt-3 space-y-4">
+              <DetailField label="Record ID" value={record.id} mono />
+              <DetailField label="Hash (HMAC-SHA256)" value={record.hash} mono />
+
+              {/* Double-Helix Chain Visualization */}
+              <div>
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  Double-Helix Chain
+                </span>
+
+                {/* Helix A — Content (sky/blue) */}
+                <div className="mt-1.5">
+                  <span className="text-[9px] font-semibold text-sky-400 uppercase tracking-wider">Helix A &mdash; Content</span>
+                  <div className="mt-1 flex items-center gap-2 overflow-x-auto">
+                    {record.previousHash ? (
+                      <>
+                        <div className="shrink-0 rounded-md border border-slate-700 bg-slate-800/50 px-2.5 py-1.5">
+                          <span className="text-[9px] text-slate-500 block">Previous</span>
+                          <span className="font-mono text-[11px] text-slate-400">{truncateHash(record.previousHash, 10)}</span>
+                        </div>
+                        <svg className="h-4 w-6 shrink-0 text-sky-600" viewBox="0 0 24 16" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2 8h16m0 0l-4-4m4 4l-4 4" />
+                        </svg>
+                        <div className="shrink-0 rounded-md border border-sky-500/30 bg-sky-500/5 px-2.5 py-1.5">
+                          <span className="text-[9px] text-sky-400 block">Current</span>
+                          <span className="font-mono text-[11px] text-sky-300">{truncateHash(record.hash, 10)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-2.5 py-1.5">
+                        <span className="text-[9px] text-emerald-400 block">Genesis</span>
+                        <span className="font-mono text-[11px] text-emerald-300">{truncateHash(record.hash, 10)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Helix B — Structure (purple) */}
+                <div className="mt-2">
+                  <span className="text-[9px] font-semibold text-purple-400 uppercase tracking-wider">Helix B &mdash; Structure</span>
+                  <div className="mt-1 flex items-center gap-2 overflow-x-auto">
+                    {'previousStructureHash' in record && record.previousStructureHash ? (
+                      <>
+                        <div className="shrink-0 rounded-md border border-slate-700 bg-slate-800/50 px-2.5 py-1.5">
+                          <span className="text-[9px] text-slate-500 block">Previous</span>
+                          <span className="font-mono text-[11px] text-slate-400">{truncateHash(record.previousStructureHash as string, 10)}</span>
+                        </div>
+                        <svg className="h-4 w-6 shrink-0 text-purple-600" viewBox="0 0 24 16" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2 8h16m0 0l-4-4m4 4l-4 4" />
+                        </svg>
+                        <div className="shrink-0 rounded-md border border-purple-500/30 bg-purple-500/5 px-2.5 py-1.5">
+                          <span className="text-[9px] text-purple-400 block">Current</span>
+                          <span className="font-mono text-[11px] text-purple-300">{truncateHash(('structureHash' in record ? record.structureHash : '') as string, 10)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-md border border-purple-500/30 bg-purple-500/5 px-2.5 py-1.5">
+                        <span className="text-[9px] text-purple-400 block">Structure Genesis</span>
+                        <span className="font-mono text-[11px] text-purple-300">{truncateHash(('structureHash' in record ? record.structureHash : '') as string, 10)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Vault Position */}
+                {'vaultPosition' in record && (
+                  <div className="mt-2">
+                    <span className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Vault Position</span>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <span className="font-mono text-[11px] text-amber-400">0x{((record.vaultPosition as number) >>> 0).toString(16).padStart(8, '0')}</span>
+                      <span className="text-[9px] text-slate-600 italic">f(content, session, time, source)</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {record.signature && <DetailField label="Signature" value={record.signature} mono />}
+
+              {/* Raw Payload */}
+              <div>
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Raw Payload</span>
+                <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-800/70 border border-slate-700/50 p-3 text-xs text-slate-300 font-mono leading-relaxed">
+                  {JSON.stringify(record.payload, null, 2)}
+                </pre>
+              </div>
             </div>
           )}
         </div>

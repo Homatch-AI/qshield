@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { CertificateList } from '@/components/certificates/CertificateList';
-import { CertificateExport } from '@/components/certificates/CertificateExport';
+import { ReportList } from '@/components/certificates/ReportList';
+import { GenerateReport } from '@/components/certificates/GenerateReport';
 
 /**
- * Certificates page with list view and generate form toggle.
+ * Trust Reports page with report list and generate form toggle.
  */
 export default function CertificatesPage() {
   const [showExport, setShowExport] = useState(false);
@@ -18,22 +18,22 @@ export default function CertificatesPage() {
     <div className="p-6 space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-100">Trust Certificates</h1>
+        <h1 className="text-2xl font-bold text-slate-100">Trust Reports</h1>
         <p className="text-sm text-slate-400 mt-1">
-          Generate and manage cryptographically signed trust certificates
+          Generate verifiable trust reports for audits, compliance, and stakeholders
         </p>
       </div>
 
-      {/* Export Form */}
+      {/* Generate Report Form */}
       {showExport && (
-        <CertificateExport
+        <GenerateReport
           onClose={() => setShowExport(false)}
           onGenerated={handleGenerated}
         />
       )}
 
-      {/* Certificate List */}
-      <CertificateList
+      {/* Report List */}
+      <ReportList
         key={refreshKey}
         onGenerateClick={() => setShowExport(true)}
       />

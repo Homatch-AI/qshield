@@ -1,11 +1,13 @@
 import { useEvidence } from '@/hooks/useEvidence';
+import { formatRelativeTime } from '@/lib/formatters';
+import { getImpactLabel } from '@/lib/event-descriptions';
 import { EvidenceSearch } from '@/components/vault/EvidenceSearch';
 import { EvidenceTable } from '@/components/vault/EvidenceTable';
 import { EvidenceDetail } from '@/components/vault/EvidenceDetail';
 import { SkeletonTable } from '@/components/shared/SkeletonLoader';
 
 /**
- * Evidence Vault page with search, sortable table, bulk actions, and detail panel.
+ * Evidence Vault page with summary bar, search, sortable table, bulk actions, and detail panel.
  */
 export default function EvidenceVault() {
   const {
@@ -38,14 +40,23 @@ export default function EvidenceVault() {
     }
   };
 
+  const verifiedCount = items.filter((r) => r.verified).length;
+  const uniqueSources = new Set(items.map((r) => r.source)).size;
+  const latestTimestamp = items.length > 0
+    ? items.reduce((latest, r) => (r.timestamp > latest ? r.timestamp : latest), items[0].timestamp)
+    : null;
+
+  const positiveCount = items.filter((r) => getImpactLabel(r.source, r.eventType) === 'positive').length;
+  const negativeCount = items.filter((r) => getImpactLabel(r.source, r.eventType) === 'negative').length;
+
   return (
     <div className="p-6 space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">{'\uD83E\uDDEC'} Double-Helix Vault</h1>
+          <h1 className="text-2xl font-bold text-slate-100">Trust Activity Log</h1>
           <p className="text-sm text-slate-400 mt-1">
-            Dual-chain tamper-proof evidence with structural position verification
+            Real-time monitoring events with cryptographic proof
           </p>
         </div>
         <button
@@ -58,6 +69,30 @@ export default function EvidenceVault() {
           </svg>
           Export {selectedIds.size > 0 ? `(${selectedIds.size})` : 'All'}
         </button>
+      </div>
+
+      {/* Summary Bar */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <SummaryCard label="Total Events" value={String(total)} description="All recorded events" />
+        <SummaryCard label="Verified" value={String(verifiedCount)} description="Integrity confirmed" />
+        <SummaryCard label="Sources Active" value={String(uniqueSources)} description="Monitoring channels" />
+        <SummaryCard
+          label="Positive"
+          value={String(positiveCount)}
+          description="Trust-building events"
+          accent="text-emerald-400"
+        />
+        <SummaryCard
+          label="Negative"
+          value={String(negativeCount)}
+          description="Trust-reducing events"
+          accent={negativeCount > 0 ? 'text-red-400' : undefined}
+        />
+        <SummaryCard
+          label="Latest"
+          value={latestTimestamp ? formatRelativeTime(latestTimestamp) : '--'}
+          description="Most recent event"
+        />
       </div>
 
       {/* Search */}
@@ -86,7 +121,7 @@ export default function EvidenceVault() {
 
       {/* Main Content */}
       {loading && items.length === 0 ? (
-        <SkeletonTable rows={8} cols={5} />
+        <SkeletonTable rows={8} cols={6} />
       ) : (
         <div className={`grid gap-6 ${selectedId ? 'grid-cols-1 lg:grid-cols-5' : 'grid-cols-1'}`}>
           <div className={selectedId ? 'lg:col-span-3' : ''}>
@@ -120,6 +155,16 @@ export default function EvidenceVault() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, description, accent }: { label: string; value: string; description: string; accent?: string }) {
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-3">
+      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{label}</span>
+      <p className={`mt-1 text-lg font-bold ${accent ?? 'text-slate-100'}`}>{value}</p>
+      <p className="text-[11px] text-slate-500">{description}</p>
     </div>
   );
 }

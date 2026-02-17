@@ -77,7 +77,7 @@ export const NAV_ITEMS = [
     requiredFeature: 'evidence_full' as const, visibleFrom: 'evidence_preview' as const },
   { path: '/messages', label: 'Secure Messages', icon: 'lock',
     requiredFeature: 'secure_message_send' as const },
-  { path: '/certificates', label: 'Certificates', icon: 'certificate',
+  { path: '/certificates', label: 'Trust Reports', icon: 'certificate',
     requiredFeature: 'cert_basic' as const },
   { path: '/alerts', label: 'Alerts', icon: 'bell',
     requiredFeature: 'alerts_full' as const, visibleFrom: 'alerts_basic' as const },

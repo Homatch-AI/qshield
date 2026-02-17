@@ -2,6 +2,7 @@ import { Fragment, useState, useMemo } from 'react';
 import type { Alert } from '@qshield/core';
 import { SEVERITY_COLORS } from '@/lib/constants';
 import { formatDate, formatAdapterName } from '@/lib/formatters';
+import { describeAlert } from '@/lib/alert-descriptions';
 import { AlertDetail } from '@/components/alerts/AlertDetail';
 
 interface AlertHistoryProps {
@@ -114,6 +115,7 @@ export function AlertHistory({ alerts }: AlertHistoryProps) {
               {filteredAlerts.map((alert) => {
                 const colors = SEVERITY_COLORS[alert.severity] ?? SEVERITY_COLORS.low;
                 const isSelected = selectedAlertId === alert.id;
+                const described = describeAlert(alert);
                 return (
                   <Fragment key={alert.id}>
                     <tr
@@ -136,12 +138,10 @@ export function AlertHistory({ alerts }: AlertHistoryProps) {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-slate-200">{alert.title}</span>
-                        {alert.description && (
-                          <p className="text-xs text-slate-500 mt-0.5 truncate max-w-xs">
-                            {alert.description}
-                          </p>
-                        )}
+                        <span className="text-slate-200">{described.title}</span>
+                        <p className="text-xs text-slate-500 mt-0.5 truncate max-w-xs">
+                          {described.description}
+                        </p>
                       </td>
                       <td className="px-4 py-3 text-slate-400 text-xs uppercase">
                         {formatAdapterName(alert.source)}
