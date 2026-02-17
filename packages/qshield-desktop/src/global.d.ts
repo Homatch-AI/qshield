@@ -257,6 +257,52 @@ interface QShieldFileWatcherAPI {
   getWatchedPaths(): Promise<string[]>;
 }
 
+interface QShieldHighTrustAsset {
+  id: string;
+  path: string;
+  name: string;
+  type: 'file' | 'directory';
+  sensitivity: 'normal' | 'strict' | 'critical';
+  trustState: 'verified' | 'changed' | 'unverified';
+  trustScore: number;
+  contentHash: string | null;
+  verifiedHash: string | null;
+  createdAt: string;
+  lastVerified: string | null;
+  lastChanged: string | null;
+  changeCount: number;
+  evidenceCount: number;
+  enabled: boolean;
+}
+
+interface QShieldAssetChangeEvent {
+  assetId: string;
+  path: string;
+  sensitivity: 'normal' | 'strict' | 'critical';
+  eventType: string;
+  previousHash: string | null;
+  newHash: string | null;
+  trustStateBefore: string;
+  trustStateAfter: string;
+  timestamp: string;
+  metadata: Record<string, unknown>;
+}
+
+interface QShieldAssetsAPI {
+  list(): Promise<QShieldHighTrustAsset[]>;
+  add(path: string, type: 'file' | 'directory', sensitivity: 'normal' | 'strict' | 'critical', name?: string): Promise<QShieldHighTrustAsset>;
+  remove(id: string): Promise<void>;
+  get(id: string): Promise<QShieldHighTrustAsset | null>;
+  verify(id: string): Promise<QShieldHighTrustAsset | null>;
+  accept(id: string): Promise<QShieldHighTrustAsset | null>;
+  updateSensitivity(id: string, sensitivity: 'normal' | 'strict' | 'critical'): Promise<QShieldHighTrustAsset | null>;
+  enable(id: string, enabled: boolean): Promise<boolean>;
+  stats(): Promise<{ total: number; verified: number; changed: number; unverified: number; bySensitivity: Record<string, number> }>;
+  changeLog(id: string, limit?: number): Promise<QShieldAssetChangeEvent[]>;
+  browse(type: 'file' | 'directory'): Promise<string | null>;
+  onChanged(callback: (data: { event: QShieldAssetChangeEvent; asset: QShieldHighTrustAsset }) => void): void;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -275,6 +321,7 @@ interface QShieldAPI {
   api: QShieldApiInfoAPI;
   gmail: QShieldGmailAPI;
   fileWatcher: QShieldFileWatcherAPI;
+  assets: QShieldAssetsAPI;
   app: QShieldAppAPI;
 }
 

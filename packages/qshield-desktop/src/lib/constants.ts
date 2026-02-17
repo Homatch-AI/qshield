@@ -81,6 +81,7 @@ export const NAV_ITEMS = [
     requiredFeature: 'cert_basic' as const },
   { path: '/alerts', label: 'Alerts', icon: 'bell',
     requiredFeature: 'alerts_full' as const, visibleFrom: 'alerts_basic' as const },
+  { path: '/assets', label: 'High-Trust Assets', icon: 'shield' },
   { path: '/crypto', label: 'Crypto Security', icon: 'shield-check',
     requiredFeature: 'crypto_basic' as const },
   { path: '/settings', label: 'Settings', icon: 'settings' },
