@@ -16,7 +16,7 @@
  * - All renderer communication via contextBridge + IPC invoke only
  */
 import dotenv from 'dotenv';
-import { app, BrowserWindow, clipboard, ipcMain, session, shell, Tray, Menu, nativeImage, screen, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell, Tray, Menu, nativeImage, screen, Notification } from 'electron';
 import path from 'node:path';
 import { createHmac, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
