@@ -235,7 +235,38 @@ export class TrustMonitor {
     this.evidenceRecords.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
-    log.info(`[TrustMonitor] Injected ${records.length} seed evidence records`);
+
+    // Also inject corresponding TrustSignals so they appear in the timeline
+    for (const record of records) {
+      const payload = record.payload as Record<string, unknown>;
+      const trustImpact = (payload.trustImpact as number) ?? 0;
+      const score = Math.max(0, Math.min(100, 50 + trustImpact));
+
+      // Build metadata from payload, excluding trustImpact (already used for score)
+      const { trustImpact: _unused, ...rest } = payload;
+      const metadata: Record<string, unknown> = {
+        eventType: record.eventType,
+        ...rest,
+      };
+
+      this.signals.push({
+        source: record.source,
+        score,
+        weight: 1.0,
+        timestamp: record.timestamp,
+        metadata,
+      });
+    }
+
+    // Trim signals if needed
+    if (this.signals.length > MAX_SIGNALS) {
+      this.signals = this.signals.slice(-MAX_SIGNALS);
+    }
+
+    // Rebuild trust state with the new signals
+    this.updateTrustState();
+
+    log.info(`[TrustMonitor] Injected ${records.length} seed evidence records + signals`);
   }
 
   /**

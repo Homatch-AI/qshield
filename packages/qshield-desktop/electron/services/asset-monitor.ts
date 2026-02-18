@@ -150,11 +150,55 @@ export class AssetMonitor {
       this.store.updateHash(id, currentHash);
       this.hashCache.set(asset.path, currentHash);
 
+      // Never verified by user — just update the content hash, keep unverified
+      if (!asset.verifiedHash) {
+        return this.store.getAsset(id);
+      }
+
       if (currentHash === asset.verifiedHash) {
         return this.store.verifyAsset(id);
       } else {
+        // Hash mismatch — run through the full change pipeline
         this.store.markChanged(id, currentHash);
-        return this.store.getAsset(id);
+
+        const impact = this.computeTrustImpact(asset.sensitivity, 'asset-modified');
+        const newScore = Math.max(0, asset.trustScore + impact);
+        this.store.updateTrustScore(id, newScore);
+
+        const changeEvent: AssetChangeEvent = {
+          assetId: asset.id,
+          path: asset.path,
+          sensitivity: asset.sensitivity,
+          eventType: 'asset-modified',
+          previousHash: asset.contentHash,
+          newHash: currentHash,
+          trustStateBefore: asset.trustState,
+          trustStateAfter: 'changed',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            fileName: path.basename(asset.path),
+            relativePath: '',
+            detectedBy: 'periodic-verify',
+          },
+        };
+
+        this.store.logChange(asset.id, changeEvent);
+
+        log.info(
+          `[AssetMonitor] Periodic verify detected change: ${asset.name} [${asset.sensitivity}] ${asset.trustState} → changed`,
+        );
+
+        // Notify listeners (TrustMonitor + renderer IPC)
+        const updatedAsset = this.store.getAsset(id)!;
+        for (const listener of this.listeners) {
+          try {
+            listener(changeEvent, updatedAsset);
+          } catch (err) {
+            log.error('[AssetMonitor] Listener error:', err);
+          }
+        }
+
+        return updatedAsset;
       }
     } catch (err) {
       log.warn(`[AssetMonitor] Hash computation failed for ${asset.name}:`, err);
@@ -204,7 +248,8 @@ export class AssetMonitor {
 
     if (eventType === 'asset-deleted') {
       trustStateAfter = 'changed';
-    } else if (newHash && newHash !== asset.verifiedHash) {
+    } else if (newHash && asset.verifiedHash && newHash !== asset.verifiedHash) {
+      // Only mark 'changed' if there's a user-verified baseline to compare against
       trustStateAfter = 'changed';
     }
 
@@ -303,29 +348,75 @@ export class AssetMonitor {
     targetPath: string,
     type: 'file' | 'directory',
   ): Promise<string> {
-    if (type === 'file') return this.hashFile(targetPath);
+    if (type === 'file') return this.hashFileWithTimeout(targetPath);
     return this.hashDirectory(targetPath);
   }
 
-  private hashFile(filePath: string): Promise<string> {
+  /** Hash a file with a 10-second timeout (cloud storage files can block). */
+  private hashFileWithTimeout(filePath: string, timeoutMs = 10_000): Promise<string> {
     return new Promise((resolve, reject) => {
       const hash = crypto.createHash('sha256');
       const stream = fs.createReadStream(filePath);
+      let finished = false;
+
+      const timer = setTimeout(() => {
+        if (!finished) {
+          finished = true;
+          stream.destroy();
+          reject(new Error(`Hash timeout after ${timeoutMs}ms: ${filePath}`));
+        }
+      }, timeoutMs);
+
       stream.on('data', (chunk: Buffer) => hash.update(chunk));
-      stream.on('end', () => resolve(hash.digest('hex')));
-      stream.on('error', reject);
+      stream.on('end', () => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(timer);
+          resolve(hash.digest('hex'));
+        }
+      });
+      stream.on('error', (err) => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
     });
   }
 
+  private hashFile(filePath: string): Promise<string> {
+    return this.hashFileWithTimeout(filePath);
+  }
+
+  /**
+   * Compute a merkle-style hash for a directory.
+   * Limits to 500 files max and 30-second total timeout to prevent
+   * hanging on large directories or cloud storage.
+   */
   private async hashDirectory(dirPath: string): Promise<string> {
+    const MAX_FILES = 500;
+    const TOTAL_TIMEOUT_MS = 30_000;
+    const deadline = Date.now() + TOTAL_TIMEOUT_MS;
+
     const files = await this.walkDir(dirPath);
+    const sorted = files.sort().slice(0, MAX_FILES);
+
+    if (files.length > MAX_FILES) {
+      log.warn(`[AssetMonitor] Directory ${dirPath} has ${files.length} files, sampling first ${MAX_FILES}`);
+    }
+
     const hashes: string[] = [];
-    for (const file of files.sort()) {
+    for (const file of sorted) {
+      if (Date.now() > deadline) {
+        log.warn(`[AssetMonitor] Directory hash timeout after ${TOTAL_TIMEOUT_MS}ms: ${dirPath} (hashed ${hashes.length}/${sorted.length})`);
+        break;
+      }
       try {
-        const h = await this.hashFile(file);
+        const h = await this.hashFileWithTimeout(file, 5_000);
         hashes.push(h);
       } catch {
-        /* skip unreadable files */
+        /* skip unreadable/slow files */
       }
     }
     const merkle = crypto.createHash('sha256');
@@ -369,8 +460,12 @@ export class AssetMonitor {
   private async periodicVerify(): Promise<void> {
     const now = Date.now();
     const assets = this.store.listAssets().filter((a) => a.enabled);
+    let checked = 0;
 
     for (const asset of assets) {
+      // Skip assets never verified by user — no baseline to compare against
+      if (!asset.verifiedHash) continue;
+
       const lastCheck = asset.lastVerified
         ? new Date(asset.lastVerified).getTime()
         : 0;
@@ -385,10 +480,13 @@ export class AssetMonitor {
       if (now - lastCheck >= interval) {
         try {
           await this.verifyAsset(asset.id);
+          checked++;
         } catch (err) {
           log.warn(`[AssetMonitor] Periodic verify failed for ${asset.name}:`, err);
         }
       }
     }
+
+    log.info(`[AssetMonitor] Periodic verify: checked ${checked}/${assets.length} assets (skipped ${assets.length - checked} not due)`);
   }
 }

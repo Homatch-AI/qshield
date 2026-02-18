@@ -78,10 +78,14 @@ export function AddAssetDialog({ isOpen, onClose }: AddAssetDialogProps) {
   if (!isOpen) return null;
 
   const handleBrowse = async () => {
-    const path = await browseForPath(assetType);
-    if (path) {
-      setSelectedPath(path);
-      setError(null);
+    try {
+      const path = await browseForPath(assetType);
+      if (path) {
+        setSelectedPath(path);
+        setError(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open file picker');
     }
   };
 

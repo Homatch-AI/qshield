@@ -265,7 +265,8 @@ export class AssetStore {
   /**
    * Register a new high-trust asset.
    *
-   * For files: computes SHA-256 immediately, sets trustState = 'verified'.
+   * For files: computes SHA-256 immediately but starts as 'unverified'.
+   * The user must explicitly verify the asset to establish the trusted baseline.
    * For directories: computes merkle hash of all contained files.
    */
   addAsset(
@@ -297,12 +298,12 @@ export class AssetStore {
       name: displayName,
       type,
       sensitivity,
-      trustState: contentHash ? 'verified' : 'unverified',
+      trustState: 'unverified',
       trustScore: 100,
       contentHash,
-      verifiedHash: contentHash,
+      verifiedHash: null,
       createdAt: now,
-      lastVerified: contentHash ? now : null,
+      lastVerified: null,
       enabled: 1,
     });
 

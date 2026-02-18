@@ -1177,10 +1177,8 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
       stats: () => assetStore.getStats(),
       changeLog: (id: string, limit?: number) => assetStore.getChangeLog(id, limit),
       browse: async (type: 'file' | 'directory') => {
-        const { BrowserWindow: BW } = await import('electron');
-        const visibleWindows = BW.getAllWindows().filter((w) => w.isVisible() && !w.isDestroyed());
-        const win = visibleWindows[0];
-        if (!win) return null;
+        const win = mainWindow;
+        if (!win || win.isDestroyed()) return null;
         const result = await dialog.showOpenDialog(win, {
           properties: type === 'directory' ? ['openDirectory'] : ['openFile'],
           title: type === 'directory' ? 'Select Directory to Monitor' : 'Select File to Monitor',
