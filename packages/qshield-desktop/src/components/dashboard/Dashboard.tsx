@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useTrustState } from '@/hooks/useTrustState';
 import { TrustScoreGauge } from '@/components/dashboard/TrustScoreGauge';
 import { TrustDimensionRadar } from '@/components/dashboard/TrustDimensionRadar';
@@ -123,6 +123,9 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {/* Trust Reputation */}
+      <TrustReputationCard />
 
       {/* System Architecture */}
       <section>
@@ -295,6 +298,71 @@ function AssetHealthCard() {
         </div>
       </div>
     </section>
+  );
+}
+
+function TrustReputationCard() {
+  const [stats, setStats] = useState<{
+    currentGrade: string;
+    trend: 'improving' | 'stable' | 'declining';
+    currentStreak: number;
+    totalDays: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isIPCAvailable()) {
+      setStats({ currentGrade: 'B+', trend: 'improving', currentStreak: 5, totalDays: 12 });
+      return;
+    }
+    window.qshield.trustHistory.getLifetimeStats()
+      .then((s) => setStats(s as typeof stats))
+      .catch(() => {});
+  }, []);
+
+  const gradeColors: Record<string, string> = {
+    'A+': '#10b981', A: '#10b981', 'A-': '#10b981',
+    'B+': '#0ea5e9', B: '#0ea5e9', 'B-': '#0ea5e9',
+    'C+': '#f59e0b', C: '#f59e0b',
+    D: '#f97316', F: '#ef4444',
+  };
+  const trendConfig = {
+    improving: { icon: '\u2191', color: 'text-emerald-400', label: 'Improving' },
+    stable: { icon: '\u2192', color: 'text-sky-400', label: 'Stable' },
+    declining: { icon: '\u2193', color: 'text-amber-400', label: 'Declining' },
+  };
+
+  const grade = stats?.currentGrade ?? '--';
+  const trend = stats ? trendConfig[stats.trend] : trendConfig.stable;
+  const streak = stats?.currentStreak ?? 0;
+  const totalDays = stats?.totalDays ?? 0;
+
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-900 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-slate-300">Trust Reputation</h3>
+        <Link to="/profile" className="text-xs text-sky-400 hover:text-sky-300 transition-colors">
+          View Profile &rarr;
+        </Link>
+      </div>
+      <div className="flex items-center gap-6">
+        <div>
+          <span
+            className="text-3xl font-bold"
+            style={{ color: gradeColors[grade] ?? '#94a3b8' }}
+          >
+            {grade}
+          </span>
+          <span className="text-xs text-slate-500 ml-1">grade</span>
+        </div>
+        <div className="text-xs text-slate-400 space-y-1">
+          <div>
+            Trend: <span className={trend.color}>{trend.icon} {trend.label}</span>
+          </div>
+          <div>Streak: {streak} day{streak !== 1 ? 's' : ''}</div>
+          <div>Monitoring: {totalDays} day{totalDays !== 1 ? 's' : ''}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

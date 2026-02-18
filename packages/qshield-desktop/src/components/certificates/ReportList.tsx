@@ -1,31 +1,65 @@
 import { useCallback } from 'react';
-import type { TrustCertificate } from '@qshield/core';
 import { useIPC } from '@/hooks/useIPC';
 import { SkeletonCard } from '@/components/shared/SkeletonLoader';
-import { formatDate } from '@/lib/formatters';
 import { TRUST_LEVEL_COLORS } from '@/lib/constants';
-import { isIPCAvailable, mockCertificates } from '@/lib/mock-data';
+import { isIPCAvailable, mockReports } from '@/lib/mock-data';
+import type { TrustLevel } from '@qshield/core';
 
 interface ReportListProps {
   onGenerateClick: () => void;
 }
 
+const GRADE_COLORS: Record<string, string> = {
+  'A+': 'text-emerald-400', A: 'text-emerald-400', 'A-': 'text-emerald-400',
+  'B+': 'text-sky-400', B: 'text-sky-400', 'B-': 'text-sky-400',
+  'C+': 'text-amber-400', C: 'text-amber-400',
+  D: 'text-orange-400', F: 'text-red-400',
+};
+
+function TypeIcon({ type }: { type: string }) {
+  if (type === 'snapshot') {
+    return (
+      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+      </svg>
+    );
+  }
+  if (type === 'period') {
+    return (
+      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+      </svg>
+    );
+  }
+  // asset
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+    </svg>
+  );
+}
+
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export function ReportList({ onGenerateClick }: ReportListProps) {
-  const fetchCertificates = useCallback(async () => {
-    if (isIPCAvailable()) return window.qshield.certificates.list();
-    return mockCertificates(5);
+  const fetchReports = useCallback(async () => {
+    if (isIPCAvailable()) return window.qshield.reports.list();
+    return mockReports(5);
   }, []);
-  const { data: certificates, loading } = useIPC(fetchCertificates);
+  const { data: reports, loading } = useIPC(fetchReports);
 
   const handleExportPdf = async (id: string) => {
     if (isIPCAvailable()) {
-      await window.qshield.certificates.exportPdf(id);
+      await window.qshield.reports.exportPdf(id);
     }
   };
 
   const handleReviewPdf = async (id: string) => {
     if (isIPCAvailable()) {
-      await window.qshield.certificates.reviewPdf(id);
+      await window.qshield.reports.reviewPdf(id);
     }
   };
 
@@ -39,14 +73,14 @@ export function ReportList({ onGenerateClick }: ReportListProps) {
     );
   }
 
-  const certs = certificates ?? [];
+  const items = reports ?? [];
 
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <span className="text-sm text-slate-400">
-          {certs.length} report{certs.length !== 1 ? 's' : ''} generated
+          {items.length} report{items.length !== 1 ? 's' : ''} generated
         </span>
         <button
           onClick={onGenerateClick}
@@ -60,7 +94,7 @@ export function ReportList({ onGenerateClick }: ReportListProps) {
       </div>
 
       {/* List */}
-      {certs.length === 0 ? (
+      {items.length === 0 ? (
         <div className="rounded-xl border border-slate-700 bg-slate-900 p-12 text-center">
           <svg className="mx-auto h-12 w-12 text-slate-600" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
@@ -70,38 +104,57 @@ export function ReportList({ onGenerateClick }: ReportListProps) {
         </div>
       ) : (
         <div className="space-y-3">
-          {certs.map((cert: TrustCertificate) => {
-            const colors = TRUST_LEVEL_COLORS[cert.trustLevel];
+          {items.map((report) => {
+            const colors = TRUST_LEVEL_COLORS[report.trustLevel as TrustLevel] ?? TRUST_LEVEL_COLORS.normal;
+            const gradeColor = GRADE_COLORS[report.trustGrade] ?? 'text-slate-400';
+            const typeLabel = report.type === 'snapshot' ? 'Snapshot' : report.type === 'period' ? 'Period' : 'Asset';
+
             return (
               <div
-                key={cert.id}
+                key={report.id}
                 className="flex items-center justify-between rounded-xl border border-slate-700 bg-slate-900 p-4 transition-colors hover:bg-slate-800/50"
               >
-                <div className="flex items-center gap-4">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-lg ${colors.bg}`}>
-                    <svg className={`h-6 w-6 ${colors.text}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-                    </svg>
+                <div className="flex items-center gap-4 min-w-0">
+                  {/* Type Icon */}
+                  <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${colors.bg} ${colors.text}`}>
+                    <TypeIcon type={report.type} />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-200">
-                        Trust Report &mdash; {formatDate(cert.generatedAt)}
+
+                  <div className="min-w-0">
+                    {/* Title + badges */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-slate-200 truncate">
+                        {report.title}
                       </span>
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${colors.bg} ${colors.text}`}>
-                        {cert.trustLevel}
+                      {/* Score + Grade badge */}
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${colors.bg}`}>
+                        <span className={colors.text}>{Math.round(report.trustScore)}</span>
+                        <span className={gradeColor}>{report.trustGrade}</span>
+                      </span>
+                      {/* Type chip */}
+                      <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400">
+                        {typeLabel}
                       </span>
                     </div>
+
+                    {/* Key stats */}
                     <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                      <span>Score: <strong className={colors.text}>{cert.trustScore}</strong></span>
-                      <span>{cert.evidenceCount} events</span>
-                      <span>Chain verified</span>
+                      <span>{report.channelsMonitored} channels</span>
+                      <span>{report.totalEvents} events</span>
+                      {report.anomaliesDetected > 0 ? (
+                        <span className="text-amber-500">{report.anomaliesDetected} anomalies</span>
+                      ) : (
+                        <span className="text-emerald-500">No anomalies</span>
+                      )}
+                      <span className="hidden sm:inline">{formatShortDate(report.generatedAt)}</span>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 shrink-0 ml-4">
                   <button
-                    onClick={() => handleReviewPdf(cert.id)}
+                    onClick={() => handleReviewPdf(report.id)}
                     className="flex items-center gap-1.5 rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 hover:text-slate-100"
                   >
                     <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" strokeWidth={2} stroke="currentColor">
@@ -111,7 +164,7 @@ export function ReportList({ onGenerateClick }: ReportListProps) {
                     Review
                   </button>
                   <button
-                    onClick={() => handleExportPdf(cert.id)}
+                    onClick={() => handleExportPdf(report.id)}
                     className="flex items-center gap-1.5 rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 hover:text-slate-100"
                   >
                     <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" strokeWidth={2} stroke="currentColor">

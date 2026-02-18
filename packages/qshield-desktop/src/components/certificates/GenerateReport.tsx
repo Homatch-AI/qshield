@@ -28,7 +28,6 @@ function toDateInput(date: Date): string {
 }
 
 export function GenerateReport({ onClose, onGenerated }: GenerateReportProps) {
-  const sessionId = useTrustStore((s) => s.sessionId);
   const score = useTrustStore((s) => s.score);
   const level = useTrustStore((s) => s.level);
 
@@ -70,15 +69,17 @@ export function GenerateReport({ onClose, onGenerated }: GenerateReportProps) {
       : `Asset-specific`;
 
   const handleGenerate = async () => {
-    if (!sessionId) {
-      setError('No active session. Cannot generate report.');
-      return;
-    }
     setGenerating(true);
     setError(null);
     try {
       if (isIPCAvailable()) {
-        await window.qshield.certificates.generate({ sessionId, includeAllEvidence: true });
+        await window.qshield.reports.generate({
+          type: reportType,
+          fromDate: reportType === 'period' ? dateFrom : undefined,
+          toDate: reportType === 'period' ? dateTo : undefined,
+          assetId: reportType === 'asset' ? selectedAssetId : undefined,
+          notes: notes || undefined,
+        });
       }
       if (!isIPCAvailable()) await new Promise((r) => setTimeout(r, 800));
       onGenerated();
@@ -199,7 +200,7 @@ export function GenerateReport({ onClose, onGenerated }: GenerateReportProps) {
             </button>
             <button
               onClick={handleGenerate}
-              disabled={generating || !sessionId}
+              disabled={generating}
               className="flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {generating ? (
@@ -253,9 +254,6 @@ export function GenerateReport({ onClose, onGenerated }: GenerateReportProps) {
               <div className="flex justify-between">
                 <span>Evidence Chain</span>
                 <span className="text-emerald-400">Intact</span>
-              </div>
-              <div className="text-[10px] text-slate-600">
-                {evidenceTotal} cryptographically linked records
               </div>
             </div>
 

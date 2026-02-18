@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { TrustState, TrustSignal, AdapterEvent, Alert, EvidenceRecord, AssetChangeEvent, AssetSensitivity } from '@qshield/core';
 import { buildTrustState, createEvidenceRecord, SENSITIVITY_MULTIPLIERS } from '@qshield/core';
 import type { AssetMonitor } from './asset-monitor';
+import type { AssetStore } from './asset-store';
 import type { QShieldAdapter } from '../adapters/adapter-interface';
 import type { AdapterOptions } from '../adapters/adapter-interface';
 import { ZoomAdapter } from '../adapters/zoom';
@@ -12,6 +13,7 @@ import { FileWatcherAdapter } from '../adapters/file-watcher';
 import { ApiListenerAdapter } from '../adapters/api-listener';
 import { PolicyEnforcer } from './policy-enforcer';
 import type { GoogleAuthService } from './google-auth';
+import { TrustHistoryService } from './trust-history';
 
 /** Events emitted by the TrustMonitor */
 export type TrustMonitorEvent = 'state-change' | 'signal' | 'alert';
@@ -74,6 +76,9 @@ export class TrustMonitor {
   private lastStructureHash: string | null = null;
   private running = false;
   private policyEnforcer: PolicyEnforcer;
+  private trustHistory: TrustHistoryService;
+  private snapshotInterval: ReturnType<typeof setInterval> | null = null;
+  private assetStoreRef: AssetStore | null = null;
 
   /**
    * Create a new TrustMonitor with all adapters and a policy enforcer.
@@ -83,6 +88,7 @@ export class TrustMonitor {
   constructor(googleAuth?: GoogleAuthService, policyEnforcer?: PolicyEnforcer) {
     this.sessionId = uuidv4();
     this.policyEnforcer = policyEnforcer ?? new PolicyEnforcer();
+    this.trustHistory = new TrustHistoryService();
 
     // GoogleAuthService is required by EmailAdapter; create a default if not provided
     const authService = googleAuth ?? (new (require('./google-auth').GoogleAuthService)() as GoogleAuthService);
@@ -138,6 +144,26 @@ export class TrustMonitor {
     }
 
     this.running = true;
+
+    // Compute yesterday's daily summary if it hasn't been computed yet
+    try {
+      const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+      const existing = this.trustHistory.getDailySummary(yesterday);
+      if (!existing) {
+        this.trustHistory.computeDailySummary(yesterday);
+      }
+    } catch (err) {
+      log.warn('[TrustMonitor] Failed to compute yesterday summary:', err);
+    }
+
+    // Start 5-minute snapshot interval
+    this.snapshotInterval = setInterval(() => {
+      this.recordTrustSnapshot();
+    }, 5 * 60 * 1000);
+
+    // Record an initial snapshot right away
+    this.recordTrustSnapshot();
+
     log.info('[TrustMonitor] All adapters started, monitoring active');
   }
 
@@ -160,6 +186,12 @@ export class TrustMonitor {
       } catch (err) {
         log.error(`[TrustMonitor] Failed to stop adapter ${adapter.name}:`, err);
       }
+    }
+
+    // Stop snapshot interval
+    if (this.snapshotInterval) {
+      clearInterval(this.snapshotInterval);
+      this.snapshotInterval = null;
     }
 
     this.running = false;
@@ -188,6 +220,19 @@ export class TrustMonitor {
    */
   getEvidenceRecords(): EvidenceRecord[] {
     return [...this.evidenceRecords];
+  }
+
+  /**
+   * Inject pre-built evidence records (for seed/demo data).
+   * Records are prepended (newest first) and the chain pointers are NOT updated
+   * so they stay independent of the live chain.
+   */
+  injectSeedEvidence(records: EvidenceRecord[]): void {
+    this.evidenceRecords.push(...records);
+    this.evidenceRecords.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+    log.info(`[TrustMonitor] Injected ${records.length} seed evidence records`);
   }
 
   /**
@@ -227,6 +272,23 @@ export class TrustMonitor {
    */
   onEvent(callback: MonitorEventCallback): void {
     this.eventListeners.push(callback);
+  }
+
+  /**
+   * Connect an AssetStore so that snapshot stats include asset counts.
+   * @param store - the asset store instance
+   */
+  connectAssetStore(store: AssetStore): void {
+    this.assetStoreRef = store;
+    log.info('[TrustMonitor] AssetStore connected for snapshot stats');
+  }
+
+  /**
+   * Get the TrustHistoryService instance for direct access.
+   * @returns the trust history service
+   */
+  getTrustHistory(): TrustHistoryService {
+    return this.trustHistory;
   }
 
   /**
@@ -320,10 +382,48 @@ export class TrustMonitor {
       }
     }
 
+    // Close trust history database
+    try {
+      this.trustHistory.close();
+    } catch (err) {
+      log.error('[TrustMonitor] Failed to close trust history:', err);
+    }
+
     this.subscribers = [];
     this.eventListeners = [];
     this.signals = [];
     log.info('[TrustMonitor] Destroyed');
+  }
+
+  /**
+   * Record a trust snapshot with current stats from adapters and asset store.
+   * Called every 5 minutes by the snapshot interval.
+   */
+  private recordTrustSnapshot(): void {
+    try {
+      const adapterStatuses = this.getAdapterStatuses();
+      const assetStats = this.assetStoreRef?.getStats();
+
+      this.trustHistory.recordSnapshot(this.currentState.score, this.currentState.level, {
+        eventCount: this.evidenceRecords.length,
+        anomalyCount: this.signals.filter((s) => s.score < 30).length,
+        channelsActive: adapterStatuses.filter((a) => a.connected).length,
+        assetsMonitored: assetStats?.total ?? 0,
+        assetsVerified: assetStats?.verified ?? 0,
+        assetsChanged: assetStats?.changed ?? 0,
+      });
+
+      // Check milestones after each snapshot
+      const streak = this.trustHistory.getCurrentStreak();
+      this.trustHistory.checkMilestones(
+        this.currentState.score,
+        streak,
+        this.evidenceRecords.length,
+        assetStats?.total ?? 0,
+      );
+    } catch (err) {
+      log.error('[TrustMonitor] Failed to record trust snapshot:', err);
+    }
   }
 
   /**

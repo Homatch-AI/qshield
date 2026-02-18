@@ -156,6 +156,14 @@ export interface ServiceRegistry {
     recordAccess: (id: string, entry: { ip: string; userAgent: string; recipientEmail?: string; action: 'viewed' | 'downloaded' | 'file_downloaded' | 'verified' | 'expired' | 'destroyed' }) => boolean;
     getDecryptedContent: (id: string) => string | null;
   };
+  trustHistory: {
+    getLifetimeStats: () => unknown;
+    getDailySummary: (date: string) => unknown;
+    getDailySummaries: (from: string, to: string) => unknown;
+    getScoreHistory: (days: number) => unknown;
+    getMilestones: () => unknown;
+    getTrend: (days: number) => unknown;
+  };
   assetService: {
     list: () => unknown;
     add: (assetPath: string, type: 'file' | 'directory', sensitivity: string, name?: string) => Promise<unknown>;
@@ -888,6 +896,36 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
       return fail('VALIDATION_ERROR', 'type must be "file" or "directory"');
     }
     return ok(await services.assetService.browse(type));
+  });
+
+  // ── Trust History ──────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.TRUST_HISTORY_LIFETIME, async () => {
+    return ok(services.trustHistory.getLifetimeStats());
+  });
+
+  wrapHandler(IPC_CHANNELS.TRUST_HISTORY_DAILY, async (_event, date) => {
+    const validDate = validateString(date, 'date');
+    return ok(services.trustHistory.getDailySummary(validDate));
+  });
+
+  wrapHandler(IPC_CHANNELS.TRUST_HISTORY_DAILY_RANGE, async (_event, from, to) => {
+    const validFrom = validateString(from, 'from');
+    const validTo = validateString(to, 'to');
+    return ok(services.trustHistory.getDailySummaries(validFrom, validTo));
+  });
+
+  wrapHandler(IPC_CHANNELS.TRUST_HISTORY_SCORE_HISTORY, async (_event, days) => {
+    const validDays = typeof days === 'number' && days > 0 ? days : 7;
+    return ok(services.trustHistory.getScoreHistory(validDays));
+  });
+
+  wrapHandler(IPC_CHANNELS.TRUST_HISTORY_MILESTONES, async () => {
+    return ok(services.trustHistory.getMilestones());
+  });
+
+  wrapHandler(IPC_CHANNELS.TRUST_HISTORY_TREND, async (_event, days) => {
+    const validDays = typeof days === 'number' && days > 0 ? days : 14;
+    return ok(services.trustHistory.getTrend(validDays));
   });
 
   log.info('All IPC handlers registered');

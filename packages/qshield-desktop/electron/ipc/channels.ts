@@ -220,6 +220,42 @@ export const IPC_CHANNELS = {
   ASSET_CHANGE_LOG: 'asset:change-log',
   /** Open a native file/folder picker dialog */
   ASSET_BROWSE: 'asset:browse',
+
+  // ── Trust Profile ──────────────────────────────────────────────
+  /** Get lifetime trust profile stats (grades, streaks, milestones) */
+  TRUST_PROFILE: 'trust:profile',
+  /** Get score history snapshots for the last N days */
+  TRUST_HISTORY: 'trust:history',
+  /** Get all earned trust milestones */
+  TRUST_MILESTONES: 'trust:milestones',
+  /** Get daily summaries for a date range */
+  TRUST_DAILY_SUMMARIES: 'trust:daily-summaries',
+
+  // ── Trust Reports ──────────────────────────────────────────────
+  /** Generate a trust report (snapshot, period, or asset) */
+  REPORT_GENERATE: 'report:generate',
+  /** List all generated trust reports */
+  REPORT_LIST: 'report:list',
+  /** Export a trust report as PDF with save dialog */
+  REPORT_EXPORT_PDF: 'report:export-pdf',
+  /** Open a trust report PDF in the system viewer */
+  REPORT_REVIEW_PDF: 'report:review-pdf',
+  /** Get a single trust report by ID */
+  REPORT_GET: 'report:get',
+
+  // ── Trust History (internal) ──────────────────────────────────
+  /** Get lifetime trust stats for the Trust Profile page */
+  TRUST_HISTORY_LIFETIME: 'trust-history:lifetime',
+  /** Get a single daily summary by date (YYYY-MM-DD) */
+  TRUST_HISTORY_DAILY: 'trust-history:daily',
+  /** Get daily summaries for a date range */
+  TRUST_HISTORY_DAILY_RANGE: 'trust-history:daily-range',
+  /** Get score history snapshots for the last N days */
+  TRUST_HISTORY_SCORE_HISTORY: 'trust-history:score-history',
+  /** Get all earned milestones */
+  TRUST_HISTORY_MILESTONES: 'trust-history:milestones',
+  /** Get the trust trend over the last N days */
+  TRUST_HISTORY_TREND: 'trust-history:trend',
 } as const;
 
 /** Union type of all valid IPC channel strings */

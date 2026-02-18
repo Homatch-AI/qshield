@@ -14,6 +14,7 @@ const CryptoSecurity = lazy(() => import('@/components/crypto/CryptoSecurity'));
 const SecureMessages = lazy(() => import('@/components/messages/SecureMessages'));
 const SecureMessagesGuide = lazy(() => import('@/components/messages/SecureMessagesGuide'));
 const HighTrustAssets = lazy(() => import('@/components/assets/HighTrustAssets'));
+const TrustProfile = lazy(() => import('@/components/profile/TrustProfile'));
 const Settings = lazy(() => import('@/components/settings/Settings'));
 const AccountPage = lazy(() => import('@/components/account/AccountPage'));
 const ShieldOverlay = lazy(() => import('@/components/shield/ShieldOverlay'));
@@ -147,6 +148,16 @@ export function Router() {
             <Suspense fallback={<PageLoader />}>
               <ErrorBoundary>
                 <SecureMessagesGuide />
+              </ErrorBoundary>
+            </Suspense>
+          }
+        />
+        <Route
+          path="profile"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <ErrorBoundary>
+                <TrustProfile />
               </ErrorBoundary>
             </Suspense>
           }

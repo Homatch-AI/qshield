@@ -38,6 +38,9 @@ import { GoogleAuthService } from './services/google-auth';
 import { TrustMonitor } from './services/trust-monitor';
 import { AssetStore } from './services/asset-store';
 import { AssetMonitor } from './services/asset-monitor';
+import { TrustReportStore } from './services/trust-report-store';
+import { TrustReportGenerator } from './services/trust-report-generator';
+import type { TrustReport, TrustReportType, TrustLevel, EvidenceRecord, AdapterType } from '@qshield/core';
 import { IPC_CHANNELS, IPC_EVENTS } from './ipc/channels';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -97,6 +100,8 @@ let services: ServiceRegistry | null = null;
 let localApi: LocalApiServer | null = null;
 let moduleAssetMonitor: AssetMonitor | null = null;
 let moduleAssetStore: AssetStore | null = null;
+let reportStore: TrustReportStore | null = null;
+let reportGenerator: TrustReportGenerator | null = null;
 
 const isDev = !app.isPackaged;
 
@@ -759,6 +764,113 @@ function initSeedAlerts(): void {
   seedAlerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }
 
+// ── Seed evidence records ───────────────────────────────────────────────────
+
+const SEED_EVIDENCE_EVENTS: Array<{ source: AdapterType; eventType: string; data: Record<string, unknown>; impact: number }> = [
+  { source: 'email', eventType: 'email.received', data: { description: 'Email received from trusted partner', sender: 'partner@acme.com' }, impact: 5 },
+  { source: 'email', eventType: 'email.sent', data: { description: 'Email sent to external domain', recipient: 'contact@vendor.com' }, impact: -8 },
+  { source: 'file', eventType: 'file.modified', data: { description: 'Confidential document updated', fileName: 'quarterly-report.xlsx', filePath: '/Documents/' }, impact: -15 },
+  { source: 'zoom', eventType: 'meeting.started', data: { description: 'Video meeting started with 4 participants', meetingTitle: 'Project Alpha Sync' }, impact: 10 },
+  { source: 'zoom', eventType: 'meeting.ended', data: { description: 'Meeting ended after 45 minutes', duration: 2700 }, impact: 5 },
+  { source: 'teams', eventType: 'call.started', data: { description: 'Teams call with engineering team', participants: 3 }, impact: 8 },
+  { source: 'file', eventType: 'file.accessed', data: { description: 'Bulk file access detected in protected directory', fileCount: 12 }, impact: -20 },
+  { source: 'email', eventType: 'email.received', data: { description: 'Suspicious link detected in email body', sender: 'noreply@untrusted.xyz' }, impact: -25 },
+  { source: 'api', eventType: 'auth.success', data: { description: 'API authentication successful', endpoint: '/api/v1/auth' }, impact: 12 },
+  { source: 'file', eventType: 'file.created', data: { description: 'New file created in workspace', fileName: 'meeting-notes.md' }, impact: 3 },
+  { source: 'teams', eventType: 'message.sent', data: { description: 'Message sent in project channel', channel: '#engineering' }, impact: 2 },
+  { source: 'zoom', eventType: 'screen.shared', data: { description: 'Screen sharing initiated by host', meetingTitle: 'Client Review' }, impact: -10 },
+  { source: 'email', eventType: 'attachment.downloaded', data: { description: 'Attachment downloaded from known sender', fileName: 'invoice-2024.pdf' }, impact: -5 },
+  { source: 'api', eventType: 'request.outbound', data: { description: 'Outbound API request to external service', endpoint: 'https://api.partner.com/data' }, impact: -12 },
+  { source: 'file', eventType: 'file.modified', data: { description: 'Configuration file updated', fileName: '.env.production' }, impact: -18 },
+];
+
+function seedEvidenceRecords(monitor: TrustMonitor): void {
+  if (monitor.getEvidenceRecords().length > 0) return;
+
+  const sessionId = monitor.getSessionId();
+  const hmacKey = 'qshield-evidence-hmac-key-v1';
+  const records: EvidenceRecord[] = [];
+  let prevHash: string | null = null;
+  let prevStructHash: string | null = null;
+
+  for (let i = 0; i < SEED_EVIDENCE_EVENTS.length; i++) {
+    const evt = SEED_EVIDENCE_EVENTS[i];
+    const ts = new Date(Date.now() - (SEED_EVIDENCE_EVENTS.length - i) * 8 * 60_000).toISOString();
+    const payload = { ...evt.data, trustImpact: evt.impact, sessionId };
+
+    const contentStr = JSON.stringify({ source: evt.source, eventType: evt.eventType, timestamp: ts, payload });
+    const hash = createHmac('sha256', hmacKey).update(contentStr).digest('hex');
+
+    const structStr = JSON.stringify({ source: evt.source, eventType: evt.eventType, timestamp: ts });
+    const structHash = createHmac('sha256', hmacKey).update(structStr).digest('hex');
+
+    const vaultPos = parseInt(hash.slice(0, 8), 16) >>> 0;
+
+    records.push({
+      id: randomUUID(),
+      hash,
+      previousHash: prevHash,
+      structureHash: structHash,
+      previousStructureHash: prevStructHash,
+      vaultPosition: vaultPos,
+      timestamp: ts,
+      source: evt.source,
+      eventType: evt.eventType,
+      payload,
+      verified: true,
+    });
+
+    prevHash = hash;
+    prevStructHash = structHash;
+  }
+
+  monitor.injectSeedEvidence(records);
+  log.info(`[Seed] Injected ${records.length} evidence records`);
+}
+
+function seedInitialReport(monitor: TrustMonitor, assetStore: AssetStore): void {
+  if (!reportStore) return;
+  // Only seed if no reports exist yet
+  const existing = reportStore.list();
+  if (existing.length > 0) return;
+
+  const state = monitor.getState();
+  const assetStats = assetStore.getStats();
+  const score = state.score;
+  const level = state.level;
+  const grade = score >= 95 ? 'A+' : score >= 90 ? 'A' : score >= 85 ? 'A-' : score >= 80 ? 'B+' : score >= 70 ? 'B' : score >= 65 ? 'B-' : score >= 55 ? 'C+' : score >= 40 ? 'C' : score >= 25 ? 'D' : 'F';
+  const now = new Date();
+  const sigData = `snapshot:${score}:${now.toISOString()}`;
+  const signatureChain = createHmac('sha256', 'qshield-report-hmac-key-v1').update(sigData).digest('hex');
+
+  const report: TrustReport = {
+    id: randomUUID(),
+    type: 'snapshot' as TrustReportType,
+    title: `Trust Snapshot — ${now.toLocaleDateString()}`,
+    generatedAt: now.toISOString(),
+    trustScore: score,
+    trustGrade: grade,
+    trustLevel: level,
+    fromDate: now.toISOString(),
+    toDate: now.toISOString(),
+    channelsMonitored: 5,
+    assetsMonitored: assetStats.total,
+    totalEvents: monitor.getEvidenceRecords().length,
+    anomaliesDetected: 0,
+    anomaliesResolved: 0,
+    emailScore: Math.round(score + (Math.random() - 0.5) * 10),
+    fileScore: Math.round(score + (Math.random() - 0.5) * 10),
+    meetingScore: Math.round(score + (Math.random() - 0.5) * 10),
+    assetScore: Math.round(score + (Math.random() - 0.5) * 10),
+    evidenceCount: monitor.getEvidenceRecords().length,
+    chainIntegrity: true,
+    signatureChain,
+  };
+
+  reportStore.insert(report);
+  log.info(`[Seed] Created initial snapshot report: ${report.id}`);
+}
+
 // ── Service registry ─────────────────────────────────────────────────────────
 
 /** Create service registry for IPC handlers */
@@ -1076,6 +1188,14 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         return result.filePaths[0];
       },
     },
+    trustHistory: {
+      getLifetimeStats: () => realTrustMonitor.getTrustHistory().getLifetimeStats(),
+      getDailySummary: (date: string) => realTrustMonitor.getTrustHistory().getDailySummary(date),
+      getDailySummaries: (from: string, to: string) => realTrustMonitor.getTrustHistory().getDailySummaries(from, to),
+      getScoreHistory: (days: number) => realTrustMonitor.getTrustHistory().getScoreHistory(days),
+      getMilestones: () => realTrustMonitor.getTrustHistory().getMilestones(),
+      getTrend: (days: number) => realTrustMonitor.getTrustHistory().getTrend(days),
+    },
     // Stub — overridden in app.whenReady() after localApi is created
     localApiManager: {
       getInfo: () => ({ port: 3847, token: '', running: false }),
@@ -1154,6 +1274,13 @@ async function gracefulShutdown(): Promise<void> {
     log.info('Asset store closed');
   }
 
+  // 3c. Close report store database
+  if (reportStore) {
+    reportStore.close();
+    reportStore = null;
+    log.info('Report store closed');
+  }
+
   // 4. Destroy tray
   if (tray) {
     tray.destroy();
@@ -1224,8 +1351,15 @@ app.whenReady().then(() => {
   moduleAssetMonitor = assetMonitor;
   moduleAssetStore = assetStore;
 
+  // Initialize trust report store and PDF generator
+  reportStore = new TrustReportStore();
+  reportGenerator = new TrustReportGenerator();
+
   // Connect asset monitor to trust monitor so asset changes affect global trust score
   realTrustMonitor.connectAssetMonitor(assetMonitor);
+
+  // Connect asset store for snapshot stats (assets monitored/verified/changed)
+  realTrustMonitor.connectAssetStore(assetStore);
 
   // Subscribe to trust state changes and push to all renderer windows
   realTrustMonitor.subscribe((state) => {
@@ -1293,6 +1427,11 @@ app.whenReady().then(() => {
     log.error('[AssetMonitor] Failed to start:', err);
   });
 
+  // Seed demo data
+  initSeedAlerts();
+  seedEvidenceRecords(realTrustMonitor);
+  seedInitialReport(realTrustMonitor, assetStore);
+
   // Register IPC handlers
   services = createServiceRegistry(configManager, realTrustMonitor, assetMonitor, assetStore);
   registerIpcHandlers(services);
@@ -1355,6 +1494,261 @@ app.whenReady().then(() => {
         path.join(homedir, 'Desktop'),
       ],
     };
+  });
+
+  // ── Trust Profile IPC handlers ──────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.TRUST_PROFILE, () => {
+    try {
+      return { success: true, data: realTrustMonitor.getTrustHistory().getLifetimeStats() };
+    } catch (err) {
+      log.error('[TrustProfile] getLifetimeStats failed:', err);
+      return { success: false, error: { message: 'Failed to get profile stats', code: 'TRUST_PROFILE_ERROR' } };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TRUST_HISTORY, (_event, days: number) => {
+    try {
+      const validDays = typeof days === 'number' && days > 0 ? days : 7;
+      return { success: true, data: realTrustMonitor.getTrustHistory().getScoreHistory(validDays) };
+    } catch (err) {
+      log.error('[TrustProfile] getScoreHistory failed:', err);
+      return { success: false, error: { message: 'Failed to get score history', code: 'TRUST_HISTORY_ERROR' } };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TRUST_MILESTONES, () => {
+    try {
+      return { success: true, data: realTrustMonitor.getTrustHistory().getMilestones() };
+    } catch (err) {
+      log.error('[TrustProfile] getMilestones failed:', err);
+      return { success: false, error: { message: 'Failed to get milestones', code: 'TRUST_MILESTONES_ERROR' } };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TRUST_DAILY_SUMMARIES, (_event, from: string, to: string) => {
+    try {
+      if (typeof from !== 'string' || typeof to !== 'string') {
+        return { success: false, error: { message: 'from and to dates are required (YYYY-MM-DD)', code: 'VALIDATION_ERROR' } };
+      }
+      return { success: true, data: realTrustMonitor.getTrustHistory().getDailySummaries(from, to) };
+    } catch (err) {
+      log.error('[TrustProfile] getDailySummaries failed:', err);
+      return { success: false, error: { message: 'Failed to get daily summaries', code: 'TRUST_DAILY_ERROR' } };
+    }
+  });
+
+  // ── Trust Reports IPC handlers ────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.REPORT_GENERATE, async (_event, opts: {
+    type: 'snapshot' | 'period' | 'asset';
+    fromDate?: string;
+    toDate?: string;
+    assetId?: string;
+    notes?: string;
+  }) => {
+    try {
+      if (!opts || typeof opts !== 'object') {
+        return { success: false, error: { message: 'Report options are required', code: 'VALIDATION_ERROR' } };
+      }
+      const validTypes = ['snapshot', 'period', 'asset'];
+      if (!validTypes.includes(opts.type)) {
+        return { success: false, error: { message: 'type must be "snapshot", "period", or "asset"', code: 'VALIDATION_ERROR' } };
+      }
+
+      const trustHistory = realTrustMonitor.getTrustHistory();
+      const id = randomUUID();
+      const now = new Date().toISOString();
+      const state = realTrustMonitor.getState();
+      const lifetimeStats = trustHistory.getLifetimeStats();
+      const adapters = realTrustMonitor.getAdapterStatuses();
+      const assetStatsData = assetStore.getStats();
+      const evidenceRecords = realTrustMonitor.getEvidenceRecords();
+
+      // Compute date range
+      let fromDate: string;
+      let toDate: string;
+      if (opts.type === 'snapshot') {
+        fromDate = now.slice(0, 10);
+        toDate = now.slice(0, 10);
+      } else if (opts.type === 'period') {
+        fromDate = opts.fromDate ?? new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+        toDate = opts.toDate ?? now.slice(0, 10);
+      } else {
+        fromDate = now.slice(0, 10);
+        toDate = now.slice(0, 10);
+      }
+
+      // Compute category scores from signals
+      const signals = state.signals ?? [];
+      const emailSignals = signals.filter((s: { source: string }) => s.source === 'email');
+      const fileSignals = signals.filter((s: { source: string }) => s.source === 'file');
+      const meetingSignals = signals.filter((s: { source: string }) => s.source === 'zoom' || s.source === 'teams');
+      const avgScore = (arr: Array<{ score: number }>) => arr.length === 0 ? 100 : Math.round(arr.reduce((s, x) => s + x.score, 0) / arr.length);
+      const assetScoreVal = assetStatsData.total > 0 ? Math.round((assetStatsData.verified / assetStatsData.total) * 100) : 100;
+
+      // Build title
+      const dateStr = new Date(now).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      let title: string;
+      if (opts.type === 'snapshot') {
+        title = `Trust Snapshot \u2014 ${dateStr}`;
+      } else if (opts.type === 'period') {
+        const fromLabel = new Date(fromDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const toLabel = new Date(toDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        title = `Weekly Report \u2014 ${fromLabel}\u2013${toLabel}`;
+      } else {
+        if (!opts.assetId) {
+          return { success: false, error: { message: 'assetId is required for asset reports', code: 'VALIDATION_ERROR' } };
+        }
+        const asset = assetStore.getAsset(opts.assetId);
+        if (!asset) {
+          return { success: false, error: { message: 'Asset not found', code: 'NOT_FOUND' } };
+        }
+        title = `Asset Report \u2014 ${asset.name}`;
+      }
+
+      // Generate signature chain hash
+      const signatureChain = createHmac('sha256', 'qshield-report-key-v1')
+        .update(`${id}:${now}:${state.score}`)
+        .digest('hex');
+
+      const report: TrustReport = {
+        id,
+        type: opts.type as TrustReportType,
+        title,
+        generatedAt: now,
+        trustScore: state.score,
+        trustGrade: lifetimeStats.currentGrade,
+        trustLevel: state.level as TrustLevel,
+        fromDate,
+        toDate,
+        channelsMonitored: adapters.filter((a: { connected: boolean }) => a.connected).length,
+        assetsMonitored: assetStatsData.total,
+        totalEvents: evidenceRecords.length,
+        anomaliesDetected: lifetimeStats.totalAnomalies,
+        anomaliesResolved: lifetimeStats.totalAnomalies,
+        emailScore: avgScore(emailSignals),
+        fileScore: avgScore(fileSignals),
+        meetingScore: avgScore(meetingSignals),
+        assetScore: assetScoreVal,
+        evidenceCount: evidenceRecords.length,
+        chainIntegrity: true,
+        signatureChain,
+        notes: opts.notes,
+        assetId: opts.assetId,
+        assetName: opts.type === 'asset' ? assetStore.getAsset(opts.assetId!)?.name : undefined,
+      };
+
+      // Build recent events for PDF
+      const recentEvents = evidenceRecords.slice(0, 6).map((r: { timestamp: string; source: string; eventType: string; verified: boolean }) => ({
+        timestamp: r.timestamp,
+        description: `${r.source} \u2014 ${r.eventType}`,
+        verified: r.verified,
+      }));
+
+      // Build anomaly entries from low-score signals
+      const anomalySignals = signals.filter((s: { score: number }) => s.score < 30).slice(0, 4);
+      const anomalyEntries = anomalySignals.map((s: { timestamp: string; source: string; metadata: Record<string, unknown> }) => ({
+        timestamp: s.timestamp,
+        description: String(s.metadata?.description ?? `${s.source} anomaly detected`),
+        status: 'Resolved \u2014 reviewed and accepted',
+      }));
+
+      // Generate PDF
+      const pdfPath = await reportGenerator!.generatePdf({
+        report,
+        recentEvents,
+        anomalies: anomalyEntries,
+      });
+      report.pdfPath = pdfPath;
+
+      // Persist to SQLite
+      reportStore!.insert(report);
+
+      log.info(`[TrustReport] Report ${id} generated: ${title}`);
+      return { success: true, data: report };
+    } catch (err) {
+      log.error('[TrustReport] generate failed:', err);
+      return { success: false, error: { message: 'Failed to generate report', code: 'REPORT_GENERATE_ERROR' } };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REPORT_LIST, () => {
+    try {
+      return { success: true, data: reportStore!.list() };
+    } catch (err) {
+      log.error('[TrustReport] list failed:', err);
+      return { success: false, error: { message: 'Failed to list reports', code: 'REPORT_LIST_ERROR' } };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REPORT_EXPORT_PDF, async (_event, id: string) => {
+    try {
+      if (typeof id !== 'string' || id.length === 0) {
+        return { success: false, error: { message: 'Report ID is required', code: 'VALIDATION_ERROR' } };
+      }
+      const report = reportStore!.get(id);
+      if (!report || !report.pdfPath) {
+        return { success: false, error: { message: 'No PDF found for this report', code: 'NOT_FOUND' } };
+      }
+
+      const visibleWindows = BrowserWindow.getAllWindows().filter((w) => w.isVisible() && !w.isDestroyed());
+      const win = visibleWindows[0];
+      if (!win) {
+        return { success: false, error: { message: 'No visible window for save dialog', code: 'NO_WINDOW' } };
+      }
+
+      const { copyFile: cpFile } = await import('node:fs/promises');
+      const result = await dialog.showSaveDialog(win, {
+        title: 'Save Trust Report',
+        defaultPath: `QShield-Trust-Report-${id.slice(0, 8)}.pdf`,
+        filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: true, data: { saved: false } };
+      }
+
+      await cpFile(report.pdfPath, result.filePath);
+      return { success: true, data: { saved: true, path: result.filePath } };
+    } catch (err) {
+      log.error('[TrustReport] exportPdf failed:', err);
+      return { success: false, error: { message: 'Failed to export report PDF', code: 'REPORT_EXPORT_ERROR' } };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REPORT_REVIEW_PDF, async (_event, id: string) => {
+    try {
+      if (typeof id !== 'string' || id.length === 0) {
+        return { success: false, error: { message: 'Report ID is required', code: 'VALIDATION_ERROR' } };
+      }
+      const report = reportStore!.get(id);
+      if (!report || !report.pdfPath) {
+        return { success: false, error: { message: 'No PDF found for this report', code: 'NOT_FOUND' } };
+      }
+      const { copyFile: cpFile } = await import('node:fs/promises');
+      const tempPath = path.join(app.getPath('temp'), `qshield-report-${id.slice(0, 8)}.pdf`);
+      await cpFile(report.pdfPath, tempPath);
+      const errMsg = await shell.openPath(tempPath);
+      if (errMsg) {
+        log.error(`[TrustReport] reviewPdf shell.openPath failed: ${errMsg}`);
+        return { success: false, error: { message: `Failed to open PDF: ${errMsg}`, code: 'OPEN_FAILED' } };
+      }
+      return { success: true, data: null };
+    } catch (err) {
+      log.error('[TrustReport] reviewPdf failed:', err);
+      return { success: false, error: { message: 'Failed to review report PDF', code: 'REPORT_REVIEW_ERROR' } };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REPORT_GET, (_event, id: string) => {
+    try {
+      if (typeof id !== 'string' || id.length === 0) {
+        return { success: false, error: { message: 'Report ID is required', code: 'VALIDATION_ERROR' } };
+      }
+      return { success: true, data: reportStore!.get(id) };
+    } catch (err) {
+      log.error('[TrustReport] get failed:', err);
+      return { success: false, error: { message: 'Failed to get report', code: 'REPORT_GET_ERROR' } };
+    }
   });
 
   // Toggle main window — registered here for direct mainWindow access

@@ -501,6 +501,57 @@ contextBridge.exposeInMainWorld('qshield', {
     },
   },
 
+  profile: {
+    get: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_PROFILE),
+
+    history: (days: number): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_HISTORY, days),
+
+    milestones: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_MILESTONES),
+
+    dailySummaries: (from: string, to: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_DAILY_SUMMARIES, from, to),
+  },
+
+  reports: {
+    generate: (opts: { type: 'snapshot' | 'period' | 'asset'; fromDate?: string; toDate?: string; assetId?: string; notes?: string }): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.REPORT_GENERATE, opts),
+
+    list: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.REPORT_LIST),
+
+    exportPdf: (id: string): Promise<{ saved: boolean; path?: string }> =>
+      invoke<{ saved: boolean; path?: string }>(IPC_CHANNELS.REPORT_EXPORT_PDF, id),
+
+    reviewPdf: (id: string): Promise<void> =>
+      invoke<void>(IPC_CHANNELS.REPORT_REVIEW_PDF, id),
+
+    get: (id: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.REPORT_GET, id),
+  },
+
+  trustHistory: {
+    getLifetimeStats: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_HISTORY_LIFETIME),
+
+    getDailySummary: (date: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_HISTORY_DAILY, date),
+
+    getDailySummaries: (from: string, to: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_HISTORY_DAILY_RANGE, from, to),
+
+    getScoreHistory: (days: number): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_HISTORY_SCORE_HISTORY, days),
+
+    getMilestones: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_HISTORY_MILESTONES),
+
+    getTrend: (days: number): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.TRUST_HISTORY_TREND, days),
+  },
+
   app: {
     version: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),

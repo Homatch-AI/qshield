@@ -303,6 +303,97 @@ interface QShieldAssetsAPI {
   onChanged(callback: (data: { event: QShieldAssetChangeEvent; asset: QShieldHighTrustAsset }) => void): void;
 }
 
+interface QShieldScoreHistoryEntry {
+  timestamp: string;
+  score: number;
+  level: string;
+}
+
+interface QShieldMilestone {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  earnedAt: string;
+}
+
+interface QShieldDailySummary {
+  date: string;
+  avgScore: number;
+  minScore: number;
+  maxScore: number;
+  snapshotCount: number;
+  totalEvents: number;
+  totalAnomalies: number;
+  grade: string;
+  streak: number;
+}
+
+interface QShieldLifetimeStats {
+  totalDays: number;
+  avgScore: number;
+  currentStreak: number;
+  longestStreak: number;
+  currentGrade: string;
+  trend: 'improving' | 'stable' | 'declining';
+  totalSnapshots: number;
+  totalEvents: number;
+  totalAnomalies: number;
+  milestones: QShieldMilestone[];
+  recentScores: QShieldScoreHistoryEntry[];
+}
+
+interface QShieldProfileAPI {
+  get(): Promise<QShieldLifetimeStats>;
+  history(days: number): Promise<QShieldScoreHistoryEntry[]>;
+  milestones(): Promise<QShieldMilestone[]>;
+  dailySummaries(from: string, to: string): Promise<QShieldDailySummary[]>;
+}
+
+interface QShieldReportOptions {
+  type: 'snapshot' | 'period' | 'asset';
+  fromDate?: string;
+  toDate?: string;
+  assetId?: string;
+  notes?: string;
+}
+
+interface QShieldTrustReport {
+  id: string;
+  type: 'snapshot' | 'period' | 'asset';
+  title: string;
+  generatedAt: string;
+  trustScore: number;
+  trustGrade: string;
+  trustLevel: string;
+  fromDate: string;
+  toDate: string;
+  channelsMonitored: number;
+  assetsMonitored: number;
+  totalEvents: number;
+  anomaliesDetected: number;
+  anomaliesResolved: number;
+  emailScore: number;
+  fileScore: number;
+  meetingScore: number;
+  assetScore: number;
+  evidenceCount: number;
+  chainIntegrity: boolean;
+  signatureChain: string;
+  notes?: string;
+  assetId?: string;
+  assetName?: string;
+  pdfPath?: string;
+}
+
+interface QShieldReportsAPI {
+  generate(opts: QShieldReportOptions): Promise<QShieldTrustReport>;
+  list(): Promise<QShieldTrustReport[]>;
+  exportPdf(id: string): Promise<{ saved: boolean; path?: string }>;
+  reviewPdf(id: string): Promise<void>;
+  get(id: string): Promise<QShieldTrustReport | null>;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -322,6 +413,16 @@ interface QShieldAPI {
   gmail: QShieldGmailAPI;
   fileWatcher: QShieldFileWatcherAPI;
   assets: QShieldAssetsAPI;
+  profile: QShieldProfileAPI;
+  reports: QShieldReportsAPI;
+  trustHistory: {
+    getLifetimeStats(): Promise<QShieldLifetimeStats>;
+    getDailySummary(date: string): Promise<QShieldDailySummary | null>;
+    getDailySummaries(from: string, to: string): Promise<QShieldDailySummary[]>;
+    getScoreHistory(days: number): Promise<QShieldScoreHistoryEntry[]>;
+    getMilestones(): Promise<QShieldMilestone[]>;
+    getTrend(days: number): Promise<'improving' | 'stable' | 'declining'>;
+  };
   app: QShieldAppAPI;
 }
 

@@ -558,6 +558,51 @@ export function mockPolicyRules(): PolicyRule[] {
   ];
 }
 
+/** Generate mock Trust Reports (matches QShieldTrustReport in global.d.ts) */
+export function mockReports(count: number = 5) {
+  const types = ['snapshot', 'period', 'asset'] as const;
+  const grades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'D', 'F'];
+  return Array.from({ length: count }, (_, i) => {
+    const score = 60 + Math.floor(Math.random() * 35);
+    const level: TrustLevel =
+      score >= 90 ? 'verified' :
+      score >= 70 ? 'normal' :
+      score >= 50 ? 'elevated' :
+      score >= 30 ? 'warning' : 'critical';
+    const gradeIdx = score >= 95 ? 0 : score >= 90 ? 1 : score >= 85 ? 2 : score >= 80 ? 3 : score >= 70 ? 4 : score >= 65 ? 5 : score >= 55 ? 6 : score >= 40 ? 7 : score >= 25 ? 8 : 9;
+    const type = types[i % types.length];
+    const fromDate = daysAgo(i + 7);
+    const toDate = daysAgo(i);
+    const title = type === 'snapshot' ? `Trust Snapshot — ${new Date(toDate).toLocaleDateString()}`
+      : type === 'period' ? `Trust Report — ${new Date(fromDate).toLocaleDateString()} to ${new Date(toDate).toLocaleDateString()}`
+      : `Asset Report — Project Files`;
+    const jitter = () => Math.max(0, Math.min(100, Math.round(score + (Math.random() - 0.5) * 20)));
+    return {
+      id: uid(),
+      type,
+      title,
+      generatedAt: daysAgo(i),
+      trustScore: score,
+      trustGrade: grades[gradeIdx],
+      trustLevel: level,
+      fromDate,
+      toDate,
+      channelsMonitored: 3 + Math.floor(Math.random() * 3),
+      assetsMonitored: Math.floor(Math.random() * 8),
+      totalEvents: 50 + Math.floor(Math.random() * 200),
+      anomaliesDetected: Math.floor(Math.random() * 5),
+      anomaliesResolved: Math.floor(Math.random() * 3),
+      emailScore: jitter(),
+      fileScore: jitter(),
+      meetingScore: jitter(),
+      assetScore: jitter(),
+      evidenceCount: 20 + Math.floor(Math.random() * 80),
+      chainIntegrity: true,
+      signatureChain: fakeHash(),
+    };
+  });
+}
+
 /** Check if IPC bridge is available */
 export function isIPCAvailable(): boolean {
   return typeof window !== 'undefined' && typeof (window as unknown as Record<string, unknown>).qshield === 'object' && (window as unknown as Record<string, unknown>).qshield !== null;

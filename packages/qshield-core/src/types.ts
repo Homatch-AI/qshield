@@ -314,3 +314,47 @@ export const SENSITIVITY_MULTIPLIERS: Record<AssetSensitivity, number> = {
   strict: 3.0,
   critical: 5.0,
 };
+
+// ---------------------------------------------------------------------------
+// Trust Reports
+// ---------------------------------------------------------------------------
+
+export type TrustReportType = 'snapshot' | 'period' | 'asset';
+
+export interface TrustReport {
+  id: string;
+  type: TrustReportType;
+  title: string;
+  generatedAt: string;
+
+  // Summary stats
+  trustScore: number;
+  trustGrade: string;
+  trustLevel: TrustLevel;
+
+  // Coverage
+  fromDate: string;
+  toDate: string;
+  channelsMonitored: number;
+  assetsMonitored: number;
+  totalEvents: number;
+  anomaliesDetected: number;
+  anomaliesResolved: number;
+
+  // Category scores
+  emailScore: number;
+  fileScore: number;
+  meetingScore: number;
+  assetScore: number;
+
+  // Evidence
+  evidenceCount: number;
+  chainIntegrity: boolean;
+  signatureChain: string;
+
+  // Metadata
+  notes?: string;
+  assetId?: string;
+  assetName?: string;
+  pdfPath?: string;
+}
