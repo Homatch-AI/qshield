@@ -181,6 +181,14 @@ export const IPC_CHANNELS = {
   /** Get Gmail connection status */
   GMAIL_STATUS: 'gmail:status',
 
+  // ── Email Notifications ──────────────────────────────────────────
+  /** Get email notification configuration */
+  EMAIL_NOTIFY_GET_CONFIG: 'email-notify:config:get',
+  /** Update email notification configuration */
+  EMAIL_NOTIFY_SET_CONFIG: 'email-notify:config:set',
+  /** Send a test email notification */
+  EMAIL_NOTIFY_TEST: 'email-notify:test',
+
   // ── File Watcher ──────────────────────────────────────────────
   /** Configure file watcher adapter */
   FILE_WATCHER_CONFIGURE: 'file-watcher:configure',

@@ -164,6 +164,11 @@ export interface ServiceRegistry {
     getMilestones: () => unknown;
     getTrend: (days: number) => unknown;
   };
+  emailNotifier: {
+    getConfig: () => unknown;
+    setConfig: (config: unknown) => void;
+    sendTest: () => Promise<{ sent: boolean; error?: string }>;
+  };
   assetService: {
     list: () => unknown;
     add: (assetPath: string, type: 'file' | 'directory', sensitivity: string, name?: string) => Promise<unknown>;
@@ -215,6 +220,7 @@ const RATE_LIMITS: Partial<Record<string, { maxCalls: number; windowMs: number }
   [IPC_CHANNELS.CERT_GENERATE]: { maxCalls: 1, windowMs: 60_000 },
   [IPC_CHANNELS.EVIDENCE_EXPORT]: { maxCalls: 1, windowMs: 60_000 },
   [IPC_CHANNELS.CONFIG_SET]: { maxCalls: 10, windowMs: 60_000 },
+  [IPC_CHANNELS.EMAIL_NOTIFY_TEST]: { maxCalls: 1, windowMs: 60_000 },
 };
 
 // ── Handler wrapper ──────────────────────────────────────────────────────────
@@ -926,6 +932,20 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
   wrapHandler(IPC_CHANNELS.TRUST_HISTORY_TREND, async (_event, days) => {
     const validDays = typeof days === 'number' && days > 0 ? days : 14;
     return ok(services.trustHistory.getTrend(validDays));
+  });
+
+  // ── Email Notifications ─────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.EMAIL_NOTIFY_GET_CONFIG, async () => {
+    return ok(services.emailNotifier.getConfig());
+  });
+
+  wrapHandler(IPC_CHANNELS.EMAIL_NOTIFY_SET_CONFIG, async (_event, config) => {
+    services.emailNotifier.setConfig(config as Record<string, unknown>);
+    return ok(null);
+  });
+
+  wrapHandler(IPC_CHANNELS.EMAIL_NOTIFY_TEST, async () => {
+    return ok(await services.emailNotifier.sendTest());
   });
 
   log.info('All IPC handlers registered');

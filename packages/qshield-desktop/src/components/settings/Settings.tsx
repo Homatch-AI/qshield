@@ -12,6 +12,7 @@ import { AccountSection } from './AccountSection';
 import { SubscriptionSection } from './SubscriptionSection';
 import { DevEditionSwitcher } from '@/components/account/DevEditionSwitcher';
 import { BrowserExtensionSection } from './BrowserExtensionSection';
+import { EmailNotificationSettings } from './EmailNotificationSettings';
 
 /**
  * Full settings page with sections for Gateway, Adapters, Policy Rules,
@@ -299,6 +300,9 @@ export default function Settings() {
         </div>
       </SettingsSection>
 
+      {/* Email Notifications */}
+      <EmailNotificationSettings />
+
       {/* Shield Overlay */}
       <SettingsSection title="Shield Overlay" description="Floating shield indicator showing real-time trust status">
         <div className="space-y-4">
@@ -462,7 +466,7 @@ export default function Settings() {
   );
 }
 
-function SettingsSection({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+export function SettingsSection({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
     <section className="rounded-xl border border-slate-700 bg-slate-900 overflow-hidden">
       <div className="border-b border-slate-700 px-5 py-4">
@@ -474,7 +478,7 @@ function SettingsSection({ title, description, children }: { title: string; desc
   );
 }
 
-function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+export function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
   return (
     <button
       onClick={() => onChange(!checked)}

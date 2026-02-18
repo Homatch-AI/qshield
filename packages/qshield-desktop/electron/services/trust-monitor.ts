@@ -4,6 +4,7 @@ import type { TrustState, TrustSignal, AdapterEvent, Alert, EvidenceRecord, Asse
 import { buildTrustState, createEvidenceRecord, SENSITIVITY_MULTIPLIERS } from '@qshield/core';
 import type { AssetMonitor } from './asset-monitor';
 import type { AssetStore } from './asset-store';
+import type { EmailNotifierService } from './email-notifier';
 import type { QShieldAdapter } from '../adapters/adapter-interface';
 import type { AdapterOptions } from '../adapters/adapter-interface';
 import { ZoomAdapter } from '../adapters/zoom';
@@ -79,6 +80,7 @@ export class TrustMonitor {
   private trustHistory: TrustHistoryService;
   private snapshotInterval: ReturnType<typeof setInterval> | null = null;
   private assetStoreRef: AssetStore | null = null;
+  private emailNotifierRef: EmailNotifierService | null = null;
 
   /**
    * Create a new TrustMonitor with all adapters and a policy enforcer.
@@ -110,6 +112,7 @@ export class TrustMonitor {
     // Wire up policy enforcer alert events
     this.policyEnforcer.onAlert((alert: Alert) => {
       this.emitMonitorEvent('alert', alert);
+      this.checkEmailNotification(alert);
     });
 
     log.info(
@@ -281,6 +284,62 @@ export class TrustMonitor {
   connectAssetStore(store: AssetStore): void {
     this.assetStoreRef = store;
     log.info('[TrustMonitor] AssetStore connected for snapshot stats');
+  }
+
+  /**
+   * Connect an EmailNotifierService so that policy alerts trigger email notifications.
+   */
+  connectEmailNotifier(notifier: EmailNotifierService): void {
+    this.emailNotifierRef = notifier;
+    log.info('[TrustMonitor] EmailNotifier connected — alerts will trigger email notifications');
+  }
+
+  /**
+   * Check whether an alert should trigger an email notification and send it.
+   */
+  private async checkEmailNotification(alert: Alert): Promise<void> {
+    if (!this.emailNotifierRef) return;
+
+    const config = this.emailNotifierRef.getConfig();
+    if (!config.enabled || !config.recipientEmail) return;
+
+    const meta = (alert.sourceMetadata?.rawEvent ?? {}) as Record<string, unknown>;
+    const source = alert.source ?? '';
+    const title = alert.title ?? '';
+
+    log.info(`[TrustMonitor] Checking email notification: "${title}" source=${source} sensitivity=${meta.sensitivity ?? 'none'}`);
+
+    // High-trust asset change
+    if (source === 'file' && meta.sensitivity) {
+      const sensitivity = meta.sensitivity as string;
+      if (sensitivity === 'strict' || sensitivity === 'critical') {
+        await this.emailNotifierRef.notifyAssetChange({
+          name: (meta.assetName as string) ?? 'Unknown asset',
+          path: (meta.path as string) ?? '',
+          event: (meta.eventType as string) ?? 'modified',
+        });
+        return;
+      }
+    }
+
+    // SPF/DKIM failure
+    const titleLower = title.toLowerCase();
+    if (titleLower.includes('spf') && titleLower.includes('fail')) {
+      await this.emailNotifierRef.notifySpfDkimFailure({
+        email: (meta.from as string) ?? (meta.domain as string) ?? 'unknown',
+        failure: 'SPF check failed',
+      });
+      return;
+    }
+    if (titleLower.includes('dkim') && titleLower.includes('fail')) {
+      await this.emailNotifierRef.notifySpfDkimFailure({
+        email: (meta.from as string) ?? (meta.domain as string) ?? 'unknown',
+        failure: 'DKIM check failed',
+      });
+      return;
+    }
+
+    // Score drop — check in handleAdapterEvent instead (below threshold)
   }
 
   /**
@@ -456,6 +515,13 @@ export class TrustMonitor {
     // Create evidence record for significant events
     if (Math.abs(event.trustImpact) >= EVIDENCE_THRESHOLD) {
       this.createEvidence(event);
+    }
+
+    // Check for score drop email notification
+    if (this.emailNotifierRef && this.currentState.score < previousScore) {
+      this.emailNotifierRef.notifyScoreDrop(this.currentState.score, previousScore).catch((err) => {
+        log.error('[TrustMonitor] Email score-drop notification failed:', err);
+      });
     }
 
     // Feed to policy enforcer (only if score changed significantly)

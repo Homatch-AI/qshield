@@ -38,6 +38,7 @@ import { GoogleAuthService } from './services/google-auth';
 import { TrustMonitor } from './services/trust-monitor';
 import { AssetStore } from './services/asset-store';
 import { AssetMonitor } from './services/asset-monitor';
+import { EmailNotifierService } from './services/email-notifier';
 import { TrustReportStore } from './services/trust-report-store';
 import { TrustReportGenerator } from './services/trust-report-generator';
 import type { TrustReport, TrustReportType, TrustLevel, EvidenceRecord, AdapterType } from '@qshield/core';
@@ -1188,6 +1189,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         return result.filePaths[0];
       },
     },
+    emailNotifier: new EmailNotifierService(config),
     trustHistory: {
       getLifetimeStats: () => realTrustMonitor.getTrustHistory().getLifetimeStats(),
       getDailySummary: (date: string) => realTrustMonitor.getTrustHistory().getDailySummary(date),
@@ -1435,6 +1437,9 @@ app.whenReady().then(() => {
   // Register IPC handlers
   services = createServiceRegistry(configManager, realTrustMonitor, assetMonitor, assetStore);
   registerIpcHandlers(services);
+
+  // Connect email notifier to alert pipeline
+  realTrustMonitor.connectEmailNotifier(services.emailNotifier as import('./services/email-notifier').EmailNotifierService);
 
   // ── Gmail IPC handlers ────────────────────────────────────────────
   ipcMain.handle(IPC_CHANNELS.GMAIL_CONNECT, async () => {

@@ -106,6 +106,28 @@ interface QShieldSignatureAPI {
   setConfig(config: SignatureConfig): Promise<void>;
 }
 
+interface EmailNotificationConfig {
+  enabled: boolean;
+  recipientEmail: string;
+  events: {
+    assetChanges: boolean;
+    scoreDrops: boolean;
+    spfDkimFailures: boolean;
+    dailySummary: boolean;
+  };
+  scoreThreshold: number;
+  quietHoursStart: number;
+  quietHoursEnd: number;
+  rateLimit: number;
+  resendApiKey: string;
+}
+
+interface QShieldEmailNotifyAPI {
+  getConfig(): Promise<EmailNotificationConfig>;
+  setConfig(config: Partial<EmailNotificationConfig>): Promise<null>;
+  sendTest(): Promise<{ sent: boolean; error?: string }>;
+}
+
 interface QShieldAppAPI {
   getVersion(): Promise<string>;
   quit(): Promise<void>;
@@ -414,6 +436,7 @@ interface QShieldAPI {
   fileWatcher: QShieldFileWatcherAPI;
   assets: QShieldAssetsAPI;
   profile: QShieldProfileAPI;
+  emailNotify: QShieldEmailNotifyAPI;
   reports: QShieldReportsAPI;
   trustHistory: {
     getLifetimeStats(): Promise<QShieldLifetimeStats>;

@@ -532,6 +532,17 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<unknown>(IPC_CHANNELS.REPORT_GET, id),
   },
 
+  emailNotify: {
+    getConfig: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.EMAIL_NOTIFY_GET_CONFIG),
+
+    setConfig: (config: Record<string, unknown>): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.EMAIL_NOTIFY_SET_CONFIG, config),
+
+    sendTest: (): Promise<{ sent: boolean; error?: string }> =>
+      invoke<{ sent: boolean; error?: string }>(IPC_CHANNELS.EMAIL_NOTIFY_TEST),
+  },
+
   trustHistory: {
     getLifetimeStats: (): Promise<unknown> =>
       invoke<unknown>(IPC_CHANNELS.TRUST_HISTORY_LIFETIME),

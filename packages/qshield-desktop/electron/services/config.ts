@@ -60,6 +60,29 @@ export interface AdapterStates {
   api: boolean;
 }
 
+/** Email notification preferences */
+export interface EmailNotificationConfig {
+  enabled: boolean;
+  recipientEmail: string;
+  /** Which events trigger email notifications */
+  events: {
+    assetChanges: boolean;
+    scoreDrops: boolean;
+    spfDkimFailures: boolean;
+    dailySummary: boolean;
+  };
+  /** Only notify when score drops below this threshold */
+  scoreThreshold: number;
+  /** Quiet hours start (0-23) */
+  quietHoursStart: number;
+  /** Quiet hours end (0-23) */
+  quietHoursEnd: number;
+  /** Max emails per hour */
+  rateLimit: number;
+  /** Optional Resend API key (uses built-in key if empty) */
+  resendApiKey: string;
+}
+
 /** Full application configuration schema */
 export interface AppConfig {
   /** Config schema version for migrations */
@@ -67,6 +90,7 @@ export interface AppConfig {
   gateway: GatewayConfig;
   shield: ShieldOverlayConfig;
   notifications: NotificationConfig;
+  emailNotifications: EmailNotificationConfig;
   storage: StorageConfig;
   adapters: AdapterStates;
   /** Persisted main window bounds (null = use defaults) */
@@ -100,6 +124,21 @@ const defaults: AppConfig = {
     enabled: true,
     minSeverity: 'medium',
     soundEnabled: true,
+  },
+  emailNotifications: {
+    enabled: false,
+    recipientEmail: '',
+    events: {
+      assetChanges: true,
+      scoreDrops: true,
+      spfDkimFailures: true,
+      dailySummary: false,
+    },
+    scoreThreshold: 40,
+    quietHoursStart: 22,
+    quietHoursEnd: 7,
+    rateLimit: 5,
+    resendApiKey: '',
   },
   storage: {
     maxSizeMb: 500,
