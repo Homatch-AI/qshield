@@ -63,6 +63,7 @@ export function formatAdapterName(adapter: string): string {
     email: 'Email',
     file: 'File',
     api: 'API',
+    crypto: 'Crypto',
   };
   return names[adapter] ?? adapter;
 }

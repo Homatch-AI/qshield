@@ -129,6 +129,22 @@ export function createDefaultPolicy(): PolicyConfig {
         severity: 'medium',
         enabled: true,
       },
+      {
+        id: uuidv4(),
+        name: 'High-trust asset change',
+        condition: { signal: 'file', operator: 'lt', threshold: 45 },
+        action: 'alert',
+        severity: 'high',
+        enabled: true,
+      },
+      {
+        id: uuidv4(),
+        name: 'Critical asset compromise',
+        condition: { signal: 'file', operator: 'lt', threshold: 25 },
+        action: 'escalate',
+        severity: 'critical',
+        enabled: true,
+      },
     ],
     escalation: {
       channels: ['webhook'],

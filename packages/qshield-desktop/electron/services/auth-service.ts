@@ -87,7 +87,8 @@ export class AuthService {
       throw new Error('Invalid password for test account');
     }
 
-    const edition: QShieldEdition = testAccount?.edition ?? 'free';
+    // Non-test accounts get enterprise edition so all features are available
+    const edition: QShieldEdition = testAccount?.edition ?? 'enterprise';
     const name = testAccount?.name ?? normalizedEmail.split('@')[0];
 
     const now = Date.now();
@@ -134,7 +135,8 @@ export class AuthService {
     const normalizedEmail = email.toLowerCase();
     const testAccount = TEST_ACCOUNTS[normalizedEmail];
 
-    const edition: QShieldEdition = testAccount?.edition ?? 'free';
+    // Non-test accounts get enterprise edition so all features are available
+    const edition: QShieldEdition = testAccount?.edition ?? 'enterprise';
     const displayName = testAccount?.name ?? name.trim();
 
     const now = Date.now();
@@ -253,7 +255,15 @@ export class AuthService {
 
     // If session is still valid, we're good
     if (Date.now() < raw.expiresAt) {
-      log.info(`[AuthService] Session restored for ${raw.user.email}`);
+      // Upgrade non-test accounts to enterprise so all features are available
+      const testAccount = TEST_ACCOUNTS[raw.user.email.toLowerCase()];
+      if (!testAccount && raw.user.edition !== 'enterprise') {
+        raw.user.edition = 'enterprise';
+        this.config.set('auth.session', raw);
+        log.info(`[AuthService] Session restored for ${raw.user.email}, upgraded to enterprise`);
+      } else {
+        log.info(`[AuthService] Session restored for ${raw.user.email}`);
+      }
       return true;
     }
 

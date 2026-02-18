@@ -28,7 +28,7 @@ import { generateSignatureHTML, DEFAULT_SIGNATURE_CONFIG, type SignatureConfig }
 import { VerificationRecordService } from './services/verification-record';
 import { CryptoMonitorService } from './services/crypto-monitor';
 import { NotificationService } from './services/notification';
-import { validateAddress, verifyTransactionHash, loadScamDatabase } from '@qshield/core';
+import { validateAddress, verifyTransactionHash, loadScamDatabase, verifyEvidenceRecord } from '@qshield/core';
 import { LicenseManager } from './services/license-manager';
 import { AuthService } from './services/auth-service';
 import { LocalApiServer } from './services/local-api-server';
@@ -865,16 +865,12 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         const records = realTrustMonitor.getEvidenceRecords();
         const record = records.find((r) => r.id === id);
         if (!record) return { valid: false, errors: ['Record not found'] };
-        // Recompute HMAC-SHA256 hash and compare
-        const data = JSON.stringify({
-          id: record.id,
-          source: record.source,
-          eventType: record.eventType,
-          timestamp: record.timestamp,
-        });
-        const expected = computeEvidenceHash(data, record.previousHash);
-        if (expected !== record.hash) {
-          return { valid: false, errors: ['HMAC-SHA256 hash chain integrity check failed'] };
+        const result = verifyEvidenceRecord(record, realTrustMonitor.getSessionId(), 'qshield-evidence-hmac-key-v1');
+        if (!result.contentValid || !result.structureValid) {
+          const errors: string[] = [];
+          if (!result.contentValid) errors.push('Helix A (content) hash verification failed');
+          if (!result.structureValid) errors.push('Helix B (structure) hash verification failed');
+          return { valid: false, errors };
         }
         return { valid: true, errors: [] };
       },
@@ -925,11 +921,12 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
     },
     alertService: {
       list: () => {
-        // Return real alerts from policy enforcer; no mock seed alerts
-        return [];
+        return seedAlerts.filter((a) => !dismissedAlertIds.has(a.id));
       },
       dismiss: (id: string) => {
         dismissedAlertIds.add(id);
+        const alert = seedAlerts.find((a) => a.id === id);
+        if (alert) alert.dismissed = true;
         return { id, dismissed: true };
       },
     },
@@ -1250,6 +1247,29 @@ app.whenReady().then(() => {
       if (!win.isDestroyed()) {
         win.webContents.send(IPC_EVENTS.TRUST_STATE_UPDATED, safeState);
       }
+    }
+  });
+
+  // Wire TrustMonitor alert events to renderer push notifications and alert storage
+  realTrustMonitor.onEvent((eventType, data) => {
+    if (eventType === 'alert' && data && typeof data === 'object') {
+      const alert = data as SeedAlert;
+      // Ensure the alert has required fields
+      if (!alert.id) alert.id = randomUUID();
+      if (!alert.timestamp) alert.timestamp = new Date().toISOString();
+      if (!alert.dismissed) alert.dismissed = false;
+
+      // Store for list retrieval
+      seedAlerts.unshift(alert);
+      if (seedAlerts.length > 200) seedAlerts.length = 200;
+
+      // Broadcast to all renderer windows
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send(IPC_EVENTS.ALERT_RECEIVED, JSON.parse(JSON.stringify(alert)));
+        }
+      }
+      log.info(`[TrustMonitor] Alert broadcast: ${alert.title ?? alert.severity}`);
     }
   });
 
