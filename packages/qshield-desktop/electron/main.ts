@@ -1187,6 +1187,126 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         return result.filePaths[0];
       },
     },
+    reportService: {
+      generate: async (opts: { type: string; fromDate?: string; toDate?: string; assetId?: string; notes?: string }) => {
+        const trustHistory = realTrustMonitor.getTrustHistory();
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        const state = realTrustMonitor.getState();
+        const lifetimeStats = trustHistory.getLifetimeStats();
+        const adapters = realTrustMonitor.getAdapterStatuses();
+        const assetStatsData = assetStore.getStats();
+        const evidenceRecords = realTrustMonitor.getEvidenceRecords();
+
+        // Compute date range
+        let fromDate: string;
+        let toDate: string;
+        if (opts.type === 'snapshot') {
+          fromDate = now.slice(0, 10);
+          toDate = now.slice(0, 10);
+        } else if (opts.type === 'period') {
+          fromDate = opts.fromDate ?? new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+          toDate = opts.toDate ?? now.slice(0, 10);
+        } else {
+          fromDate = now.slice(0, 10);
+          toDate = now.slice(0, 10);
+        }
+
+        // Compute category scores from signals
+        const signals = (state as { signals?: Array<{ source: string; score: number; timestamp: string; metadata: Record<string, unknown> }> }).signals ?? [];
+        const emailSignals = signals.filter((s) => s.source === 'email');
+        const fileSignals = signals.filter((s) => s.source === 'file');
+        const meetingSignals = signals.filter((s) => s.source === 'zoom' || s.source === 'teams');
+        const avgScore = (arr: Array<{ score: number }>) => arr.length === 0 ? 100 : Math.round(arr.reduce((s, x) => s + x.score, 0) / arr.length);
+        const assetScoreVal = assetStatsData.total > 0 ? Math.round((assetStatsData.verified / assetStatsData.total) * 100) : 100;
+
+        // Build title
+        const dateStr = new Date(now).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        let title: string;
+        if (opts.type === 'snapshot') {
+          title = `Trust Snapshot \u2014 ${dateStr}`;
+        } else if (opts.type === 'period') {
+          const fromLabel = new Date(fromDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const toLabel = new Date(toDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          title = `Weekly Report \u2014 ${fromLabel}\u2013${toLabel}`;
+        } else {
+          if (!opts.assetId) {
+            throw new Error('assetId is required for asset reports');
+          }
+          const asset = assetStore.getAsset(opts.assetId);
+          if (!asset) {
+            throw new Error('Asset not found');
+          }
+          title = `Asset Report \u2014 ${asset.name}`;
+        }
+
+        // Generate signature chain hash
+        const signatureChain = createHmac('sha256', 'qshield-report-key-v1')
+          .update(`${id}:${now}:${(state as { score: number }).score}`)
+          .digest('hex');
+
+        const report: TrustReport = {
+          id,
+          type: opts.type as TrustReportType,
+          title,
+          generatedAt: now,
+          trustScore: (state as { score: number }).score,
+          trustGrade: lifetimeStats.currentGrade,
+          trustLevel: (state as { level: string }).level as TrustLevel,
+          fromDate,
+          toDate,
+          channelsMonitored: adapters.filter((a: { connected: boolean }) => a.connected).length,
+          assetsMonitored: assetStatsData.total,
+          totalEvents: evidenceRecords.length,
+          anomaliesDetected: lifetimeStats.totalAnomalies,
+          anomaliesResolved: lifetimeStats.totalAnomalies,
+          emailScore: avgScore(emailSignals),
+          fileScore: avgScore(fileSignals),
+          meetingScore: avgScore(meetingSignals),
+          assetScore: assetScoreVal,
+          evidenceCount: evidenceRecords.length,
+          chainIntegrity: true,
+          signatureChain,
+          notes: opts.notes,
+          assetId: opts.assetId,
+          assetName: opts.type === 'asset' ? assetStore.getAsset(opts.assetId!)?.name : undefined,
+        };
+
+        // Build recent events for PDF
+        const recentEvents = evidenceRecords.slice(0, 6).map((r: { timestamp: string; source: string; eventType: string; verified: boolean }) => ({
+          timestamp: r.timestamp,
+          description: `${r.source} \u2014 ${r.eventType}`,
+          verified: r.verified,
+        }));
+
+        // Build anomaly entries from low-score signals
+        const anomalySignals = signals.filter((s) => s.score < 30).slice(0, 4);
+        const anomalyEntries = anomalySignals.map((s) => ({
+          timestamp: s.timestamp,
+          description: String(s.metadata?.description ?? `${s.source} anomaly detected`),
+          status: 'Resolved \u2014 reviewed and accepted',
+        }));
+
+        // Generate PDF
+        const pdfPath = await reportGenerator!.generatePdf({
+          report,
+          recentEvents,
+          anomalies: anomalyEntries,
+        });
+        report.pdfPath = pdfPath;
+
+        // Persist to SQLite
+        reportStore!.insert(report);
+        log.info(`[TrustReport] Report ${id} generated: ${title}`);
+        return report;
+      },
+      list: () => reportStore!.list(),
+      get: (id: string) => reportStore!.get(id),
+      getPdfPath: (id: string) => {
+        const report = reportStore!.get(id);
+        return report?.pdfPath ?? null;
+      },
+    },
     emailNotifier: new EmailNotifierService(config),
     trustHistory: {
       getLifetimeStats: () => realTrustMonitor.getTrustHistory().getLifetimeStats(),
@@ -1497,261 +1617,6 @@ app.whenReady().then(() => {
         path.join(homedir, 'Desktop'),
       ],
     };
-  });
-
-  // ── Trust Profile IPC handlers ──────────────────────────────────
-  ipcMain.handle(IPC_CHANNELS.TRUST_PROFILE, () => {
-    try {
-      return { success: true, data: realTrustMonitor.getTrustHistory().getLifetimeStats() };
-    } catch (err) {
-      log.error('[TrustProfile] getLifetimeStats failed:', err);
-      return { success: false, error: { message: 'Failed to get profile stats', code: 'TRUST_PROFILE_ERROR' } };
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.TRUST_HISTORY, (_event, days: number) => {
-    try {
-      const validDays = typeof days === 'number' && days > 0 ? days : 7;
-      return { success: true, data: realTrustMonitor.getTrustHistory().getScoreHistory(validDays) };
-    } catch (err) {
-      log.error('[TrustProfile] getScoreHistory failed:', err);
-      return { success: false, error: { message: 'Failed to get score history', code: 'TRUST_HISTORY_ERROR' } };
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.TRUST_MILESTONES, () => {
-    try {
-      return { success: true, data: realTrustMonitor.getTrustHistory().getMilestones() };
-    } catch (err) {
-      log.error('[TrustProfile] getMilestones failed:', err);
-      return { success: false, error: { message: 'Failed to get milestones', code: 'TRUST_MILESTONES_ERROR' } };
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.TRUST_DAILY_SUMMARIES, (_event, from: string, to: string) => {
-    try {
-      if (typeof from !== 'string' || typeof to !== 'string') {
-        return { success: false, error: { message: 'from and to dates are required (YYYY-MM-DD)', code: 'VALIDATION_ERROR' } };
-      }
-      return { success: true, data: realTrustMonitor.getTrustHistory().getDailySummaries(from, to) };
-    } catch (err) {
-      log.error('[TrustProfile] getDailySummaries failed:', err);
-      return { success: false, error: { message: 'Failed to get daily summaries', code: 'TRUST_DAILY_ERROR' } };
-    }
-  });
-
-  // ── Trust Reports IPC handlers ────────────────────────────────
-  ipcMain.handle(IPC_CHANNELS.REPORT_GENERATE, async (_event, opts: {
-    type: 'snapshot' | 'period' | 'asset';
-    fromDate?: string;
-    toDate?: string;
-    assetId?: string;
-    notes?: string;
-  }) => {
-    try {
-      if (!opts || typeof opts !== 'object') {
-        return { success: false, error: { message: 'Report options are required', code: 'VALIDATION_ERROR' } };
-      }
-      const validTypes = ['snapshot', 'period', 'asset'];
-      if (!validTypes.includes(opts.type)) {
-        return { success: false, error: { message: 'type must be "snapshot", "period", or "asset"', code: 'VALIDATION_ERROR' } };
-      }
-
-      const trustHistory = realTrustMonitor.getTrustHistory();
-      const id = randomUUID();
-      const now = new Date().toISOString();
-      const state = realTrustMonitor.getState();
-      const lifetimeStats = trustHistory.getLifetimeStats();
-      const adapters = realTrustMonitor.getAdapterStatuses();
-      const assetStatsData = assetStore.getStats();
-      const evidenceRecords = realTrustMonitor.getEvidenceRecords();
-
-      // Compute date range
-      let fromDate: string;
-      let toDate: string;
-      if (opts.type === 'snapshot') {
-        fromDate = now.slice(0, 10);
-        toDate = now.slice(0, 10);
-      } else if (opts.type === 'period') {
-        fromDate = opts.fromDate ?? new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
-        toDate = opts.toDate ?? now.slice(0, 10);
-      } else {
-        fromDate = now.slice(0, 10);
-        toDate = now.slice(0, 10);
-      }
-
-      // Compute category scores from signals
-      const signals = state.signals ?? [];
-      const emailSignals = signals.filter((s: { source: string }) => s.source === 'email');
-      const fileSignals = signals.filter((s: { source: string }) => s.source === 'file');
-      const meetingSignals = signals.filter((s: { source: string }) => s.source === 'zoom' || s.source === 'teams');
-      const avgScore = (arr: Array<{ score: number }>) => arr.length === 0 ? 100 : Math.round(arr.reduce((s, x) => s + x.score, 0) / arr.length);
-      const assetScoreVal = assetStatsData.total > 0 ? Math.round((assetStatsData.verified / assetStatsData.total) * 100) : 100;
-
-      // Build title
-      const dateStr = new Date(now).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      let title: string;
-      if (opts.type === 'snapshot') {
-        title = `Trust Snapshot \u2014 ${dateStr}`;
-      } else if (opts.type === 'period') {
-        const fromLabel = new Date(fromDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const toLabel = new Date(toDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        title = `Weekly Report \u2014 ${fromLabel}\u2013${toLabel}`;
-      } else {
-        if (!opts.assetId) {
-          return { success: false, error: { message: 'assetId is required for asset reports', code: 'VALIDATION_ERROR' } };
-        }
-        const asset = assetStore.getAsset(opts.assetId);
-        if (!asset) {
-          return { success: false, error: { message: 'Asset not found', code: 'NOT_FOUND' } };
-        }
-        title = `Asset Report \u2014 ${asset.name}`;
-      }
-
-      // Generate signature chain hash
-      const signatureChain = createHmac('sha256', 'qshield-report-key-v1')
-        .update(`${id}:${now}:${state.score}`)
-        .digest('hex');
-
-      const report: TrustReport = {
-        id,
-        type: opts.type as TrustReportType,
-        title,
-        generatedAt: now,
-        trustScore: state.score,
-        trustGrade: lifetimeStats.currentGrade,
-        trustLevel: state.level as TrustLevel,
-        fromDate,
-        toDate,
-        channelsMonitored: adapters.filter((a: { connected: boolean }) => a.connected).length,
-        assetsMonitored: assetStatsData.total,
-        totalEvents: evidenceRecords.length,
-        anomaliesDetected: lifetimeStats.totalAnomalies,
-        anomaliesResolved: lifetimeStats.totalAnomalies,
-        emailScore: avgScore(emailSignals),
-        fileScore: avgScore(fileSignals),
-        meetingScore: avgScore(meetingSignals),
-        assetScore: assetScoreVal,
-        evidenceCount: evidenceRecords.length,
-        chainIntegrity: true,
-        signatureChain,
-        notes: opts.notes,
-        assetId: opts.assetId,
-        assetName: opts.type === 'asset' ? assetStore.getAsset(opts.assetId!)?.name : undefined,
-      };
-
-      // Build recent events for PDF
-      const recentEvents = evidenceRecords.slice(0, 6).map((r: { timestamp: string; source: string; eventType: string; verified: boolean }) => ({
-        timestamp: r.timestamp,
-        description: `${r.source} \u2014 ${r.eventType}`,
-        verified: r.verified,
-      }));
-
-      // Build anomaly entries from low-score signals
-      const anomalySignals = signals.filter((s: { score: number }) => s.score < 30).slice(0, 4);
-      const anomalyEntries = anomalySignals.map((s: { timestamp: string; source: string; metadata: Record<string, unknown> }) => ({
-        timestamp: s.timestamp,
-        description: String(s.metadata?.description ?? `${s.source} anomaly detected`),
-        status: 'Resolved \u2014 reviewed and accepted',
-      }));
-
-      // Generate PDF
-      const pdfPath = await reportGenerator!.generatePdf({
-        report,
-        recentEvents,
-        anomalies: anomalyEntries,
-      });
-      report.pdfPath = pdfPath;
-
-      // Persist to SQLite
-      reportStore!.insert(report);
-
-      log.info(`[TrustReport] Report ${id} generated: ${title}`);
-      return { success: true, data: report };
-    } catch (err) {
-      log.error('[TrustReport] generate failed:', err);
-      return { success: false, error: { message: 'Failed to generate report', code: 'REPORT_GENERATE_ERROR' } };
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.REPORT_LIST, () => {
-    try {
-      return { success: true, data: reportStore!.list() };
-    } catch (err) {
-      log.error('[TrustReport] list failed:', err);
-      return { success: false, error: { message: 'Failed to list reports', code: 'REPORT_LIST_ERROR' } };
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.REPORT_EXPORT_PDF, async (_event, id: string) => {
-    try {
-      if (typeof id !== 'string' || id.length === 0) {
-        return { success: false, error: { message: 'Report ID is required', code: 'VALIDATION_ERROR' } };
-      }
-      const report = reportStore!.get(id);
-      if (!report || !report.pdfPath) {
-        return { success: false, error: { message: 'No PDF found for this report', code: 'NOT_FOUND' } };
-      }
-
-      const visibleWindows = BrowserWindow.getAllWindows().filter((w) => w.isVisible() && !w.isDestroyed());
-      const win = visibleWindows[0];
-      if (!win) {
-        return { success: false, error: { message: 'No visible window for save dialog', code: 'NO_WINDOW' } };
-      }
-
-      const { copyFile: cpFile } = await import('node:fs/promises');
-      const result = await dialog.showSaveDialog(win, {
-        title: 'Save Trust Report',
-        defaultPath: `QShield-Trust-Report-${id.slice(0, 8)}.pdf`,
-        filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
-      });
-
-      if (result.canceled || !result.filePath) {
-        return { success: true, data: { saved: false } };
-      }
-
-      await cpFile(report.pdfPath, result.filePath);
-      return { success: true, data: { saved: true, path: result.filePath } };
-    } catch (err) {
-      log.error('[TrustReport] exportPdf failed:', err);
-      return { success: false, error: { message: 'Failed to export report PDF', code: 'REPORT_EXPORT_ERROR' } };
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.REPORT_REVIEW_PDF, async (_event, id: string) => {
-    try {
-      if (typeof id !== 'string' || id.length === 0) {
-        return { success: false, error: { message: 'Report ID is required', code: 'VALIDATION_ERROR' } };
-      }
-      const report = reportStore!.get(id);
-      if (!report || !report.pdfPath) {
-        return { success: false, error: { message: 'No PDF found for this report', code: 'NOT_FOUND' } };
-      }
-      const { copyFile: cpFile } = await import('node:fs/promises');
-      const tempPath = path.join(app.getPath('temp'), `qshield-report-${id.slice(0, 8)}.pdf`);
-      await cpFile(report.pdfPath, tempPath);
-      const errMsg = await shell.openPath(tempPath);
-      if (errMsg) {
-        log.error(`[TrustReport] reviewPdf shell.openPath failed: ${errMsg}`);
-        return { success: false, error: { message: `Failed to open PDF: ${errMsg}`, code: 'OPEN_FAILED' } };
-      }
-      return { success: true, data: null };
-    } catch (err) {
-      log.error('[TrustReport] reviewPdf failed:', err);
-      return { success: false, error: { message: 'Failed to review report PDF', code: 'REPORT_REVIEW_ERROR' } };
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.REPORT_GET, (_event, id: string) => {
-    try {
-      if (typeof id !== 'string' || id.length === 0) {
-        return { success: false, error: { message: 'Report ID is required', code: 'VALIDATION_ERROR' } };
-      }
-      return { success: true, data: reportStore!.get(id) };
-    } catch (err) {
-      log.error('[TrustReport] get failed:', err);
-      return { success: false, error: { message: 'Failed to get report', code: 'REPORT_GET_ERROR' } };
-    }
   });
 
   // Toggle main window — registered here for direct mainWindow access

@@ -182,6 +182,12 @@ export interface ServiceRegistry {
     changeLog: (id: string, limit?: number) => unknown;
     browse: (type: 'file' | 'directory') => Promise<string | null>;
   };
+  reportService: {
+    generate: (opts: { type: string; fromDate?: string; toDate?: string; assetId?: string; notes?: string }) => Promise<unknown>;
+    list: () => unknown;
+    get: (id: string) => unknown;
+    getPdfPath: (id: string) => string | null;
+  };
 }
 
 // ── Rate limiter ─────────────────────────────────────────────────────────────
@@ -221,6 +227,7 @@ const RATE_LIMITS: Partial<Record<string, { maxCalls: number; windowMs: number }
   [IPC_CHANNELS.EVIDENCE_EXPORT]: { maxCalls: 1, windowMs: 60_000 },
   [IPC_CHANNELS.CONFIG_SET]: { maxCalls: 10, windowMs: 60_000 },
   [IPC_CHANNELS.EMAIL_NOTIFY_TEST]: { maxCalls: 1, windowMs: 60_000 },
+  [IPC_CHANNELS.REPORT_GENERATE]: { maxCalls: 1, windowMs: 60_000 },
 };
 
 // ── Handler wrapper ──────────────────────────────────────────────────────────
@@ -946,6 +953,100 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
 
   wrapHandler(IPC_CHANNELS.EMAIL_NOTIFY_TEST, async () => {
     return ok(await services.emailNotifier.sendTest());
+  });
+
+  // ── Trust Profile (aliases for trustHistory) ───────────────────────
+  wrapHandler(IPC_CHANNELS.TRUST_PROFILE, async () => {
+    return ok(services.trustHistory.getLifetimeStats());
+  });
+
+  wrapHandler(IPC_CHANNELS.TRUST_HISTORY, async (_event, days) => {
+    const validDays = typeof days === 'number' && days > 0 ? days : 7;
+    return ok(services.trustHistory.getScoreHistory(validDays));
+  });
+
+  wrapHandler(IPC_CHANNELS.TRUST_MILESTONES, async () => {
+    return ok(services.trustHistory.getMilestones());
+  });
+
+  wrapHandler(IPC_CHANNELS.TRUST_DAILY_SUMMARIES, async (_event, from, to) => {
+    const validFrom = validateString(from, 'from');
+    const validTo = validateString(to, 'to');
+    return ok(services.trustHistory.getDailySummaries(validFrom, validTo));
+  });
+
+  // ── Trust Reports ──────────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.REPORT_GENERATE, async (_event, opts) => {
+    if (!opts || typeof opts !== 'object') {
+      return fail('VALIDATION_ERROR', 'Report options are required');
+    }
+    const { type, fromDate, toDate, assetId, notes } = opts as Record<string, unknown>;
+    const validTypes = ['snapshot', 'period', 'asset'];
+    if (typeof type !== 'string' || !validTypes.includes(type)) {
+      return fail('VALIDATION_ERROR', 'type must be "snapshot", "period", or "asset"');
+    }
+    const report = await services.reportService.generate({
+      type: type as string,
+      fromDate: typeof fromDate === 'string' ? fromDate : undefined,
+      toDate: typeof toDate === 'string' ? toDate : undefined,
+      assetId: typeof assetId === 'string' ? assetId : undefined,
+      notes: typeof notes === 'string' ? notes : undefined,
+    });
+    return ok(report);
+  });
+
+  wrapHandler(IPC_CHANNELS.REPORT_LIST, async () => {
+    return ok(services.reportService.list());
+  });
+
+  wrapHandler(IPC_CHANNELS.REPORT_GET, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    return ok(services.reportService.get(validId));
+  });
+
+  wrapHandler(IPC_CHANNELS.REPORT_EXPORT_PDF, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    const pdfPath = services.reportService.getPdfPath(validId);
+    if (!pdfPath) {
+      return fail('NOT_FOUND', 'No PDF found for this report');
+    }
+
+    const visibleWindows = BrowserWindow.getAllWindows().filter((w) => w.isVisible() && !w.isDestroyed());
+    const win = visibleWindows[0];
+    if (!win) {
+      return fail('NO_WINDOW', 'No visible window for save dialog');
+    }
+
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Save Trust Report',
+      defaultPath: `QShield-Trust-Report-${validId.slice(0, 8)}.pdf`,
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return ok({ saved: false });
+    }
+
+    await copyFile(pdfPath, result.filePath);
+    log.info(`REPORT_EXPORT_PDF: PDF exported to ${result.filePath}`);
+    return ok({ saved: true, path: result.filePath });
+  });
+
+  wrapHandler(IPC_CHANNELS.REPORT_REVIEW_PDF, async (_event, id) => {
+    const validId = validateString(id, 'id');
+    const pdfPath = services.reportService.getPdfPath(validId);
+    if (!pdfPath) {
+      return fail('NOT_FOUND', 'No PDF found for this report');
+    }
+
+    const tempPath = join(app.getPath('temp'), `qshield-report-${validId.slice(0, 8)}.pdf`);
+    await copyFile(pdfPath, tempPath);
+    const errMsg = await shell.openPath(tempPath);
+    if (errMsg) {
+      log.error(`REPORT_REVIEW_PDF: shell.openPath failed: ${errMsg}`);
+      return fail('OPEN_FAILED', `Failed to open PDF: ${errMsg}`);
+    }
+    return ok(null);
   });
 
   log.info('All IPC handlers registered');

@@ -45,6 +45,21 @@ const SYSTEM_MODULES = [
 export default function Dashboard() {
   const { score, level, lastUpdated, loading, sessionId, uptime, connected } = useTrustState();
   const [dimensions] = useState<TrustDimensions>(() => deriveDimensions(75));
+  const [trustReputation, setTrustReputation] = useState<{
+    currentGrade: string;
+    trend: 'improving' | 'stable' | 'declining';
+    currentStreak: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isIPCAvailable()) {
+      setTrustReputation({ currentGrade: 'B+', trend: 'improving', currentStreak: 5 });
+      return;
+    }
+    window.qshield.trustHistory.getLifetimeStats()
+      .then((s) => setTrustReputation(s as typeof trustReputation))
+      .catch(() => {});
+  }, []);
 
   if (loading) return <SkeletonDashboard />;
 
@@ -109,17 +124,31 @@ export default function Dashboard() {
             color="slate"
           />
           <StatCard
-            label="Session ID"
-            value={sessionId?.slice(0, 8) ?? '--'}
-            sublabel="Active session"
-            color="slate"
-            mono
+            label="Grade"
+            value={trustReputation?.currentGrade ?? '--'}
+            sublabel="Trust reputation"
+            color={
+              trustReputation?.currentGrade?.startsWith('A') ? 'emerald'
+              : trustReputation?.currentGrade?.startsWith('B') ? 'sky'
+              : trustReputation?.currentGrade?.startsWith('C') ? 'amber'
+              : trustReputation?.currentGrade ? 'red'
+              : 'slate'
+            }
           />
           <StatCard
-            label="Last Update"
-            value={lastUpdated ? formatRelativeTime(lastUpdated) : '--'}
-            sublabel="Trust state"
-            color="slate"
+            label="Trend"
+            value={
+              trustReputation?.trend === 'improving' ? '\u2191 Improving'
+              : trustReputation?.trend === 'declining' ? '\u2193 Declining'
+              : trustReputation?.trend === 'stable' ? '\u2192 Stable'
+              : '--'
+            }
+            sublabel={trustReputation ? `${trustReputation.currentStreak} day streak` : 'Loading...'}
+            color={
+              trustReputation?.trend === 'improving' ? 'emerald'
+              : trustReputation?.trend === 'declining' ? 'amber'
+              : 'sky'
+            }
           />
         </div>
       </div>
