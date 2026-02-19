@@ -7,6 +7,7 @@ import { ADAPTER_LABELS } from '@/lib/constants';
 import { isIPCAvailable } from '@/lib/mock-data';
 import type { PolicyRule, AdapterType } from '@qshield/core';
 import { NavLink } from 'react-router-dom';
+import useLicenseStore from '@/stores/license-store';
 import { DevEditionSwitcher } from '@/components/account/DevEditionSwitcher';
 import { BrowserExtensionSection } from './BrowserExtensionSection';
 import { EmailNotificationSettings } from './EmailNotificationSettings';
@@ -18,6 +19,7 @@ import { LicenseSettings } from './LicenseSettings';
  */
 export default function Settings() {
   const { config, policyRules, loading, error, fetchConfig, updateConfig, addPolicyRule, updatePolicyRule, removePolicyRule } = useConfigStore();
+  const canEmailNotify = useLicenseStore((s) => s.features.emailNotifications);
 
   const [gatewayUrl, setGatewayUrl] = useState('');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -271,7 +273,27 @@ export default function Settings() {
       </SettingsSection>
 
       {/* Email Notifications */}
-      <EmailNotificationSettings />
+      {canEmailNotify ? (
+        <EmailNotificationSettings />
+      ) : (
+        <SettingsSection title="Email Notifications" description="Get notified about trust events via email">
+          <div className="rounded-lg bg-slate-800/50 border border-slate-700 p-6 text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-slate-700/50">
+              <svg className="h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </div>
+            <p className="text-sm text-slate-300 font-medium">Feature Locked</p>
+            <p className="text-xs text-slate-500 mt-1">Upgrade to <span className="text-sky-400 font-medium">Pro</span> to receive email alerts for trust score drops, asset changes, and SPF/DKIM failures</p>
+            <NavLink
+              to="/account"
+              className="mt-3 inline-block rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 transition-colors"
+            >
+              Upgrade
+            </NavLink>
+          </div>
+        </SettingsSection>
+      )}
 
       {/* Shield Overlay */}
       <SettingsSection title="Shield Overlay" description="Floating shield indicator showing real-time trust status">

@@ -1538,11 +1538,6 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Start monitoring (async, fire-and-forget)
-  realTrustMonitor.start().catch((err) => {
-    log.error('[TrustMonitor] Failed to start:', err);
-  });
-
   // Wire asset change events to renderer push notifications
   assetMonitor.onAssetChange((changeEvent, asset) => {
     const safeData = JSON.parse(JSON.stringify({ event: changeEvent, asset }));
@@ -1566,6 +1561,13 @@ app.whenReady().then(async () => {
   // Register IPC handlers
   services = createServiceRegistry(configManager, realTrustMonitor, assetMonitor, assetStore);
   registerIpcHandlers(services);
+
+  // Apply license-based adapter limit and start monitoring
+  const licenseFeatures = (services.licenseManager.getLicense() as { features: { maxAdapters: number } }).features;
+  realTrustMonitor.setMaxAdapters(licenseFeatures.maxAdapters);
+  realTrustMonitor.start().catch((err) => {
+    log.error('[TrustMonitor] Failed to start:', err);
+  });
 
   // Connect email notifier to alert pipeline
   realTrustMonitor.connectEmailNotifier(services.emailNotifier as import('./services/email-notifier').EmailNotifierService);

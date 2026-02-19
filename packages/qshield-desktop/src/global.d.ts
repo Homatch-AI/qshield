@@ -437,6 +437,11 @@ interface QShieldSecurityAPI {
   keyStatus(): Promise<{ initialized: boolean; safeStorageAvailable: boolean; backend: string }>;
 }
 
+interface QShieldFeaturesAPI {
+  check(feature: string): Promise<{ allowed: boolean }>;
+  flags(): Promise<QShieldFeatureFlags>;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -450,6 +455,7 @@ interface QShieldAPI {
   verification: QShieldVerificationAPI;
   crypto: QShieldCryptoAPI;
   license: QShieldLicenseAPI;
+  features: QShieldFeaturesAPI;
   secureMessage: QShieldSecureMessageAPI;
   api: QShieldApiInfoAPI;
   gmail: QShieldGmailAPI;

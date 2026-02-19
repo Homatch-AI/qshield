@@ -391,6 +391,14 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<unknown>(IPC_CHANNELS.FEATURE_FLAGS),
   },
 
+  features: {
+    check: (feature: string): Promise<{ allowed: boolean }> =>
+      invoke<{ allowed: boolean }>(IPC_CHANNELS.FEATURE_CHECK, feature),
+
+    flags: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.FEATURE_FLAGS),
+  },
+
   api: {
     getInfo: (): Promise<{ port: number; token: string; running: boolean }> =>
       invoke<{ port: number; token: string; running: boolean }>(IPC_CHANNELS.API_GET_INFO),

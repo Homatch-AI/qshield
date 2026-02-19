@@ -765,6 +765,13 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     if (!sensitivity || typeof sensitivity !== 'string' || !validSensitivities.includes(sensitivity)) {
       return fail('VALIDATION_ERROR', 'sensitivity must be "normal", "strict", or "critical"');
     }
+    // Feature gate: check asset limit
+    const license = services.licenseManager.getLicense() as { features: { maxHighTrustAssets: number } };
+    const currentAssets = services.assetService.list() as unknown[];
+    const maxAssets = license.features.maxHighTrustAssets;
+    if (currentAssets.length >= maxAssets) {
+      return fail('FEATURE_LIMIT', `Your plan allows ${maxAssets} high-trust asset${maxAssets !== 1 ? 's' : ''}. Upgrade to add more.`);
+    }
     const result = await services.assetService.add(
       assetPath as string,
       type as 'file' | 'directory',
@@ -865,6 +872,10 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
   });
 
   wrapHandler(IPC_CHANNELS.EMAIL_NOTIFY_SET_CONFIG, async (_event, config) => {
+    // Feature gate: check emailNotifications
+    if (!services.licenseManager.hasFeature('emailNotifications')) {
+      return fail('FEATURE_LOCKED', 'Email notifications require a Pro plan or higher.');
+    }
     services.emailNotifier.setConfig(config as Record<string, unknown>);
     return ok(null);
   });
@@ -910,6 +921,13 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     const validTypes = ['snapshot', 'period', 'asset'];
     if (typeof type !== 'string' || !validTypes.includes(type)) {
       return fail('VALIDATION_ERROR', 'type must be "snapshot", "period", or "asset"');
+    }
+    // Feature gate: check report type access
+    if (type === 'period' && !services.licenseManager.hasFeature('trustReports')) {
+      return fail('FEATURE_LOCKED', 'Period reports require a Pro plan or higher.');
+    }
+    if (type === 'asset' && !services.licenseManager.hasFeature('assetReports')) {
+      return fail('FEATURE_LOCKED', 'Asset reports require a Business plan or higher.');
     }
     const report = await services.reportService.generate({
       type: type as string,

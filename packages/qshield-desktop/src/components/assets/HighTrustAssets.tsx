@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { NavLink } from 'react-router-dom';
 import { useAssetStore } from '@/stores/asset-store';
-import useLicenseStore from '@/stores/license-store';
+import useLicenseStore, { EDITION_LABELS } from '@/stores/license-store';
 import { AssetCard } from './AssetCard';
 import { AddAssetDialog } from './AddAssetDialog';
 
@@ -15,6 +16,7 @@ export default function HighTrustAssets() {
   const subscribe = useAssetStore((s) => s.subscribe);
 
   const maxAssets = useLicenseStore((s) => s.features.maxHighTrustAssets);
+  const tier = useLicenseStore((s) => s.tier);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const atLimit = assets.length >= maxAssets;
@@ -51,6 +53,22 @@ export default function HighTrustAssets() {
           Add Asset
         </button>
       </div>
+
+      {/* Upgrade banner when at asset limit */}
+      {atLimit && (
+        <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 flex items-center gap-3">
+          <svg className="h-5 w-5 text-amber-400 shrink-0" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+          </svg>
+          <div className="flex-1">
+            <span className="text-sm font-medium text-amber-400">Asset limit reached</span>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Your {EDITION_LABELS[tier] ?? tier} plan supports {maxAssets} asset{maxAssets !== 1 ? 's' : ''}.
+              <NavLink to="/settings" className="text-sky-400 hover:text-sky-300 ml-1">Upgrade your plan</NavLink> to monitor more.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

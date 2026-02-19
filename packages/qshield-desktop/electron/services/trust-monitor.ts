@@ -79,6 +79,7 @@ export class TrustMonitor {
   private assetStoreRef: AssetStore | null = null;
   private emailNotifierRef: EmailNotifierService | null = null;
   private hmacKey: string;
+  private maxAdapters = 6;
 
   /**
    * Create a new TrustMonitor with all adapters and a policy enforcer.
@@ -95,15 +96,17 @@ export class TrustMonitor {
     // GoogleAuthService is required by EmailAdapter; create a default if not provided
     const authService = googleAuth ?? (new (require('./google-auth').GoogleAuthService)() as GoogleAuthService);
 
+    // Priority order for adapter limiting: file > email > zoom > teams > api.
+    // When maxAdapters < total, only the highest-priority adapters start.
+    // FileWatcherAdapter disabled — chokidar opens thousands of FDs on
+    // large directories, exhausting the FD pool and causing EBADF errors
+    // for all other adapters that use execSync (Zoom, Teams).
     this.adapters = [
-      new ZoomAdapter(),
-      new TeamsAdapter(),
-      new EmailAdapter(authService),  // REAL — needs GoogleAuthService
-      // FileWatcherAdapter disabled — chokidar opens thousands of FDs on
-      // large directories, exhausting the FD pool and causing EBADF errors
-      // for all other adapters that use execSync (Zoom, Teams).
-      // new FileWatcherAdapter(),
-      new ApiListenerAdapter(),
+      // new FileWatcherAdapter(),  // priority 1 (disabled)
+      new EmailAdapter(authService),  // priority 2 — needs GoogleAuthService
+      new ZoomAdapter(),              // priority 3
+      new TeamsAdapter(),             // priority 4
+      new ApiListenerAdapter(),       // priority 5
     ];
 
     // Initialize with a baseline trust state (neutral score)
@@ -121,6 +124,16 @@ export class TrustMonitor {
   }
 
   /**
+   * Set the maximum number of adapters to start based on the license tier.
+   * Adapters beyond this limit will be created but not started.
+   * @param max - maximum adapters to start (default: 6 = all)
+   */
+  setMaxAdapters(max: number): void {
+    this.maxAdapters = max;
+    log.info(`[TrustMonitor] Max adapters set to ${max}`);
+  }
+
+  /**
    * Initialize and start all adapters, begin monitoring.
    * Subscribes to adapter events and starts event generation.
    */
@@ -130,9 +143,11 @@ export class TrustMonitor {
       return;
     }
 
-    log.info('[TrustMonitor] Starting all adapters...');
+    log.info(`[TrustMonitor] Starting adapters (max: ${this.maxAdapters} of ${this.adapters.length})...`);
 
-    for (const adapter of this.adapters) {
+    const adaptersToStart = this.adapters.slice(0, this.maxAdapters);
+
+    for (const adapter of adaptersToStart) {
       try {
         adapter.onEvent((event: AdapterEvent) => {
           this.handleAdapterEvent(event);
