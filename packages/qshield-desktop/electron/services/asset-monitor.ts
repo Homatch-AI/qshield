@@ -71,12 +71,11 @@ export class AssetMonitor {
     this.watcher = chokidar.watch(paths, {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
-      depth: 2,
-      usePolling: true,
-      interval: 5000,
+      depth: 5,
     });
 
     this.watcher
+      .on('ready', () => log.info('[AssetMonitor] Chokidar ready — real-time watching active'))
       .on('change', (filePath) => this.handleChange(filePath, 'asset-modified'))
       .on('add', (filePath) => this.handleChange(filePath, 'asset-created'))
       .on('unlink', (filePath) => this.handleChange(filePath, 'asset-deleted'))
@@ -187,18 +186,30 @@ export class AssetMonitor {
         const newScore = Math.max(0, asset.trustScore + impact);
         this.store.updateTrustScore(id, newScore);
 
-        // Gather forensics for the detected change
-        const previousSnapshot = this.snapshots.get(asset.path);
+        // For directories, find which files recently changed
+        let recentlyChanged: string[] = [];
+        if (asset.type === 'directory') {
+          recentlyChanged = await this.findRecentlyChangedFiles(asset.path);
+        }
+
+        // Run forensics on the first changed file (or the asset path itself)
+        const forensicsTarget = recentlyChanged.length > 0 ? recentlyChanged[0] : asset.path;
+        const previousSnapshot = this.snapshots.get(forensicsTarget);
         let forensics;
         try {
-          forensics = await enrichFileChange(asset.path, 'asset-modified', previousSnapshot);
+          forensics = await enrichFileChange(forensicsTarget, 'asset-modified', previousSnapshot);
         } catch (err) {
           log.warn(`[AssetMonitor] Forensics enrichment failed for ${asset.name}:`, err);
         }
 
+        const changedFileName = recentlyChanged.length > 0
+          ? path.basename(recentlyChanged[0])
+          : path.basename(asset.path);
+        const changedFileNames = recentlyChanged.map((f) => path.basename(f)).slice(0, 10);
+
         const changeEvent: AssetChangeEvent = {
           assetId: asset.id,
-          path: asset.path,
+          path: recentlyChanged.length > 0 ? recentlyChanged[0] : asset.path,
           sensitivity: asset.sensitivity,
           eventType: 'asset-modified',
           previousHash: asset.contentHash,
@@ -207,9 +218,17 @@ export class AssetMonitor {
           trustStateAfter: 'changed',
           timestamp: new Date().toISOString(),
           metadata: {
-            fileName: path.basename(asset.path),
-            relativePath: '',
+            fileName: changedFileName,
+            relativePath: recentlyChanged.length > 0
+              ? path.relative(asset.path, recentlyChanged[0])
+              : '',
+            isHighTrustAsset: true,
+            changedFile: recentlyChanged.length > 0 ? recentlyChanged[0] : asset.path,
+            changedFileName,
+            ...(asset.type === 'directory' ? { directoryName: path.basename(asset.path) } : {}),
             detectedBy: 'periodic-verify',
+            changedFileCount: recentlyChanged.length,
+            changedFileNames,
             ...(forensics ? { forensics } : {}),
           },
         };
@@ -313,6 +332,10 @@ export class AssetMonitor {
     }
 
     // Build the change event
+    const isDirectory = asset.type === 'directory';
+    const changedFileName = path.basename(filePath);
+    const relativePath = isDirectory ? path.relative(asset.path, filePath) : '';
+
     const changeEvent: AssetChangeEvent = {
       assetId: asset.id,
       path: filePath,
@@ -324,8 +347,13 @@ export class AssetMonitor {
       trustStateAfter,
       timestamp: new Date().toISOString(),
       metadata: {
-        fileName: path.basename(filePath),
-        relativePath: path.relative(asset.path, filePath),
+        fileName: changedFileName,
+        relativePath,
+        isHighTrustAsset: true,
+        changedFile: filePath,
+        changedFileName,
+        ...(isDirectory ? { directoryName: path.basename(asset.path) } : {}),
+        detectedBy: 'real-time',
         ...(forensics ? { forensics } : {}),
       },
     };
@@ -493,6 +521,48 @@ export class AssetMonitor {
       }
     }
     return files;
+  }
+
+  // -----------------------------------------------------------------------
+  // Directory change detection
+  // -----------------------------------------------------------------------
+
+  /**
+   * Scan a directory for files modified within the last 5 minutes.
+   * Used by periodic verify to identify which specific files changed.
+   */
+  private async findRecentlyChangedFiles(dirPath: string): Promise<string[]> {
+    const fiveMinAgo = Date.now() - 300_000;
+    const changed: string[] = [];
+    const MAX_DEPTH = 3;
+
+    const scan = async (dir: string, depth: number): Promise<void> => {
+      if (depth > MAX_DEPTH) return;
+      let entries: fs.Dirent[];
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory() && !entry.isSymbolicLink()) {
+          await scan(full, depth + 1);
+        } else if (entry.isFile()) {
+          try {
+            const s = await fs.promises.stat(full);
+            if (s.mtimeMs > fiveMinAgo) {
+              changed.push(full);
+            }
+          } catch { /* skip unreadable */ }
+        }
+      }
+    };
+
+    await scan(dirPath, 0);
+    // Sort most-recently-modified first
+    return changed.sort((a, b) => b.localeCompare(a)).slice(0, 20);
   }
 
   // -----------------------------------------------------------------------

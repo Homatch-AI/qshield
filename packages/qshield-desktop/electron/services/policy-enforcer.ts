@@ -130,8 +130,8 @@ export class PolicyEnforcer {
       const forensicsRaw = meta?.forensics as Record<string, unknown> | undefined;
       const sourceMetadata = meta
         ? {
-            fileName: (meta.assetName ?? meta.fileName) as string | undefined,
-            filePath: (meta.path ?? meta.fullPath) as string | undefined,
+            fileName: (meta.changedFileName ?? meta.fileName) as string | undefined,
+            filePath: (meta.changedFile ?? meta.path ?? meta.fullPath) as string | undefined,
             fileSize: meta.size as number | undefined,
             fileHash: (meta.newHash ?? meta.sha256) as string | undefined,
             operation: meta.eventType as string | undefined,
@@ -144,7 +144,17 @@ export class PolicyEnforcer {
       const descParts: string[] = [];
       if (forensicsRaw?.owner) descParts.push(`User: ${forensicsRaw.owner}`);
       if (forensicsRaw?.modifiedBy) descParts.push(`App: ${forensicsRaw.modifiedBy}`);
-      if (meta?.assetName || meta?.fileName) descParts.push(`File: ${meta.assetName ?? meta.fileName}`);
+      // Show the actual changed file, then the asset/directory name if different
+      const changedFile = meta?.changedFileName ?? meta?.fileName;
+      const assetName = meta?.assetName ?? meta?.directoryName;
+      if (changedFile) {
+        descParts.push(`File: ${changedFile}`);
+        if (assetName && assetName !== changedFile) {
+          descParts.push(`Asset: ${assetName}`);
+        }
+      } else if (assetName) {
+        descParts.push(`Asset: ${assetName}`);
+      }
       if (meta?.eventType) descParts.push(`Event: ${meta.eventType}`);
       const description = descParts.length > 0
         ? descParts.join(' | ')

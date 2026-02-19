@@ -132,96 +132,153 @@ function EmailDetails({ meta }: { meta: AlertSourceMetadata }) {
 
 function FileDetails({ meta }: { meta: AlertSourceMetadata }) {
   const f = meta.forensics;
+  const raw = meta.rawEvent as Record<string, unknown> | undefined;
+  const isHighTrust = Boolean(raw?.isHighTrustAsset);
+  const directoryName = raw?.directoryName as string | undefined;
+  const changedFileName = (raw?.changedFileName ?? meta.fileName) as string | undefined;
+  const relativePath = raw?.relativePath as string | undefined;
+  const detectedBy = raw?.detectedBy as string | undefined;
+  const changedFileCount = raw?.changedFileCount as number | undefined;
+  const changedFileNames = raw?.changedFileNames as string[] | undefined;
 
   return (
-    <div className="divide-y divide-slate-700/30">
-      {/* WHO — show forensics owner/process first when available */}
-      {f?.owner && (
-        <DetailRow
-          label="Who"
-          value={
-            <span>
-              <span className="font-medium text-slate-100">{f.owner}</span>
-              {f.modifiedBy && (
-                <>
-                  <span className="text-slate-600 mx-1">via</span>
-                  <span className="font-medium text-sky-400">{f.modifiedBy}</span>
-                </>
-              )}
-              {f.pid != null && (
-                <span className="text-slate-600 ml-1">(PID {f.pid})</span>
-              )}
+    <div className="space-y-4">
+      <div className="divide-y divide-slate-700/30">
+        {/* WHO — show forensics owner/process first when available */}
+        {f?.owner && (
+          <DetailRow
+            label="Who"
+            value={
+              <span>
+                <span className="font-medium text-slate-100">{f.owner}</span>
+                {f.modifiedBy && (
+                  <>
+                    <span className="text-slate-600 mx-1">via</span>
+                    <span className="font-medium text-sky-400">{f.modifiedBy}</span>
+                  </>
+                )}
+                {f.pid != null && (
+                  <span className="text-slate-600 ml-1">(PID {f.pid})</span>
+                )}
+              </span>
+            }
+          />
+        )}
+
+        {/* WHERE */}
+        {changedFileName && <DetailRow label="File" value={changedFileName} />}
+        {directoryName && directoryName !== changedFileName && (
+          <DetailRow label="Asset" value={directoryName} />
+        )}
+        {meta.filePath && <DetailRow label="Path" value={<span className="font-mono">{meta.filePath}</span>} />}
+        {relativePath && relativePath !== changedFileName && (
+          <DetailRow label="Relative Path" value={<span className="font-mono">{relativePath}</span>} />
+        )}
+
+        {/* WHAT — operation + changed files */}
+        {meta.operation && (
+          <DetailRow
+            label="Event"
+            value={
+              <span className="inline-flex items-center rounded-full bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 text-[10px] font-medium text-orange-400">
+                {meta.operation}
+              </span>
+            }
+          />
+        )}
+
+        {/* Detection method */}
+        {detectedBy && (
+          <DetailRow
+            label="Detected By"
+            value={
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                detectedBy === 'real-time'
+                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                  : 'bg-slate-700/50 border border-slate-600/30 text-slate-400'
+              }`}>
+                {detectedBy === 'real-time' ? 'Real-time (chokidar)' : 'Periodic verification'}
+              </span>
+            }
+          />
+        )}
+
+        {f?.changedFiles && f.changedFiles.length > 0 && (
+          <div className="py-2">
+            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+              Changed Files
             </span>
-          }
-        />
-      )}
-
-      {/* WHERE */}
-      {meta.fileName && <DetailRow label="File" value={meta.fileName} />}
-      {meta.filePath && <DetailRow label="Path" value={<span className="font-mono">{meta.filePath}</span>} />}
-
-      {/* WHAT — operation + changed files */}
-      {meta.operation && (
-        <DetailRow
-          label="Event"
-          value={
-            <span className="inline-flex items-center rounded-full bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 text-[10px] font-medium text-orange-400">
-              {meta.operation}
-            </span>
-          }
-        />
-      )}
-
-      {f?.changedFiles && f.changedFiles.length > 0 && (
-        <div className="py-2">
-          <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
-            Changed Files
-          </span>
-          <div className="mt-1.5 space-y-1">
-            {f.changedFiles.map((cf, i) => {
-              const changeType = cf.changeType ?? '';
-              return (
-                <div key={i} className="flex items-center gap-2 rounded-md bg-slate-900/60 px-3 py-1.5 text-xs">
-                  <span className="text-base">
-                    {changeType.includes('deleted') ? '\uD83D\uDD34' : changeType.includes('created') ? '\uD83D\uDFE2' : '\uD83D\uDFE1'}
-                  </span>
-                  <span className="font-mono text-slate-300 truncate">{cf.fileName}</span>
-                  <span className="text-slate-500">&mdash;</span>
-                  <span className="text-slate-400">{changeType}</span>
-                  {cf.sizeChange != null && (
-                    <span className={`${cf.sizeChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      ({cf.sizeChange >= 0 ? '+' : ''}{cf.sizeChange} B)
+            <div className="mt-1.5 space-y-1">
+              {f.changedFiles.map((cf, i) => {
+                const changeType = cf.changeType ?? '';
+                return (
+                  <div key={i} className="flex items-center gap-2 rounded-md bg-slate-900/60 px-3 py-1.5 text-xs">
+                    <span className="text-base">
+                      {changeType.includes('deleted') ? '\uD83D\uDD34' : changeType.includes('created') ? '\uD83D\uDFE2' : '\uD83D\uDFE1'}
                     </span>
-                  )}
-                  {cf.lineCountChange != null && (
-                    <span className="text-slate-500">
-                      {cf.lineCountChange >= 0 ? '+' : ''}{cf.lineCountChange} lines
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+                    <span className="font-mono text-slate-300 truncate">{cf.fileName}</span>
+                    <span className="text-slate-500">&mdash;</span>
+                    <span className="text-slate-400">{changeType}</span>
+                    {cf.sizeChange != null && (
+                      <span className={`${cf.sizeChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        ({cf.sizeChange >= 0 ? '+' : ''}{cf.sizeChange} B)
+                      </span>
+                    )}
+                    {cf.lineCountChange != null && (
+                      <span className="text-slate-500">
+                        {cf.lineCountChange >= 0 ? '+' : ''}{cf.lineCountChange} lines
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
+        )}
+
+        {/* Periodic verify: list of recently changed files in directory */}
+        {changedFileNames && changedFileNames.length > 0 && (
+          <div className="py-2">
+            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+              Recently Changed Files {changedFileCount != null && changedFileCount > changedFileNames.length && `(${changedFileCount} total)`}
+            </span>
+            <div className="mt-1.5 space-y-1">
+              {changedFileNames.map((name, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-md bg-slate-900/60 px-3 py-1.5 text-xs">
+                  <span className="text-base">{'\uD83D\uDFE1'}</span>
+                  <span className="font-mono text-slate-300 truncate">{name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Summary */}
+        {f?.changeSummary && <DetailRow label="Summary" value={f.changeSummary} />}
+
+        {/* Metadata */}
+        {meta.fileSize != null && <DetailRow label="Size" value={formatFileSize(meta.fileSize)} />}
+        {meta.fileHash && (
+          <DetailRow
+            label="Hash"
+            value={<span className="font-mono text-[11px]">{truncateHash(meta.fileHash, 12)}</span>}
+          />
+        )}
+        {f?.filePermissions && <DetailRow label="Permissions" value={<span className="font-mono">{f.filePermissions}</span>} />}
+        {f?.isQuarantined && (
+          <DetailRow
+            label="Warning"
+            value={<span className="text-amber-400 font-medium">File downloaded from internet (quarantine flag)</span>}
+          />
+        )}
+      </div>
+
+      {/* Investigation panel for high-trust asset alerts */}
+      {isHighTrust && !f?.modifiedBy && (
+        <div className="rounded-md bg-slate-900/50 border border-slate-700/50 px-3 py-2 text-xs text-slate-500">
+          <span className="font-medium text-slate-400">Could not identify the process that made this change. </span>
+          <span>Common causes: Spotlight indexing, iCloud/Dropbox sync, Time Machine, macOS extended attributes, antivirus scanning</span>
         </div>
-      )}
-
-      {/* Summary */}
-      {f?.changeSummary && <DetailRow label="Summary" value={f.changeSummary} />}
-
-      {/* Metadata */}
-      {meta.fileSize != null && <DetailRow label="Size" value={formatFileSize(meta.fileSize)} />}
-      {meta.fileHash && (
-        <DetailRow
-          label="Hash"
-          value={<span className="font-mono text-[11px]">{truncateHash(meta.fileHash, 12)}</span>}
-        />
-      )}
-      {f?.filePermissions && <DetailRow label="Permissions" value={<span className="font-mono">{f.filePermissions}</span>} />}
-      {f?.isQuarantined && (
-        <DetailRow
-          label="Warning"
-          value={<span className="text-amber-400 font-medium">File downloaded from internet (quarantine flag)</span>}
-        />
       )}
     </div>
   );
