@@ -205,22 +205,39 @@ interface QShieldCryptoAPI {
   }>;
 }
 
-interface QShieldLicenseAPI {
-  get(): Promise<unknown>;
-  set(license: unknown): Promise<unknown>;
-  clear(): Promise<void>;
-  checkFeature(feature: string): Promise<unknown>;
-  loadMock(edition: string): Promise<unknown>;
+interface QShieldLicenseInfo {
+  tier: 'trial' | 'personal' | 'pro' | 'business' | 'enterprise';
+  email: string;
+  issuedAt: string;
+  expiresAt: string;
+  machineId: string;
+  isValid: boolean;
+  isExpired: boolean;
+  daysRemaining: number;
+  features: QShieldFeatureFlags;
 }
 
-interface QShieldAuthAPI {
-  login(email: string, password: string): Promise<{ user: { id: string; email: string; name: string; edition: string }; accessToken: string }>;
-  register(email: string, password: string, name: string): Promise<{ user: { id: string; email: string; name: string; edition: string }; accessToken: string }>;
-  logout(): Promise<void>;
-  getSession(): Promise<{ user: { id: string; email: string; name: string; edition: string }; expiresAt: number } | null>;
-  getUser(): Promise<{ id: string; email: string; name: string; edition: string } | null>;
-  restore(): Promise<boolean>;
-  switchEdition(edition: string): Promise<unknown>;
+interface QShieldFeatureFlags {
+  maxAdapters: number;
+  maxHighTrustAssets: number;
+  emailNotifications: boolean;
+  dailySummary: boolean;
+  trustReports: boolean;
+  assetReports: boolean;
+  trustProfile: boolean;
+  keyRotation: boolean;
+  apiAccess: boolean;
+  prioritySupport: boolean;
+  customBranding: boolean;
+}
+
+interface QShieldLicenseAPI {
+  get(): Promise<QShieldLicenseInfo>;
+  activate(key: string): Promise<QShieldLicenseInfo>;
+  deactivate(): Promise<QShieldLicenseInfo>;
+  generateTest(tier: string, days?: number): Promise<{ key: string }>;
+  checkFeature(feature: string): Promise<{ allowed: boolean }>;
+  getFlags(): Promise<QShieldFeatureFlags>;
 }
 
 interface QShieldSecureMessageAPI {
@@ -433,7 +450,6 @@ interface QShieldAPI {
   verification: QShieldVerificationAPI;
   crypto: QShieldCryptoAPI;
   license: QShieldLicenseAPI;
-  auth: QShieldAuthAPI;
   secureMessage: QShieldSecureMessageAPI;
   api: QShieldApiInfoAPI;
   gmail: QShieldGmailAPI;

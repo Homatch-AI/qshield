@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import useTrustStore from '@/stores/trust-store';
+import useLicenseStore from '@/stores/license-store';
 import { TRUST_LEVEL_COLORS } from '@/lib/constants';
 import { isIPCAvailable } from '@/lib/mock-data';
 
@@ -30,6 +31,8 @@ function toDateInput(date: Date): string {
 export function GenerateReport({ onClose, onGenerated }: GenerateReportProps) {
   const score = useTrustStore((s) => s.score);
   const level = useTrustStore((s) => s.level);
+  const canTrustReports = useLicenseStore((s) => s.features.trustReports);
+  const canAssetReports = useLicenseStore((s) => s.features.assetReports);
 
   const [reportType, setReportType] = useState<ReportType>('snapshot');
   const [dateFrom, setDateFrom] = useState(() => toDateInput(new Date(Date.now() - 7 * 86400000)));
@@ -113,23 +116,36 @@ export function GenerateReport({ onClose, onGenerated }: GenerateReportProps) {
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Report Type</label>
             <div className="mt-2 space-y-2">
-              {REPORT_TYPES.map((rt) => (
-                <button
-                  key={rt.type}
-                  type="button"
-                  onClick={() => setReportType(rt.type)}
-                  className={`w-full text-left rounded-lg border px-4 py-3 transition-colors ${
-                    reportType === rt.type
-                      ? 'border-sky-500 bg-sky-500/10'
-                      : 'border-slate-700 bg-slate-800/30 hover:bg-slate-800/60'
-                  }`}
-                >
-                  <span className={`text-sm font-medium ${reportType === rt.type ? 'text-sky-400' : 'text-slate-200'}`}>
-                    {rt.title}
-                  </span>
-                  <p className="text-xs text-slate-500 mt-0.5">{rt.description}</p>
-                </button>
-              ))}
+              {REPORT_TYPES.map((rt) => {
+                const locked =
+                  (rt.type === 'period' && !canTrustReports) ||
+                  (rt.type === 'asset' && !canAssetReports);
+                return (
+                  <button
+                    key={rt.type}
+                    type="button"
+                    onClick={() => !locked && setReportType(rt.type)}
+                    disabled={locked}
+                    className={`w-full text-left rounded-lg border px-4 py-3 transition-colors ${
+                      locked
+                        ? 'border-slate-700/50 bg-slate-800/20 opacity-60 cursor-not-allowed'
+                        : reportType === rt.type
+                          ? 'border-sky-500 bg-sky-500/10'
+                          : 'border-slate-700 bg-slate-800/30 hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <span className={`text-sm font-medium ${locked ? 'text-slate-400' : reportType === rt.type ? 'text-sky-400' : 'text-slate-200'}`}>
+                      {rt.title}
+                      {locked && (
+                        <span className="ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400">
+                          {rt.type === 'asset' ? 'Business' : 'Pro'}
+                        </span>
+                      )}
+                    </span>
+                    <p className="text-xs text-slate-500 mt-0.5">{rt.description}</p>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

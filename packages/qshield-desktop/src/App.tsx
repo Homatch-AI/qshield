@@ -4,7 +4,6 @@ import { Router } from '@/Router';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useDeepLink } from '@/hooks/useDeepLink';
 import useLicenseStore from '@/stores/license-store';
-import useAuthStore from '@/stores/auth-store';
 
 /** Handles main-process navigation events (tray menu, IPC) */
 function NavigationListener() {
@@ -18,8 +17,6 @@ function NavigationListener() {
  */
 export function App() {
   useEffect(() => {
-    // Attempt to restore a cached auth session on startup
-    useAuthStore.getState().restore();
     useLicenseStore.getState().fetchLicense();
   }, []);
 

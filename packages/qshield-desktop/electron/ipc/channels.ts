@@ -107,32 +107,18 @@ export const IPC_CHANNELS = {
   CRYPTO_CLIPBOARD_STATUS: 'crypto:clipboard-status',
 
   // ── License ──────────────────────────────────────────────────────────
-  /** Get the current license */
+  /** Get the current license info */
   LICENSE_GET: 'license:get',
-  /** Set (activate) a license */
-  LICENSE_SET: 'license:set',
-  /** Clear the active license */
-  LICENSE_CLEAR: 'license:clear',
-  /** Check whether a feature is available under the current license */
-  LICENSE_CHECK_FEATURE: 'license:check-feature',
-  /** Load a mock license for a given edition (dev only) */
-  LICENSE_LOAD_MOCK: 'license:load-mock',
-
-  // ── Auth ───────────────────────────────────────────────────────────────
-  /** Authenticate with email and password */
-  AUTH_LOGIN: 'auth:login',
-  /** Register a new account */
-  AUTH_REGISTER: 'auth:register',
-  /** Log out the current user */
-  AUTH_LOGOUT: 'auth:logout',
-  /** Get the current auth session */
-  AUTH_GET_SESSION: 'auth:get-session',
-  /** Get the current authenticated user */
-  AUTH_GET_USER: 'auth:get-user',
-  /** Restore a cached session on startup */
-  AUTH_RESTORE: 'auth:restore',
-  /** Switch the current user's edition (dev only) */
-  AUTH_SWITCH_EDITION: 'auth:switch-edition',
+  /** Activate a license key */
+  LICENSE_ACTIVATE: 'license:activate',
+  /** Deactivate the current license key */
+  LICENSE_DEACTIVATE: 'license:deactivate',
+  /** Generate a test license key (dev only) */
+  LICENSE_GENERATE_TEST: 'license:generate-test',
+  /** Check whether a specific feature is available */
+  FEATURE_CHECK: 'feature:check',
+  /** Get all feature flags for the current license */
+  FEATURE_FLAGS: 'feature:flags',
 
   // ── App ────────────────────────────────────────────────────────────────
   /** Get the application version string */

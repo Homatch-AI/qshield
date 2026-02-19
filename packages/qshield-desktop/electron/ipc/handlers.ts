@@ -117,20 +117,14 @@ export interface ServiceRegistry {
   };
   licenseManager: {
     getLicense: () => unknown;
-    setLicense: (license: unknown) => unknown;
-    clearLicense: () => unknown;
+    activate: (key: string) => unknown;
+    deactivate: () => unknown;
     hasFeature: (feature: string) => boolean;
-    getEdition: () => string;
-    loadMockLicense: (edition: string) => void;
+    getTier: () => string;
+    generateKey: (opts: { tier: string; email?: string; durationDays?: number }) => string;
   };
-  authService: {
-    login: (credentials: { email: string; password: string }) => Promise<unknown>;
-    register: (credentials: { email: string; password: string; name: string }) => Promise<unknown>;
-    logout: () => Promise<void>;
-    getSession: () => unknown;
-    getUser: () => unknown;
-    restore: () => Promise<boolean>;
-    switchEdition: (edition: string) => Promise<unknown>;
+  featureGate: {
+    getFeatures: () => unknown;
   };
   localApiManager: {
     getInfo: () => { port: number; token: string; running: boolean };
@@ -593,114 +587,35 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     return ok(services.licenseManager.getLicense());
   });
 
-  wrapHandler(IPC_CHANNELS.LICENSE_SET, async (_event, license) => {
-    if (!license || typeof license !== 'object') {
-      return fail('VALIDATION_ERROR', 'License object is required');
+  wrapHandler(IPC_CHANNELS.LICENSE_ACTIVATE, async (_event, key) => {
+    const validKey = validateString(key, 'key');
+    return ok(services.licenseManager.activate(validKey));
+  });
+
+  wrapHandler(IPC_CHANNELS.LICENSE_DEACTIVATE, async () => {
+    return ok(services.licenseManager.deactivate());
+  });
+
+  const validTiers = ['trial', 'personal', 'pro', 'business', 'enterprise'];
+
+  wrapHandler(IPC_CHANNELS.LICENSE_GENERATE_TEST, async (_event, tier, days) => {
+    if (typeof tier !== 'string' || !validTiers.includes(tier)) {
+      return fail('VALIDATION_ERROR', 'Tier must be "trial", "personal", "pro", "business", or "enterprise"');
     }
-    const result = services.licenseManager.setLicense(license);
-    return ok({ accepted: result, edition: services.licenseManager.getEdition() });
+    const durationDays = typeof days === 'number' && days > 0 ? days : 365;
+    const key = services.licenseManager.generateKey({ tier, durationDays });
+    return ok({ key });
   });
 
-  wrapHandler(IPC_CHANNELS.LICENSE_CLEAR, async () => {
-    services.licenseManager.clearLicense();
-    return ok(null);
-  });
-
-  wrapHandler(IPC_CHANNELS.LICENSE_CHECK_FEATURE, async (_event, feature) => {
+  wrapHandler(IPC_CHANNELS.FEATURE_CHECK, async (_event, feature) => {
     const validFeature = validateString(feature, 'feature');
     return ok({
-      feature: validFeature,
       allowed: services.licenseManager.hasFeature(validFeature),
-      edition: services.licenseManager.getEdition(),
     });
   });
 
-  // ── Auth ──────────────────────────────────────────────────────────────
-  wrapHandler(IPC_CHANNELS.AUTH_LOGIN, async (_event, credentials) => {
-    if (!credentials || typeof credentials !== 'object') {
-      return fail('VALIDATION_ERROR', 'Login credentials are required');
-    }
-    const { email, password } = credentials as { email?: string; password?: string };
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return fail('VALIDATION_ERROR', 'Valid email address is required');
-    }
-    if (!password || typeof password !== 'string' || password.length < 8) {
-      return fail('VALIDATION_ERROR', 'Password must be at least 8 characters');
-    }
-    try {
-      const session = await services.authService.login({ email, password });
-      services.licenseManager.loadMockLicense((session as { user: { edition: string } }).user.edition);
-      return ok(session);
-    } catch (err) {
-      return fail('AUTH_ERROR', err instanceof Error ? err.message : 'Login failed');
-    }
-  });
-
-  wrapHandler(IPC_CHANNELS.AUTH_REGISTER, async (_event, credentials) => {
-    if (!credentials || typeof credentials !== 'object') {
-      return fail('VALIDATION_ERROR', 'Registration credentials are required');
-    }
-    const { email, password, name } = credentials as { email?: string; password?: string; name?: string };
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return fail('VALIDATION_ERROR', 'Valid email address is required');
-    }
-    if (!password || typeof password !== 'string' || password.length < 8) {
-      return fail('VALIDATION_ERROR', 'Password must be at least 8 characters');
-    }
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return fail('VALIDATION_ERROR', 'Name is required');
-    }
-    try {
-      const session = await services.authService.register({ email, password, name });
-      services.licenseManager.loadMockLicense((session as { user: { edition: string } }).user.edition);
-      return ok(session);
-    } catch (err) {
-      return fail('AUTH_ERROR', err instanceof Error ? err.message : 'Registration failed');
-    }
-  });
-
-  wrapHandler(IPC_CHANNELS.AUTH_LOGOUT, async () => {
-    await services.authService.logout();
-    services.licenseManager.clearLicense();
-    return ok(null);
-  });
-
-  wrapHandler(IPC_CHANNELS.AUTH_GET_SESSION, async () => {
-    return ok(services.authService.getSession());
-  });
-
-  wrapHandler(IPC_CHANNELS.AUTH_GET_USER, async () => {
-    return ok(services.authService.getUser());
-  });
-
-  wrapHandler(IPC_CHANNELS.AUTH_RESTORE, async () => {
-    const restored = await services.authService.restore();
-    if (restored) {
-      const user = services.authService.getUser() as { edition: string } | null;
-      if (user) {
-        services.licenseManager.loadMockLicense(user.edition);
-      }
-    }
-    return ok(restored);
-  });
-
-  const validEditions = ['free', 'personal', 'business', 'enterprise'];
-
-  wrapHandler(IPC_CHANNELS.AUTH_SWITCH_EDITION, async (_event, edition) => {
-    if (typeof edition !== 'string' || !validEditions.includes(edition)) {
-      return fail('VALIDATION_ERROR', 'Edition must be "free", "personal", "business", or "enterprise"');
-    }
-    const session = await services.authService.switchEdition(edition);
-    services.licenseManager.loadMockLicense(edition);
-    return ok(session);
-  });
-
-  wrapHandler(IPC_CHANNELS.LICENSE_LOAD_MOCK, async (_event, edition) => {
-    if (typeof edition !== 'string' || !validEditions.includes(edition)) {
-      return fail('VALIDATION_ERROR', 'Edition must be "free", "personal", "business", or "enterprise"');
-    }
-    services.licenseManager.loadMockLicense(edition);
-    return ok(null);
+  wrapHandler(IPC_CHANNELS.FEATURE_FLAGS, async () => {
+    return ok(services.featureGate.getFeatures());
   });
 
   // ── Local API ───────────────────────────────────────────────────────
@@ -755,9 +670,9 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     if (typeof maxViews !== 'number' || maxViews < -1) {
       return fail('VALIDATION_ERROR', 'maxViews must be >= -1');
     }
-    const user = services.authService.getUser() as { name?: string; email?: string } | null;
-    const senderName = user?.name ?? 'QShield User';
-    const senderEmail = user?.email ?? 'user@qshield.io';
+    const licenseEmail = (services.licenseManager.getLicense() as { email?: string }).email;
+    const senderName = 'QShield User';
+    const senderEmail = licenseEmail || 'user@qshield.io';
     return ok(services.secureMessageService.create(
       { subject: subject as string, content: content as string, attachments: Array.isArray(attachments) ? attachments : undefined, expiresIn: expiresIn as string, maxViews: maxViews as number, requireVerification: !!requireVerification, allowedRecipients: Array.isArray(allowedRecipients) ? allowedRecipients : [] },
       senderName,
@@ -808,11 +723,11 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
       return fail('VALIDATION_ERROR', 'expiresIn must be one of: 1h, 24h, 7d, 30d');
     }
     const buf = Buffer.from(data as string, 'base64');
-    const user = services.authService.getUser() as { name?: string; email?: string } | null;
+    const licEmail = (services.licenseManager.getLicense() as { email?: string }).email;
     return ok(services.secureFileService.upload(
       { fileName: fileName as string, mimeType: (mimeType as string) || 'application/octet-stream', data: buf, expiresIn: expiresIn as '1h' | '24h' | '7d' | '30d', maxDownloads: typeof maxDownloads === 'number' ? maxDownloads : -1 },
-      user?.name ?? 'QShield User',
-      user?.email ?? 'user@qshield.io',
+      'QShield User',
+      licEmail || 'user@qshield.io',
     ));
   });
 

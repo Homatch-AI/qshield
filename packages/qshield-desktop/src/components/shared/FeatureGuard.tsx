@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import type { Feature } from '@/stores/license-store';
+import type { Feature, FeatureFlags } from '@/stores/license-store';
 import { getRequiredEdition, EDITION_LABELS } from '@/stores/license-store';
 import { useFeature } from '@/hooks/useFeature';
 import { UpgradeModal } from './UpgradeModal';
 
 interface FeatureGuardProps {
-  feature: Feature;
+  feature: Feature | keyof FeatureFlags;
   children: React.ReactNode;
   fallback?: React.ReactNode;
 }
@@ -19,8 +19,8 @@ export function FeatureGuard({ feature, children, fallback }: FeatureGuardProps)
 
   if (fallback) return <>{fallback}</>;
 
-  const requiredEdition = getRequiredEdition(feature);
-  const editionLabel = EDITION_LABELS[requiredEdition] ?? 'Business';
+  const requiredEdition = getRequiredEdition(feature as Feature);
+  const editionLabel = EDITION_LABELS[requiredEdition] ?? 'Pro';
 
   return (
     <>

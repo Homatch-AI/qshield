@@ -375,40 +375,20 @@ contextBridge.exposeInMainWorld('qshield', {
     get: (): Promise<unknown> =>
       invoke<unknown>(IPC_CHANNELS.LICENSE_GET),
 
-    set: (license: unknown): Promise<unknown> =>
-      invoke<unknown>(IPC_CHANNELS.LICENSE_SET, license),
+    activate: (key: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.LICENSE_ACTIVATE, key),
 
-    clear: (): Promise<null> =>
-      invoke<null>(IPC_CHANNELS.LICENSE_CLEAR),
+    deactivate: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.LICENSE_DEACTIVATE),
 
-    checkFeature: (feature: string): Promise<unknown> =>
-      invoke<unknown>(IPC_CHANNELS.LICENSE_CHECK_FEATURE, feature),
+    generateTest: (tier: string, days?: number): Promise<{ key: string }> =>
+      invoke<{ key: string }>(IPC_CHANNELS.LICENSE_GENERATE_TEST, tier, days),
 
-    loadMock: (edition: string): Promise<unknown> =>
-      invoke<unknown>(IPC_CHANNELS.LICENSE_LOAD_MOCK, edition),
-  },
+    checkFeature: (feature: string): Promise<{ allowed: boolean }> =>
+      invoke<{ allowed: boolean }>(IPC_CHANNELS.FEATURE_CHECK, feature),
 
-  auth: {
-    login: (email: string, password: string): Promise<unknown> =>
-      invoke<unknown>(IPC_CHANNELS.AUTH_LOGIN, { email, password }),
-
-    register: (email: string, password: string, name: string): Promise<unknown> =>
-      invoke<unknown>(IPC_CHANNELS.AUTH_REGISTER, { email, password, name }),
-
-    logout: (): Promise<void> =>
-      invoke<void>(IPC_CHANNELS.AUTH_LOGOUT),
-
-    getSession: (): Promise<unknown> =>
-      invoke<unknown>(IPC_CHANNELS.AUTH_GET_SESSION),
-
-    getUser: (): Promise<unknown> =>
-      invoke<unknown>(IPC_CHANNELS.AUTH_GET_USER),
-
-    restore: (): Promise<boolean> =>
-      invoke<boolean>(IPC_CHANNELS.AUTH_RESTORE),
-
-    switchEdition: (edition: string): Promise<unknown> =>
-      invoke<unknown>(IPC_CHANNELS.AUTH_SWITCH_EDITION, edition),
+    getFlags: (): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.FEATURE_FLAGS),
   },
 
   api: {

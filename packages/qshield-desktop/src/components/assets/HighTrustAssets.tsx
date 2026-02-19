@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAssetStore } from '@/stores/asset-store';
+import useLicenseStore from '@/stores/license-store';
 import { AssetCard } from './AssetCard';
 import { AddAssetDialog } from './AddAssetDialog';
 
@@ -13,7 +14,10 @@ export default function HighTrustAssets() {
   const fetchStats = useAssetStore((s) => s.fetchStats);
   const subscribe = useAssetStore((s) => s.subscribe);
 
+  const maxAssets = useLicenseStore((s) => s.features.maxHighTrustAssets);
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  const atLimit = assets.length >= maxAssets;
 
   // Initialize once
   useEffect(() => {
@@ -37,7 +41,9 @@ export default function HighTrustAssets() {
         </div>
         <button
           onClick={() => setDialogOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-500 transition-colors"
+          disabled={atLimit}
+          title={atLimit ? `Asset limit reached (${maxAssets} max on your plan)` : undefined}
+          className="flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />

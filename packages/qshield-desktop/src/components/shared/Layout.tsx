@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Sidebar } from '@/components/shared/Sidebar';
 import { StatusBar } from '@/components/shared/StatusBar';
-import { SignUpBanner } from '@/components/shared/SignUpBanner';
+import { TrialBanner } from '@/components/shared/TrialBanner';
 import { isIPCAvailable } from '@/lib/mock-data';
 
 let navigateListenerInitialized = false;
@@ -27,7 +27,7 @@ export function Layout() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 pb-0"><SignUpBanner /></div>
+          <div className="p-4 pb-0"><TrialBanner /></div>
           <Outlet />
         </main>
       </div>

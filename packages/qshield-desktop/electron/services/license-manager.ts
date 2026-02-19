@@ -1,99 +1,363 @@
 /**
- * License manager service — loads, validates, and persists QShield licenses.
- * Delegates runtime feature checks to the singleton featureGate from @qshield/core.
+ * Offline license key system with HMAC-SHA256 validation.
+ * No backend required — keys are generated offline and validated locally.
  */
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
+import Store from 'electron-store';
 import log from 'electron-log';
-import {
-  featureGate,
-  verifyLicenseSignature,
-  isLicenseExpired,
-  EDITION_FEATURES,
-  EDITION_LIMITS,
-  type Feature,
-  type QShieldEdition,
-  type QShieldLicense,
-} from '@qshield/core';
-import type { ConfigManager } from './config';
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export type LicenseTier = 'trial' | 'personal' | 'pro' | 'business' | 'enterprise';
+
+export interface FeatureFlags {
+  maxAdapters: number;
+  maxHighTrustAssets: number;
+  emailNotifications: boolean;
+  dailySummary: boolean;
+  trustReports: boolean;
+  assetReports: boolean;
+  trustProfile: boolean;
+  keyRotation: boolean;
+  apiAccess: boolean;
+  prioritySupport: boolean;
+  customBranding: boolean;
+}
+
+export interface LicenseInfo {
+  tier: LicenseTier;
+  email: string;
+  issuedAt: string;
+  expiresAt: string;
+  machineId: string;
+  isValid: boolean;
+  isExpired: boolean;
+  daysRemaining: number;
+  features: FeatureFlags;
+}
+
+// ── Feature maps ────────────────────────────────────────────────────────────
+
+export const TIER_FEATURES: Record<LicenseTier, FeatureFlags> = {
+  trial: {
+    maxAdapters: 6,
+    maxHighTrustAssets: 5,
+    emailNotifications: true,
+    dailySummary: true,
+    trustReports: true,
+    assetReports: true,
+    trustProfile: true,
+    keyRotation: false,
+    apiAccess: false,
+    prioritySupport: false,
+    customBranding: false,
+  },
+  personal: {
+    maxAdapters: 2,
+    maxHighTrustAssets: 1,
+    emailNotifications: false,
+    dailySummary: false,
+    trustReports: false,
+    assetReports: false,
+    trustProfile: true,
+    keyRotation: false,
+    apiAccess: false,
+    prioritySupport: false,
+    customBranding: false,
+  },
+  pro: {
+    maxAdapters: 6,
+    maxHighTrustAssets: 5,
+    emailNotifications: true,
+    dailySummary: true,
+    trustReports: true,
+    assetReports: false,
+    trustProfile: true,
+    keyRotation: false,
+    apiAccess: false,
+    prioritySupport: false,
+    customBranding: false,
+  },
+  business: {
+    maxAdapters: 6,
+    maxHighTrustAssets: 999,
+    emailNotifications: true,
+    dailySummary: true,
+    trustReports: true,
+    assetReports: true,
+    trustProfile: true,
+    keyRotation: true,
+    apiAccess: true,
+    prioritySupport: true,
+    customBranding: false,
+  },
+  enterprise: {
+    maxAdapters: 6,
+    maxHighTrustAssets: 999,
+    emailNotifications: true,
+    dailySummary: true,
+    trustReports: true,
+    assetReports: true,
+    trustProfile: true,
+    keyRotation: true,
+    apiAccess: true,
+    prioritySupport: true,
+    customBranding: true,
+  },
+};
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const TRIAL_DURATION_DAYS = 14;
+const LICENSE_SIGNING_KEY = process.env.LICENSE_SIGNING_KEY ?? 'qshield-license-signing-key-v1';
+
+interface LicenseStoreSchema {
+  licenseKey: string | null;
+  trialStartDate: string | null;
+  machineId: string | null;
+}
+
+// ── LicenseManager ──────────────────────────────────────────────────────────
 
 export class LicenseManager {
-  constructor(private config: ConfigManager) {}
+  private store: Store<LicenseStoreSchema>;
+  private currentLicense: LicenseInfo;
+  private machineId: string;
 
-  /** Load a persisted license from config and inject into the feature gate. */
-  loadLicense(): void {
-    const raw = this.config.get('license') as QShieldLicense | null;
-    if (!raw) {
-      log.info('[LicenseManager] No persisted license found');
-      return;
-    }
-
-    if (!verifyLicenseSignature(raw)) {
-      log.warn('[LicenseManager] Persisted license has invalid signature — ignoring');
-      return;
-    }
-
-    if (isLicenseExpired(raw)) {
-      log.warn('[LicenseManager] Persisted license is expired');
-    }
-
-    featureGate.setLicense(raw);
-    log.info(`[LicenseManager] License loaded: edition=${raw.edition}, id=${raw.license_id}`);
+  constructor() {
+    this.store = new Store<LicenseStoreSchema>({
+      name: 'license',
+      defaults: {
+        licenseKey: null,
+        trialStartDate: null,
+        machineId: null,
+      },
+    });
+    this.machineId = '';
+    this.currentLicense = this.buildTrialLicense(0);
   }
 
-  /** Return the current license or null if none is active. */
-  getLicense(): QShieldLicense | null {
-    const raw = this.config.get('license') as QShieldLicense | null;
-    return raw ?? null;
-  }
+  /** Initialize the license manager — load stored key or start/continue trial */
+  initialize(): LicenseInfo {
+    this.machineId = this.getOrCreateMachineId();
 
-  /**
-   * Validate, persist, and activate a license.
-   * @returns true if the license was accepted
-   */
-  setLicense(license: QShieldLicense): boolean {
-    if (!verifyLicenseSignature(license)) {
-      log.warn('[LicenseManager] Rejected license with invalid signature');
-      return false;
+    const storedKey = this.store.get('licenseKey');
+    if (storedKey) {
+      try {
+        this.currentLicense = this.validateKey(storedKey);
+        log.info(`[LicenseManager] Loaded license: ${this.currentLicense.tier}, ${this.currentLicense.daysRemaining}d remaining`);
+        return this.currentLicense;
+      } catch (err) {
+        log.warn(`[LicenseManager] Stored key invalid, clearing:`, err);
+        this.store.set('licenseKey', null);
+      }
     }
 
-    this.config.set('license', license);
-    featureGate.setLicense(license);
-    log.info(`[LicenseManager] License set: edition=${license.edition}, id=${license.license_id}`);
-    return true;
+    // No valid key — use trial
+    this.currentLicense = this.initTrial();
+    return this.currentLicense;
   }
 
-  /** Remove the active license and clear persistence. */
-  clearLicense(): void {
-    this.config.set('license', null);
-    featureGate.clearLicense();
-    log.info('[LicenseManager] License cleared');
+  /** Activate a license key — validate and store */
+  activate(key: string): LicenseInfo {
+    const license = this.validateKey(key);
+    this.store.set('licenseKey', key);
+    this.currentLicense = license;
+    log.info(`[LicenseManager] Activated: ${license.tier}, expires ${license.expiresAt}`);
+    return license;
   }
 
-  /**
-   * Load a mock license for a given edition (dev/testing only).
-   * Bypasses signature verification and injects directly into the feature gate.
-   */
-  loadMockLicense(edition: QShieldEdition): void {
-    const license: QShieldLicense = {
-      license_id: randomUUID(),
-      edition,
-      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      features: EDITION_FEATURES[edition],
-      limits: EDITION_LIMITS[edition],
-      signature: `mock-dev-${edition}`,
+  /** Deactivate the current license — clear stored key, revert to trial */
+  deactivate(): LicenseInfo {
+    this.store.set('licenseKey', null);
+    this.currentLicense = this.initTrial();
+    log.info('[LicenseManager] Deactivated, reverted to trial');
+    return this.currentLicense;
+  }
+
+  /** Get current license state */
+  getLicense(): LicenseInfo {
+    // Refresh expiry check
+    if (this.currentLicense.tier === 'trial') {
+      this.currentLicense = this.initTrial();
+    }
+    return this.currentLicense;
+  }
+
+  /** Check if a feature is enabled */
+  hasFeature(feature: keyof FeatureFlags): boolean {
+    const value = this.currentLicense.features[feature];
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value > 0;
+    return false;
+  }
+
+  /** Get current tier */
+  getTier(): LicenseTier {
+    return this.currentLicense.tier;
+  }
+
+  /** Check if currently on trial */
+  isTrial(): boolean {
+    return this.currentLicense.tier === 'trial';
+  }
+
+  /** Check if trial/license has expired */
+  isExpired(): boolean {
+    return this.currentLicense.isExpired;
+  }
+
+  // ── Key generation (dev/admin) ──────────────────────────────────────────
+
+  /** Generate a license key for testing or distribution */
+  static generateKey(opts: {
+    tier: string;
+    email?: string;
+    durationDays?: number;
+  }): string {
+    const tier = opts.tier as LicenseTier;
+    if (!TIER_FEATURES[tier]) throw new Error(`Invalid tier: ${tier}`);
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + (opts.durationDays ?? 365) * 86_400_000);
+
+    const payload = {
+      tier,
+      email: opts.email ?? 'user@qshield.io',
+      issuedAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
     };
-    this.config.set('license', license);
-    featureGate.setLicense(license);
-    log.info(`[LicenseManager] Mock ${edition} license loaded`);
+
+    const jsonData = JSON.stringify(payload);
+    const signature = createHmac('sha256', LICENSE_SIGNING_KEY)
+      .update(jsonData)
+      .digest('hex')
+      .slice(0, 16);
+
+    const combined = `${jsonData}.${signature}`;
+    const encoded = Buffer.from(combined).toString('base64url');
+
+    return `QS-${tier.toUpperCase()}-${now.getFullYear()}-${encoded}`;
   }
 
-  /** Get the current edition (falls back to "free"). */
-  getEdition(): QShieldEdition {
-    return featureGate.edition();
+  // ── Private methods ────────────────────────────────────────────────────
+
+  private validateKey(key: string): LicenseInfo {
+    // Parse key format: QS-{TIER}-{YEAR}-{PAYLOAD}
+    const parts = key.split('-');
+    if (parts.length < 4 || parts[0] !== 'QS') {
+      throw new Error('Invalid key format');
+    }
+
+    // Payload is everything after the third dash
+    const payloadEncoded = parts.slice(3).join('-');
+    let payloadStr: string;
+    try {
+      payloadStr = Buffer.from(payloadEncoded, 'base64url').toString('utf-8');
+    } catch {
+      throw new Error('Invalid key encoding');
+    }
+
+    const dotIndex = payloadStr.lastIndexOf('.');
+    if (dotIndex === -1) throw new Error('Invalid key structure');
+
+    const jsonData = payloadStr.slice(0, dotIndex);
+    const signature = payloadStr.slice(dotIndex + 1);
+
+    // Verify HMAC signature
+    const expectedSig = createHmac('sha256', LICENSE_SIGNING_KEY)
+      .update(jsonData)
+      .digest('hex')
+      .slice(0, 16);
+
+    if (signature !== expectedSig) {
+      throw new Error('Invalid key signature');
+    }
+
+    // Parse payload
+    let payload: { tier: LicenseTier; email: string; issuedAt: string; expiresAt: string };
+    try {
+      payload = JSON.parse(jsonData);
+    } catch {
+      throw new Error('Invalid key data');
+    }
+
+    const tier = payload.tier;
+    if (!TIER_FEATURES[tier]) throw new Error(`Unknown tier: ${tier}`);
+
+    const expiresAt = new Date(payload.expiresAt);
+    const now = new Date();
+    const msRemaining = expiresAt.getTime() - now.getTime();
+    const daysRemaining = Math.max(0, Math.ceil(msRemaining / 86_400_000));
+    const isExpired = msRemaining <= 0;
+
+    return {
+      tier,
+      email: payload.email,
+      issuedAt: payload.issuedAt,
+      expiresAt: payload.expiresAt,
+      machineId: this.machineId,
+      isValid: !isExpired,
+      isExpired,
+      daysRemaining,
+      features: isExpired ? TIER_FEATURES.personal : TIER_FEATURES[tier],
+    };
   }
 
-  /** Check whether a specific feature is available. */
-  hasFeature(feature: Feature): boolean {
-    return featureGate.has(feature);
+  private initTrial(): LicenseInfo {
+    let trialStart = this.store.get('trialStartDate');
+    if (!trialStart) {
+      trialStart = new Date().toISOString();
+      this.store.set('trialStartDate', trialStart);
+      log.info('[LicenseManager] Trial started');
+    }
+
+    const startDate = new Date(trialStart);
+    const expiresAt = new Date(startDate.getTime() + TRIAL_DURATION_DAYS * 86_400_000);
+    const now = new Date();
+    const msRemaining = expiresAt.getTime() - now.getTime();
+    const daysRemaining = Math.max(0, Math.ceil(msRemaining / 86_400_000));
+    const isExpired = msRemaining <= 0;
+
+    return this.buildTrialLicense(daysRemaining, trialStart, expiresAt.toISOString(), isExpired);
+  }
+
+  private buildTrialLicense(
+    daysRemaining: number,
+    issuedAt = new Date().toISOString(),
+    expiresAt = new Date(Date.now() + TRIAL_DURATION_DAYS * 86_400_000).toISOString(),
+    isExpired = false,
+  ): LicenseInfo {
+    return {
+      tier: 'trial',
+      email: '',
+      issuedAt,
+      expiresAt,
+      machineId: this.machineId,
+      isValid: !isExpired,
+      isExpired,
+      daysRemaining,
+      features: isExpired ? TIER_FEATURES.personal : TIER_FEATURES.trial,
+    };
+  }
+
+  private getOrCreateMachineId(): string {
+    // Try stored machine ID first
+    const stored = this.store.get('machineId');
+    if (stored) return stored;
+
+    // Try node-machine-id
+    try {
+      const { machineIdSync } = require('node-machine-id');
+      const id = machineIdSync(true);
+      this.store.set('machineId', id);
+      return id;
+    } catch {
+      // Fallback to random ID
+      const id = randomBytes(16).toString('hex');
+      this.store.set('machineId', id);
+      log.warn('[LicenseManager] Using random machine ID (node-machine-id unavailable)');
+      return id;
+    }
   }
 }

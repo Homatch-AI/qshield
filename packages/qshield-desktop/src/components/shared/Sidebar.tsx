@@ -4,14 +4,13 @@ import { NAV_ITEMS } from '@/lib/constants';
 import useTrustStore from '@/stores/trust-store';
 import useAlertStore from '@/stores/alert-store';
 import useLicenseStore, { getRequiredEdition, EDITION_LABELS } from '@/stores/license-store';
-import type { Feature, QShieldEdition } from '@/stores/license-store';
-import useAuthStore from '@/stores/auth-store';
+import type { Feature } from '@/stores/license-store';
 import { UpgradeModal } from './UpgradeModal';
-import { AuthModal } from '@/components/auth/AuthModal';
 
-const EDITION_BADGE_STYLES: Record<QShieldEdition, string> = {
-  free: 'bg-slate-600/20 text-slate-400',
-  personal: 'bg-sky-500/20 text-sky-400',
+const EDITION_BADGE_STYLES: Record<string, string> = {
+  trial: 'bg-sky-500/20 text-sky-400',
+  personal: 'bg-slate-600/20 text-slate-400',
+  pro: 'bg-sky-500/20 text-sky-400',
   business: 'bg-purple-500/20 text-purple-400',
   enterprise: 'bg-amber-500/20 text-amber-400',
 };
@@ -121,16 +120,11 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authModalTab, setAuthModalTab] = useState<'signin' | 'signup'>('signin');
   const score = useTrustStore((s) => s.score);
   const level = useTrustStore((s) => s.level);
   const activeAlertCount = useAlertStore((s) => s.alerts.filter((a) => !a.dismissed).length);
   const hasFeature = useLicenseStore((s) => s.hasFeature);
-  const currentEdition = useLicenseStore((s) => s.edition);
-  const setDevEdition = useLicenseStore((s) => s.setDevEdition);
-  const user = useAuthStore((s) => s.user);
-  const authenticated = useAuthStore((s) => s.authenticated);
+  const tier = useLicenseStore((s) => s.tier);
   const navigate = useNavigate();
 
   return (
@@ -286,73 +280,26 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* User Account / Sign In */}
-      {authenticated && user ? (
-        <div className="border-t border-slate-700 p-2">
-          <div
-            onClick={() => navigate('/account')}
-            className="flex items-center gap-3 rounded-lg px-2 py-2 cursor-pointer hover:bg-slate-800 transition-colors"
-          >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500 text-xs font-bold text-white">
-              {(user.name || user.email)[0].toUpperCase()}
-            </div>
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <span className="block text-sm text-slate-300 truncate leading-tight">{user.name}</span>
-                <span className={`inline-block text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full mt-0.5 ${EDITION_BADGE_STYLES[user.edition as QShieldEdition] ?? EDITION_BADGE_STYLES.free}`}>
-                  {(user.edition ?? 'free').toUpperCase()}
-                </span>
-              </div>
-            )}
+      {/* Tier Badge */}
+      <div className="border-t border-slate-700 p-2">
+        <div
+          onClick={() => navigate('/account')}
+          className="flex items-center gap-3 rounded-lg px-2 py-2 cursor-pointer hover:bg-slate-800 transition-colors"
+        >
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500/20">
+            <svg className="h-4 w-4 text-sky-400" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+            </svg>
           </div>
-        </div>
-      ) : (
-        <div className="border-t border-slate-700 p-2">
-          {collapsed ? (
-            <button
-              onClick={() => { setAuthModalTab('signin'); setAuthModalOpen(true); }}
-              className="flex w-full items-center justify-center rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
-              aria-label="Sign In"
-            >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
-              </svg>
-            </button>
-          ) : (
-            <div className="space-y-1.5 px-1">
-              <button
-                onClick={() => { setAuthModalTab('signin'); setAuthModalOpen(true); }}
-                className="flex w-full items-center justify-center rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-slate-100 transition-colors"
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => { setAuthModalTab('signup'); setAuthModalOpen(true); }}
-                className="flex w-full items-center justify-center rounded-lg bg-sky-500/10 px-3 py-1.5 text-sm text-sky-400 hover:bg-sky-500/20 transition-colors"
-              >
-                Create Free Account
-              </button>
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <span className={`inline-block text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full ${EDITION_BADGE_STYLES[tier] ?? EDITION_BADGE_STYLES.personal}`}>
+                {tier.toUpperCase()}
+              </span>
             </div>
           )}
         </div>
-      )}
-
-      {/* Dev Edition Switcher */}
-      {import.meta.env.DEV && !collapsed && (
-        <div className="px-3 py-2 border-t border-slate-800">
-          <label className="text-[10px] text-slate-600 uppercase tracking-wider">Dev Edition</label>
-          <select
-            value={currentEdition}
-            onChange={(e) => setDevEdition(e.target.value as QShieldEdition)}
-            className="mt-1 w-full bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 px-2 py-1"
-          >
-            <option value="free">Free</option>
-            <option value="personal">Personal ($9/mo)</option>
-            <option value="business">Business ($29/seat)</option>
-            <option value="enterprise">Enterprise</option>
-          </select>
-        </div>
-      )}
+      </div>
 
       {/* Collapse Button */}
       <button
@@ -372,7 +319,6 @@ export function Sidebar() {
       </button>
 
       <UpgradeModal isOpen={upgradeOpen} onClose={() => setUpgradeOpen(false)} requiredFeature={upgradeFeature} />
-      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} defaultTab={authModalTab} />
     </aside>
   );
 }

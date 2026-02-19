@@ -132,8 +132,8 @@ export function UpgradeModal({ isOpen, onClose, requiredFeature }: UpgradeModalP
 
   if (!isOpen) return null;
 
-  const freeFeatures = new Set(EDITION_FEATURES.free);
   const personalFeatures = new Set(EDITION_FEATURES.personal);
+  const proFeatures = new Set(EDITION_FEATURES.pro);
   const businessFeatures = new Set(EDITION_FEATURES.business);
   const enterpriseFeatures = new Set(EDITION_FEATURES.enterprise);
 
@@ -180,8 +180,8 @@ export function UpgradeModal({ isOpen, onClose, requiredFeature }: UpgradeModalP
             <thead>
               <tr className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 <th className="text-left py-2 pr-4">Feature</th>
-                <th className="text-center py-2 px-2">Free</th>
                 <th className="text-center py-2 px-2">Personal</th>
+                <th className="text-center py-2 px-2">Pro</th>
                 <th className="text-center py-2 px-2">Business</th>
                 <th className="text-center py-2 px-2">Enterprise</th>
               </tr>
@@ -199,10 +199,10 @@ export function UpgradeModal({ isOpen, onClose, requiredFeature }: UpgradeModalP
                     )}
                   </td>
                   <td className="py-2 px-2 text-center">
-                    {freeFeatures.has(feature) ? <CheckIcon /> : <DashIcon />}
+                    {personalFeatures.has(feature) ? <CheckIcon /> : <DashIcon />}
                   </td>
                   <td className="py-2 px-2 text-center">
-                    {personalFeatures.has(feature) ? <CheckIcon /> : <DashIcon />}
+                    {proFeatures.has(feature) ? <CheckIcon /> : <DashIcon />}
                   </td>
                   <td className="py-2 px-2 text-center">
                     {businessFeatures.has(feature) ? <CheckIcon /> : <DashIcon />}
@@ -225,7 +225,7 @@ export function UpgradeModal({ isOpen, onClose, requiredFeature }: UpgradeModalP
             }}
             className="flex-1 rounded-lg border border-slate-600 bg-slate-700/50 px-4 py-2.5 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700"
           >
-            Get Personal
+            Get Pro
           </button>
           <button
             onClick={() => {
@@ -234,7 +234,7 @@ export function UpgradeModal({ isOpen, onClose, requiredFeature }: UpgradeModalP
             }}
             className="flex-1 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-sky-500"
           >
-            Upgrade to Business
+            Get Business
           </button>
           <button
             onClick={() => {
@@ -243,7 +243,7 @@ export function UpgradeModal({ isOpen, onClose, requiredFeature }: UpgradeModalP
             }}
             className="flex-1 rounded-lg border border-slate-600 bg-slate-700/50 px-4 py-2.5 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700"
           >
-            Upgrade to Enterprise
+            Get Enterprise
           </button>
         </div>
       </div>

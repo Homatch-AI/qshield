@@ -30,7 +30,7 @@ import { CryptoMonitorService } from './services/crypto-monitor';
 import { NotificationService } from './services/notification';
 import { validateAddress, verifyTransactionHash, loadScamDatabase, verifyEvidenceRecord } from '@qshield/core';
 import { LicenseManager } from './services/license-manager';
-import { AuthService } from './services/auth-service';
+import { FeatureGate } from './services/feature-gate';
 import { LocalApiServer } from './services/local-api-server';
 import { SecureMessageService } from './services/secure-message-service';
 import { SecureFileService } from './services/secure-file-service';
@@ -883,19 +883,10 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
   const verificationService = new VerificationRecordService(
     keyManager?.getVerificationHmacKey(),
   );
-  const licMgr = new LicenseManager(config);
-  licMgr.loadLicense();
-
-  const authSvc = new AuthService(config);
-  // Restore cached session on startup; if restored, reload the license
-  authSvc.restoreSession().then((restored) => {
-    if (restored) {
-      licMgr.loadLicense();
-      log.info('[AuthService] Session restored, license reloaded');
-    }
-  }).catch((err) => {
-    log.warn('[AuthService] Session restore failed:', err);
-  });
+  const licMgr = new LicenseManager();
+  const licenseInfo = licMgr.initialize();
+  const featureGate = new FeatureGate(licMgr);
+  log.info(`[LicenseManager] License: ${licenseInfo.tier}, ${licenseInfo.daysRemaining}d remaining`);
 
   // Initialize crypto monitoring service
   const cryptoMonitor = new CryptoMonitorService((addresses) => {
@@ -921,7 +912,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
   // Initialize secure message service
   const secureMessageSvc = new SecureMessageService(keyManager?.getSecureMessageHmacKey());
   secureMessageSvc.setPersist((messages) => config.set('secureMessages', messages));
-  secureMessageSvc.setEditionProvider(() => licMgr.getEdition());
+  secureMessageSvc.setEditionProvider(() => licMgr.getTier());
   const savedMessages = config.get('secureMessages') as Parameters<typeof secureMessageSvc.load>[0] | undefined;
   if (savedMessages && Array.isArray(savedMessages)) {
     secureMessageSvc.load(savedMessages);
@@ -943,7 +934,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
     business: 10 * 1024 * 1024,    // 10 MB
     enterprise: 100 * 1024 * 1024, // 100 MB
   };
-  secureFileSvc.setMaxFileSize(fileSizeLimits[licMgr.getEdition()] ?? 10 * 1024 * 1024);
+  secureFileSvc.setMaxFileSize(fileSizeLimits[licMgr.getTier()] ?? 10 * 1024 * 1024);
   secureFileSvc.checkExpiration();
   setInterval(() => secureFileSvc.checkExpiration(), 60_000);
 
@@ -1113,20 +1104,14 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
     },
     licenseManager: {
       getLicense: () => licMgr.getLicense(),
-      setLicense: (license: unknown) => licMgr.setLicense(license as Parameters<typeof licMgr.setLicense>[0]),
-      clearLicense: () => licMgr.clearLicense(),
+      activate: (key: string) => licMgr.activate(key),
+      deactivate: () => licMgr.deactivate(),
       hasFeature: (feature: string) => licMgr.hasFeature(feature as Parameters<typeof licMgr.hasFeature>[0]),
-      getEdition: () => licMgr.getEdition(),
-      loadMockLicense: (edition: string) => licMgr.loadMockLicense(edition as 'free' | 'personal' | 'business' | 'enterprise'),
+      getTier: () => licMgr.getTier(),
+      generateKey: (opts: { tier: string; email?: string; durationDays?: number }) => LicenseManager.generateKey(opts),
     },
-    authService: {
-      login: (credentials: { email: string; password: string }) => authSvc.login(credentials),
-      register: (credentials: { email: string; password: string; name: string }) => authSvc.register(credentials),
-      logout: () => authSvc.logout(),
-      getSession: () => authSvc.getSession(),
-      getUser: () => authSvc.getUser(),
-      restore: () => authSvc.restoreSession(),
-      switchEdition: (edition: string) => authSvc.switchEdition(edition as 'free' | 'personal' | 'business' | 'enterprise'),
+    featureGate: {
+      getFeatures: () => featureGate.getFeatures(),
     },
     secureFileService: {
       upload: (opts: { fileName: string; mimeType: string; data: Buffer; expiresIn: string; maxDownloads: number }, senderName: string, senderEmail: string) =>
@@ -1144,11 +1129,11 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
     secureMessageService: {
       create: (opts: unknown) => {
         const o = opts as { subject: string; content: string; attachments?: { filename: string; mimeType: string; data: string }[]; expiresIn: string; maxViews: number; requireVerification: boolean; allowedRecipients: string[] };
-        const user = authSvc.getUser() as { name?: string; email?: string } | null;
+        const licEmail = (licMgr.getLicense() as { email?: string }).email;
         return secureMessageSvc.create(
           o as Parameters<typeof secureMessageSvc.create>[0],
-          user?.name ?? 'QShield User',
-          user?.email ?? 'user@qshield.io',
+          'QShield User',
+          licEmail || 'user@qshield.io',
         );
       },
       list: () => secureMessageSvc.list(),
@@ -1731,12 +1716,10 @@ app.whenReady().then(async () => {
     getTrustScore: () => currentTrustScore,
     getTrustLevel: () => currentTrustLevel,
     getUserEmail: () => {
-      const session = configManager?.get('auth.session') as { user?: { email?: string } } | null;
-      return session?.user?.email ?? 'user@qshield.io';
+      return (services?.licenseManager?.getLicense() as { email?: string })?.email || 'user@qshield.io';
     },
     getUserName: () => {
-      const session = configManager?.get('auth.session') as { user?: { name?: string } } | null;
-      return session?.user?.name ?? 'QShield User';
+      return 'QShield User';
     },
     getApiToken: () => apiToken!,
   });
