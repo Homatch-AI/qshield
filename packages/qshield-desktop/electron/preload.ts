@@ -483,6 +483,15 @@ contextBridge.exposeInMainWorld('qshield', {
     pause: (id: string, durationSeconds: number): Promise<null> =>
       invoke<null>(IPC_CHANNELS.ASSET_PAUSE, id, durationSeconds),
 
+    lock: (id: string): Promise<{ locked: boolean }> =>
+      invoke<{ locked: boolean }>(IPC_CHANNELS.ASSET_LOCK, id),
+
+    unlock: (id: string): Promise<{ locked: boolean }> =>
+      invoke<{ locked: boolean }>(IPC_CHANNELS.ASSET_UNLOCK, id),
+
+    lockStatus: (id: string): Promise<{ locked: boolean }> =>
+      invoke<{ locked: boolean }>(IPC_CHANNELS.ASSET_LOCK_STATUS, id),
+
     onChanged: (callback: EventCallback<{ event: AssetChangeEvent; asset: HighTrustAsset }>): void => {
       const handler = (_event: Electron.IpcRendererEvent, data: { event: AssetChangeEvent; asset: HighTrustAsset }) => callback(data);
       ipcRenderer.on(IPC_EVENTS.ASSET_CHANGED, handler);

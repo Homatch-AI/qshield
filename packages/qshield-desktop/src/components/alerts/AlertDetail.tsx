@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Alert, AlertSourceMetadata } from '@qshield/core';
 import { SEVERITY_COLORS } from '@/lib/constants';
 import { formatDate, formatRelativeTime, formatFileSize, formatAdapterName, truncateHash } from '@/lib/formatters';
@@ -104,14 +104,25 @@ export function AlertDetail({ alert, onClose, onViewEvidence }: AlertDetailProps
 /* ------------------------------------------------------------------ */
 
 function ResponseActions({ alert }: { alert: Alert }) {
-  const [processResults, setProcessResults] = useState<string | null>(null);
+  const [processResults, setProcessResults] = useState<{ processes: Array<{ name: string; pid: string; user: string }>; summary: string } | null>(null);
   const [checking, setChecking] = useState(false);
   const [paused, setPaused] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockLoading, setLockLoading] = useState(false);
 
   const raw = alert.sourceMetadata?.rawEvent as Record<string, unknown> | undefined;
   const targetPath = (raw?.changedFile ?? raw?.path ?? alert.sourceMetadata?.filePath) as string | undefined;
   const assetId = raw?.assetId as string | undefined;
+
+  // Check lock status on mount
+  useEffect(() => {
+    if (assetId) {
+      window.qshield.assets.lockStatus(assetId)
+        .then((result) => setIsLocked(result.locked))
+        .catch(() => {});
+    }
+  }, [assetId]);
 
   const handleShowInFolder = () => {
     if (targetPath) {
@@ -124,9 +135,9 @@ function ResponseActions({ alert }: { alert: Alert }) {
     setChecking(true);
     try {
       const result = await window.qshield.investigate.checkProcesses(targetPath);
-      setProcessResults(result.summary);
+      setProcessResults(result);
     } catch {
-      setProcessResults('Could not check processes');
+      setProcessResults({ processes: [], summary: 'Failed to check processes' });
     } finally {
       setChecking(false);
     }
@@ -149,6 +160,24 @@ function ResponseActions({ alert }: { alert: Alert }) {
       setPaused(true);
     } catch (err) {
       console.error('Failed to pause asset:', err);
+    }
+  };
+
+  const handleToggleLock = async () => {
+    if (!assetId) return;
+    setLockLoading(true);
+    try {
+      if (isLocked) {
+        const result = await window.qshield.assets.unlock(assetId);
+        setIsLocked(result.locked);
+      } else {
+        const result = await window.qshield.assets.lock(assetId);
+        setIsLocked(result.locked);
+      }
+    } catch (err) {
+      console.error('Failed to toggle lock:', err);
+    } finally {
+      setLockLoading(false);
     }
   };
 
@@ -178,11 +207,29 @@ function ResponseActions({ alert }: { alert: Alert }) {
             <div className="text-sm font-medium text-slate-200">
               {checking ? 'Checking...' : 'Check Active Processes'}
             </div>
-            <div className="text-xs text-slate-500">
-              {processResults ?? 'See what apps currently have this file open'}
-            </div>
+            {!processResults && (
+              <div className="text-xs text-slate-500">See what apps currently have this file open</div>
+            )}
           </div>
         </button>
+      )}
+
+      {/* Process results panel */}
+      {processResults && (
+        <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 space-y-2">
+          <span className="text-xs font-semibold text-slate-400 uppercase">Active Processes</span>
+          {processResults.processes.length > 0 ? (
+            processResults.processes.map((p, i) => (
+              <div key={i} className="flex items-center gap-3 text-sm">
+                <span className="text-sky-400 font-medium">{p.name}</span>
+                <span className="text-xs text-slate-500">PID {p.pid}</span>
+                <span className="text-xs text-slate-500">User: {p.user}</span>
+              </div>
+            ))
+          ) : (
+            <div className="text-sm text-slate-400">{processResults.summary}</div>
+          )}
+        </div>
       )}
 
       {assetId && !accepted && (
@@ -202,6 +249,31 @@ function ResponseActions({ alert }: { alert: Alert }) {
           <span className="text-lg shrink-0">{'✅'}</span>
           <div className="text-sm font-medium text-emerald-400">Changes accepted</div>
         </div>
+      )}
+
+      {/* Lock / Unlock file protection */}
+      {assetId && (
+        <button
+          onClick={handleToggleLock}
+          disabled={lockLoading}
+          className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
+            isLocked
+              ? 'border-emerald-700/50 bg-emerald-900/20 hover:bg-emerald-900/30'
+              : 'border-sky-700/50 bg-sky-900/20 hover:bg-sky-900/30'
+          }`}
+        >
+          <span className="text-lg shrink-0">{isLocked ? '🔓' : '🔒'}</span>
+          <div>
+            <div className={`text-sm font-medium ${isLocked ? 'text-emerald-300' : 'text-sky-300'}`}>
+              {lockLoading ? 'Working...' : isLocked ? 'Unlock File (Restore Permissions)' : 'Lock File (Set Read-Only)'}
+            </div>
+            <div className={`text-xs ${isLocked ? 'text-emerald-500/70' : 'text-sky-500/70'}`}>
+              {isLocked
+                ? 'Restore original permissions so file can be edited'
+                : 'Set to read-only — prevents modification until you unlock'}
+            </div>
+          </div>
+        </button>
       )}
 
       {assetId && !paused && (

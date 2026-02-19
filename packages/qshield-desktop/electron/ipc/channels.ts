@@ -216,6 +216,12 @@ export const IPC_CHANNELS = {
   ASSET_BROWSE: 'asset:browse',
   /** Pause monitoring for an asset temporarily */
   ASSET_PAUSE: 'asset:pause',
+  /** Lock an asset (set read-only permissions) */
+  ASSET_LOCK: 'asset:lock',
+  /** Unlock an asset (restore original permissions) */
+  ASSET_UNLOCK: 'asset:unlock',
+  /** Get lock status for an asset */
+  ASSET_LOCK_STATUS: 'asset:lock-status',
 
   // ── Shell / Investigation ───────────────────────────────────────
   /** Open a file or folder in the system file manager */

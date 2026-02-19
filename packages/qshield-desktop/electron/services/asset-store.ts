@@ -52,6 +52,14 @@ CREATE TABLE IF NOT EXISTS asset_change_log (
 );
 CREATE INDEX IF NOT EXISTS idx_change_log_asset ON asset_change_log(asset_id);
 CREATE INDEX IF NOT EXISTS idx_change_log_timestamp ON asset_change_log(timestamp);
+
+CREATE TABLE IF NOT EXISTS asset_metadata (
+  asset_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT,
+  PRIMARY KEY (asset_id, key),
+  FOREIGN KEY (asset_id) REFERENCES high_trust_assets(id)
+);
 `;
 
 // ---------------------------------------------------------------------------
@@ -468,6 +476,27 @@ export class AssetStore {
     }
 
     return { total, verified, changed, unverified, bySensitivity };
+  }
+
+  // -----------------------------------------------------------------------
+  // Metadata (key-value per asset)
+  // -----------------------------------------------------------------------
+
+  setMeta(assetId: string, key: string, value: string): void {
+    this.db
+      .prepare('INSERT OR REPLACE INTO asset_metadata (asset_id, key, value) VALUES (?, ?, ?)')
+      .run(assetId, key, value);
+  }
+
+  getMeta(assetId: string, key: string): string | null {
+    const row = this.db
+      .prepare('SELECT value FROM asset_metadata WHERE asset_id = ? AND key = ?')
+      .get(assetId, key) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  updateMeta(assetId: string, key: string, value: string): void {
+    this.setMeta(assetId, key, value);
   }
 
   // -----------------------------------------------------------------------

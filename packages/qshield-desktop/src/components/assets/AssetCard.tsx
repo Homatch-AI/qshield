@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAssetStore } from '@/stores/asset-store';
 
 // ── Types (renderer-safe) ────────────────────────────────────────────────────
@@ -107,6 +107,7 @@ interface AssetCardProps {
 export function AssetCard({ asset }: AssetCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [isLocked, setIsLocked] = useState(false);
 
   const verifyAsset = useAssetStore((s) => s.verifyAsset);
   const acceptChanges = useAssetStore((s) => s.acceptChanges);
@@ -114,6 +115,13 @@ export function AssetCard({ asset }: AssetCardProps) {
   const updateSensitivity = useAssetStore((s) => s.updateSensitivity);
   const fetchChangeLog = useAssetStore((s) => s.fetchChangeLog);
   const changeLogs = useAssetStore((s) => s.changeLogs);
+
+  // Check lock status on mount
+  useEffect(() => {
+    window.qshield.assets.lockStatus(asset.id)
+      .then((result) => setIsLocked(result.locked))
+      .catch(() => {});
+  }, [asset.id]);
 
   const stateColors = TRUST_STATE_COLORS[asset.trustState];
   const sensColors = SENSITIVITY_COLORS[asset.sensitivity];
@@ -202,6 +210,28 @@ export function AssetCard({ asset }: AssetCardProps) {
               {actionLoading === 'accept' ? '...' : 'Accept'}
             </button>
           )}
+
+          {/* Lock / Unlock toggle */}
+          <button
+            onClick={() => handleAction(isLocked ? 'unlock' : 'lock', async () => {
+              if (isLocked) {
+                const result = await window.qshield.assets.unlock(asset.id);
+                setIsLocked(result.locked);
+              } else {
+                const result = await window.qshield.assets.lock(asset.id);
+                setIsLocked(result.locked);
+              }
+            })}
+            disabled={actionLoading !== null}
+            className={`rounded-lg p-1.5 text-xs disabled:opacity-50 transition-colors ${
+              isLocked
+                ? 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
+                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700'
+            }`}
+            title={isLocked ? 'Unlock (restore permissions)' : 'Lock (set read-only)'}
+          >
+            {actionLoading === 'lock' || actionLoading === 'unlock' ? '...' : isLocked ? '🔒' : '🔓'}
+          </button>
 
           {/* Sensitivity dropdown */}
           <select
