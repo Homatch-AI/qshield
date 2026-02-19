@@ -91,6 +91,18 @@ export interface AlertSourceMetadata {
   chain?: string;
   transactionHash?: string;
   riskLevel?: string;
+  // Forensics (who/what/where)
+  forensics?: {
+    changedFiles?: Array<{ fileName: string; changeType: string; sizeChange: number | null; lineCountChange: number | null }>;
+    modifiedBy?: string;
+    processName?: string | null;
+    pid?: number | null;
+    owner?: string | null;
+    changeSummary?: string;
+    totalSizeChange?: number | null;
+    filePermissions?: string | null;
+    isQuarantined?: boolean;
+  };
   // Common
   rawEvent?: Record<string, unknown>;
 }

@@ -1,6 +1,6 @@
 import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
-import type { TrustState, TrustSignal, PolicyConfig, PolicyRule, Alert, AdapterType } from '@qshield/core';
+import type { TrustState, TrustSignal, PolicyConfig, PolicyRule, Alert, AlertSourceMetadata, AdapterType } from '@qshield/core';
 import { createDefaultPolicy } from '@qshield/core';
 
 /** Events emitted by the PolicyEnforcer */
@@ -127,21 +127,35 @@ export class PolicyEnforcer {
       // Extract metadata from the latest signal to enrich the alert
       const latestSignal = this.getLatestSignal(trustState.signals, rule.condition.signal);
       const meta = latestSignal?.metadata as Record<string, unknown> | undefined;
+      const forensicsRaw = meta?.forensics as Record<string, unknown> | undefined;
       const sourceMetadata = meta
         ? {
-            fileName: meta.assetName as string | undefined,
-            filePath: meta.path as string | undefined,
+            fileName: (meta.assetName ?? meta.fileName) as string | undefined,
+            filePath: (meta.path ?? meta.fullPath) as string | undefined,
+            fileSize: meta.size as number | undefined,
+            fileHash: (meta.newHash ?? meta.sha256) as string | undefined,
             operation: meta.eventType as string | undefined,
+            ...(forensicsRaw ? { forensics: forensicsRaw as AlertSourceMetadata['forensics'] } : {}),
             rawEvent: meta,
           }
         : undefined;
+
+      // Build a human-readable description
+      const descParts: string[] = [];
+      if (forensicsRaw?.owner) descParts.push(`User: ${forensicsRaw.owner}`);
+      if (forensicsRaw?.modifiedBy) descParts.push(`App: ${forensicsRaw.modifiedBy}`);
+      if (meta?.assetName || meta?.fileName) descParts.push(`File: ${meta.assetName ?? meta.fileName}`);
+      if (meta?.eventType) descParts.push(`Event: ${meta.eventType}`);
+      const description = descParts.length > 0
+        ? descParts.join(' | ')
+        : `Signal ${rule.condition.signal} score ${signalScore} ${rule.condition.operator} ${rule.condition.threshold}`;
 
       // Create alert
       const alert: Alert = {
         id: uuidv4(),
         severity: rule.severity,
         title: `Policy violation: ${rule.name}`,
-        description: `Signal ${rule.condition.signal} score ${signalScore} ${rule.condition.operator} ${rule.condition.threshold}`,
+        description,
         source: rule.condition.signal,
         timestamp: new Date().toISOString(),
         dismissed: false,

@@ -131,10 +131,84 @@ function EmailDetails({ meta }: { meta: AlertSourceMetadata }) {
 }
 
 function FileDetails({ meta }: { meta: AlertSourceMetadata }) {
+  const f = meta.forensics;
+
   return (
     <div className="divide-y divide-slate-700/30">
-      {meta.fileName && <DetailRow label="File Name" value={meta.fileName} />}
+      {/* WHO — show forensics owner/process first when available */}
+      {f?.owner && (
+        <DetailRow
+          label="Who"
+          value={
+            <span>
+              <span className="font-medium text-slate-100">{f.owner}</span>
+              {f.modifiedBy && (
+                <>
+                  <span className="text-slate-600 mx-1">via</span>
+                  <span className="font-medium text-sky-400">{f.modifiedBy}</span>
+                </>
+              )}
+              {f.pid != null && (
+                <span className="text-slate-600 ml-1">(PID {f.pid})</span>
+              )}
+            </span>
+          }
+        />
+      )}
+
+      {/* WHERE */}
+      {meta.fileName && <DetailRow label="File" value={meta.fileName} />}
       {meta.filePath && <DetailRow label="Path" value={<span className="font-mono">{meta.filePath}</span>} />}
+
+      {/* WHAT — operation + changed files */}
+      {meta.operation && (
+        <DetailRow
+          label="Event"
+          value={
+            <span className="inline-flex items-center rounded-full bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 text-[10px] font-medium text-orange-400">
+              {meta.operation}
+            </span>
+          }
+        />
+      )}
+
+      {f?.changedFiles && f.changedFiles.length > 0 && (
+        <div className="py-2">
+          <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+            Changed Files
+          </span>
+          <div className="mt-1.5 space-y-1">
+            {f.changedFiles.map((cf, i) => {
+              const changeType = cf.changeType ?? '';
+              return (
+                <div key={i} className="flex items-center gap-2 rounded-md bg-slate-900/60 px-3 py-1.5 text-xs">
+                  <span className="text-base">
+                    {changeType.includes('deleted') ? '\uD83D\uDD34' : changeType.includes('created') ? '\uD83D\uDFE2' : '\uD83D\uDFE1'}
+                  </span>
+                  <span className="font-mono text-slate-300 truncate">{cf.fileName}</span>
+                  <span className="text-slate-500">&mdash;</span>
+                  <span className="text-slate-400">{changeType}</span>
+                  {cf.sizeChange != null && (
+                    <span className={`${cf.sizeChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      ({cf.sizeChange >= 0 ? '+' : ''}{cf.sizeChange} B)
+                    </span>
+                  )}
+                  {cf.lineCountChange != null && (
+                    <span className="text-slate-500">
+                      {cf.lineCountChange >= 0 ? '+' : ''}{cf.lineCountChange} lines
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Summary */}
+      {f?.changeSummary && <DetailRow label="Summary" value={f.changeSummary} />}
+
+      {/* Metadata */}
       {meta.fileSize != null && <DetailRow label="Size" value={formatFileSize(meta.fileSize)} />}
       {meta.fileHash && (
         <DetailRow
@@ -142,14 +216,11 @@ function FileDetails({ meta }: { meta: AlertSourceMetadata }) {
           value={<span className="font-mono text-[11px]">{truncateHash(meta.fileHash, 12)}</span>}
         />
       )}
-      {meta.operation && (
+      {f?.filePermissions && <DetailRow label="Permissions" value={<span className="font-mono">{f.filePermissions}</span>} />}
+      {f?.isQuarantined && (
         <DetailRow
-          label="Operation"
-          value={
-            <span className="inline-flex items-center rounded-full bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 text-[10px] font-medium text-orange-400">
-              {meta.operation}
-            </span>
-          }
+          label="Warning"
+          value={<span className="text-amber-400 font-medium">File downloaded from internet (quarantine flag)</span>}
         />
       )}
     </div>
