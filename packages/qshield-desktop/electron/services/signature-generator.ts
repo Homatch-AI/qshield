@@ -51,11 +51,22 @@ export const DEFAULT_SIGNATURE_CONFIG: SignatureConfig = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const HMAC_KEY = 'qshield-email-signature-v1';
+let signatureHmacKey = '';
+
+/**
+ * Initialize the signature generator with a derived HMAC key.
+ * Must be called before generateSignatureHTML().
+ */
+export function initSignatureGenerator(key: string): void {
+  signatureHmacKey = key;
+}
 
 function generateVerificationHash(timestamp: string, score: number, sender: string): string {
+  if (!signatureHmacKey) {
+    throw new Error('[SignatureGenerator] Not initialized — call initSignatureGenerator() first');
+  }
   const data = `${timestamp}:${score}:${sender}`;
-  return createHmac('sha256', HMAC_KEY).update(data).digest('hex');
+  return createHmac('sha256', signatureHmacKey).update(data).digest('hex');
 }
 
 function escapeHtml(str: string): string {

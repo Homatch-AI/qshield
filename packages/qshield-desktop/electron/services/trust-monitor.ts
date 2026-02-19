@@ -25,9 +25,6 @@ type MonitorEventCallback = (event: TrustMonitorEvent, data?: unknown) => void;
 /** Threshold for trust impact magnitude to be considered significant enough for evidence */
 const EVIDENCE_THRESHOLD = 10;
 
-/** HMAC key for evidence record hashing */
-const EVIDENCE_HMAC_KEY = 'qshield-evidence-hmac-key-v1';
-
 /** Maximum number of signals to retain in the rolling window */
 const MAX_SIGNALS = 200;
 
@@ -81,13 +78,16 @@ export class TrustMonitor {
   private snapshotInterval: ReturnType<typeof setInterval> | null = null;
   private assetStoreRef: AssetStore | null = null;
   private emailNotifierRef: EmailNotifierService | null = null;
+  private hmacKey: string;
 
   /**
    * Create a new TrustMonitor with all adapters and a policy enforcer.
    * @param googleAuth - optional GoogleAuthService for Gmail adapter (if omitted, email adapter starts idle)
    * @param policyEnforcer - optional policy enforcer instance (creates default if omitted)
+   * @param hmacKey - optional HMAC key for evidence hashing (falls back to legacy default)
    */
-  constructor(googleAuth?: GoogleAuthService, policyEnforcer?: PolicyEnforcer) {
+  constructor(googleAuth?: GoogleAuthService, policyEnforcer?: PolicyEnforcer, hmacKey?: string) {
+    this.hmacKey = hmacKey ?? 'qshield-evidence-hmac-key-v1';
     this.sessionId = uuidv4();
     this.policyEnforcer = policyEnforcer ?? new PolicyEnforcer();
     this.trustHistory = new TrustHistoryService();
@@ -267,6 +267,14 @@ export class TrustMonitor {
     this.updateTrustState();
 
     log.info(`[TrustMonitor] Injected ${records.length} seed evidence records + signals`);
+  }
+
+  /**
+   * Get the HMAC key used for evidence record hashing.
+   * @returns the HMAC key string
+   */
+  getHmacKey(): string {
+    return this.hmacKey;
   }
 
   /**
@@ -642,7 +650,7 @@ export class TrustMonitor {
         this.lastEvidenceHash,
         this.lastStructureHash,
         this.sessionId,
-        EVIDENCE_HMAC_KEY,
+        this.hmacKey,
       );
 
       this.lastEvidenceHash = record.hash;

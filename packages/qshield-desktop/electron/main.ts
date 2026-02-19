@@ -24,7 +24,7 @@ import log from 'electron-log';
 import { registerIpcHandlers, type ServiceRegistry } from './ipc/handlers';
 import { ConfigManager, type WindowBounds, type ShieldOverlayConfig } from './services/config';
 import { StandaloneCertGenerator } from './services/standalone-cert';
-import { generateSignatureHTML, DEFAULT_SIGNATURE_CONFIG, type SignatureConfig } from './services/signature-generator';
+import { generateSignatureHTML, initSignatureGenerator, DEFAULT_SIGNATURE_CONFIG, type SignatureConfig } from './services/signature-generator';
 import { VerificationRecordService } from './services/verification-record';
 import { CryptoMonitorService } from './services/crypto-monitor';
 import { NotificationService } from './services/notification';
@@ -41,6 +41,7 @@ import { AssetMonitor } from './services/asset-monitor';
 import { EmailNotifierService } from './services/email-notifier';
 import { TrustReportStore } from './services/trust-report-store';
 import { TrustReportGenerator } from './services/trust-report-generator';
+import { KeyManager } from './services/key-manager';
 import type { TrustReport, TrustReportType, TrustLevel, EvidenceRecord, AdapterType } from '@qshield/core';
 import { IPC_CHANNELS, IPC_EVENTS } from './ipc/channels';
 
@@ -103,6 +104,7 @@ let moduleAssetMonitor: AssetMonitor | null = null;
 let moduleAssetStore: AssetStore | null = null;
 let reportStore: TrustReportStore | null = null;
 let reportGenerator: TrustReportGenerator | null = null;
+let keyManager: KeyManager | null = null;
 
 const isDev = !app.isPackaged;
 
@@ -516,10 +518,9 @@ function updateTray(score: number, level: typeof currentTrustLevel): void {
 
 // ── Evidence data with HMAC-SHA256 hash chain ───────────────────────────────
 
-const HMAC_KEY = 'qshield-evidence-v1';
-
-function computeEvidenceHash(data: string, previousHash: string | null): string {
-  const hmac = createHmac('sha256', HMAC_KEY);
+function computeEvidenceHash(data: string, previousHash: string | null, hmacKey?: string): string {
+  const key = hmacKey ?? keyManager?.getSeedEvidenceHmacKey() ?? 'qshield-evidence-v1';
+  const hmac = createHmac('sha256', key);
   hmac.update(previousHash ?? 'genesis');
   hmac.update(data);
   return hmac.digest('hex');
@@ -653,7 +654,8 @@ function initSeedCertificates(): void {
     const sessionId = randomUUID();
     const evCount = 12 + Math.floor(Math.random() * 25);
     const hashes: string[] = [];
-    for (let h = 0; h < 3; h++) hashes.push(createHmac('sha256', 'cert').update(`${id}-${h}`).digest('hex'));
+    const certKey = keyManager?.getReportHmacKey() ?? 'cert';
+    for (let h = 0; h < 3; h++) hashes.push(createHmac('sha256', certKey).update(`${id}-${h}`).digest('hex'));
     seedCertificates.push({
       id,
       sessionId,
@@ -662,7 +664,7 @@ function initSeedCertificates(): void {
       trustLevel: levels[i],
       evidenceCount: evCount,
       evidenceHashes: hashes,
-      signatureChain: createHmac('sha256', 'chain').update(id).digest('hex'),
+      signatureChain: createHmac('sha256', certKey).update(id).digest('hex'),
       pdfPath: '', // no pre-rendered PDF; export handler generates on-the-fly
     });
   }
@@ -789,7 +791,7 @@ function seedEvidenceRecords(monitor: TrustMonitor): void {
   if (monitor.getEvidenceRecords().length > 0) return;
 
   const sessionId = monitor.getSessionId();
-  const hmacKey = 'qshield-evidence-hmac-key-v1';
+  const hmacKey = keyManager?.getTrustMonitorHmacKey() ?? 'qshield-evidence-hmac-key-v1';
   const records: EvidenceRecord[] = [];
   let prevHash: string | null = null;
   let prevStructHash: string | null = null;
@@ -842,7 +844,8 @@ function seedInitialReport(monitor: TrustMonitor, assetStore: AssetStore): void 
   const grade = score >= 95 ? 'A+' : score >= 90 ? 'A' : score >= 85 ? 'A-' : score >= 80 ? 'B+' : score >= 70 ? 'B' : score >= 65 ? 'B-' : score >= 55 ? 'C+' : score >= 40 ? 'C' : score >= 25 ? 'D' : 'F';
   const now = new Date();
   const sigData = `snapshot:${score}:${now.toISOString()}`;
-  const signatureChain = createHmac('sha256', 'qshield-report-hmac-key-v1').update(sigData).digest('hex');
+  const reportKey = keyManager?.getReportHmacKey() ?? 'qshield-report-hmac-key-v1';
+  const signatureChain = createHmac('sha256', reportKey).update(sigData).digest('hex');
 
   const report: TrustReport = {
     id: randomUUID(),
@@ -877,7 +880,9 @@ function seedInitialReport(monitor: TrustMonitor, assetStore: AssetStore): void 
 /** Create service registry for IPC handlers */
 function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMonitor, assetMonitor: AssetMonitor, assetStore: AssetStore): ServiceRegistry {
   const certGen = new StandaloneCertGenerator();
-  const verificationService = new VerificationRecordService();
+  const verificationService = new VerificationRecordService(
+    keyManager?.getVerificationHmacKey(),
+  );
   const licMgr = new LicenseManager(config);
   licMgr.loadLicense();
 
@@ -914,7 +919,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
   cryptoMonitor.start();
 
   // Initialize secure message service
-  const secureMessageSvc = new SecureMessageService();
+  const secureMessageSvc = new SecureMessageService(keyManager?.getSecureMessageHmacKey());
   secureMessageSvc.setPersist((messages) => config.set('secureMessages', messages));
   secureMessageSvc.setEditionProvider(() => licMgr.getEdition());
   const savedMessages = config.get('secureMessages') as Parameters<typeof secureMessageSvc.load>[0] | undefined;
@@ -929,6 +934,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
   // Initialize secure file service
   const secureFileSvc = new SecureFileService(
     path.join(app.getPath('userData'), 'secure-files'),
+    keyManager?.getSecureFileHmacKey(),
   );
   // Set file size limit based on edition
   const fileSizeLimits: Record<string, number> = {
@@ -978,7 +984,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         const records = realTrustMonitor.getEvidenceRecords();
         const record = records.find((r) => r.id === id);
         if (!record) return { valid: false, errors: ['Record not found'] };
-        const result = verifyEvidenceRecord(record, realTrustMonitor.getSessionId(), 'qshield-evidence-hmac-key-v1');
+        const result = verifyEvidenceRecord(record, realTrustMonitor.getSessionId(), realTrustMonitor.getHmacKey());
         if (!result.contentValid || !result.structureValid) {
           const errors: string[] = [];
           if (!result.contentValid) errors.push('Helix A (content) hash verification failed');
@@ -1241,7 +1247,8 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         }
 
         // Generate signature chain hash
-        const signatureChain = createHmac('sha256', 'qshield-report-key-v1')
+        const rptKey = keyManager?.getReportHmacKey() ?? 'qshield-report-key-v1';
+        const signatureChain = createHmac('sha256', rptKey)
           .update(`${id}:${now}:${(state as { score: number }).score}`)
           .digest('hex');
 
@@ -1307,6 +1314,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         return report?.pdfPath ?? null;
       },
     },
+    keyManager: keyManager ? { getStatus: () => keyManager!.getStatus() } : undefined,
     emailNotifier: new EmailNotifierService(config),
     trustHistory: {
       getLifetimeStats: () => realTrustMonitor.getTrustHistory().getLifetimeStats(),
@@ -1419,6 +1427,13 @@ async function gracefulShutdown(): Promise<void> {
   }
   log.info('Windows closed');
 
+  // 5b. Destroy key manager
+  if (keyManager) {
+    keyManager.destroy();
+    keyManager = null;
+    log.info('Key manager destroyed');
+  }
+
   // 6. Mark clean shutdown
   if (configManager) {
     configManager.setCleanShutdown(true);
@@ -1439,7 +1454,7 @@ async function gracefulShutdown(): Promise<void> {
 
 // ── App lifecycle ────────────────────────────────────────────────────────────
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   log.info('App ready, initializing...');
 
   // Initialize config
@@ -1450,6 +1465,13 @@ app.whenReady().then(() => {
 
   // Check for crash recovery
   checkCrashRecovery(configManager);
+
+  // Initialize KeyManager (must be after app ready for safeStorage)
+  keyManager = new KeyManager();
+  await keyManager.initialize();
+
+  // Initialize signature generator with derived key
+  initSignatureGenerator(keyManager.getSignatureHmacKey());
 
   // Set up CSP (must be before any window loads)
   setupCSP();
@@ -1463,7 +1485,11 @@ app.whenReady().then(() => {
   }
 
   // Initialize real TrustMonitor with all adapters (File Watcher, Email, etc.)
-  const realTrustMonitor = new TrustMonitor(googleAuth);
+  const realTrustMonitor = new TrustMonitor(
+    googleAuth,
+    undefined,
+    keyManager.getTrustMonitorHmacKey(),
+  );
 
   // Initialize high-trust asset monitoring (SQLite store + chokidar watcher)
   const assetStore = new AssetStore();

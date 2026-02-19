@@ -26,7 +26,6 @@ export interface VerificationStats {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const HMAC_KEY = 'qshield-verification-v1';
 const VERIFY_BASE_URL = 'https://verify.qshield.io/v';
 
 // ── Service ──────────────────────────────────────────────────────────────────
@@ -34,8 +33,10 @@ const VERIFY_BASE_URL = 'https://verify.qshield.io/v';
 export class VerificationRecordService {
   private records: VerificationRecord[] = [];
   private referralId: string;
+  private hmacKey: string;
 
-  constructor() {
+  constructor(hmacKey?: string) {
+    this.hmacKey = hmacKey ?? 'qshield-verification-v1';
     // Generate a stable referral ID (in production this would be persisted)
     this.referralId = randomBytes(8).toString('hex');
   }
@@ -54,9 +55,9 @@ export class VerificationRecordService {
     const timestamp = new Date().toISOString();
     const verificationId = this.generateVerificationId(timestamp, opts.trustScore, opts.senderEmail);
     const emailSubjectHash = opts.emailSubject
-      ? createHmac('sha256', HMAC_KEY).update(opts.emailSubject).digest('hex').slice(0, 16)
+      ? createHmac('sha256', this.hmacKey).update(opts.emailSubject).digest('hex').slice(0, 16)
       : 'none';
-    const evidenceChainHash = createHmac('sha256', HMAC_KEY)
+    const evidenceChainHash = createHmac('sha256', this.hmacKey)
       .update(`${timestamp}:${opts.trustScore}:${opts.senderEmail}:${verificationId}`)
       .digest('hex');
 
@@ -127,7 +128,7 @@ export class VerificationRecordService {
 
   private generateVerificationId(timestamp: string, score: number, email: string): string {
     const data = `${timestamp}:${score}:${email}:${randomBytes(4).toString('hex')}`;
-    return createHmac('sha256', HMAC_KEY).update(data).digest('hex').slice(0, 12);
+    return createHmac('sha256', this.hmacKey).update(data).digest('hex').slice(0, 12);
   }
 
   /** POST verification record to Gateway (best-effort) */

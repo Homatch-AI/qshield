@@ -62,7 +62,6 @@ export interface SecureFileSummary {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const HMAC_KEY = 'qshield-secure-file-v1';
 const INDEX_FILE = 'index.json';
 const MAX_STORED_FILES = 200;
 
@@ -79,9 +78,11 @@ export class SecureFileService {
   private files: SecureFile[] = [];
   private storagePath: string;
   private maxFileSize = 10 * 1024 * 1024; // 10 MB default
+  private hmacKey: string;
 
-  constructor(storagePath: string) {
+  constructor(storagePath: string, hmacKey?: string) {
     this.storagePath = storagePath;
+    this.hmacKey = hmacKey ?? 'qshield-secure-file-v1';
     mkdirSync(storagePath, { recursive: true });
     this.loadIndex();
   }
@@ -125,7 +126,7 @@ export class SecureFileService {
     const contentHash = createHash('sha256').update(opts.data).digest('hex');
 
     // Evidence chain hash
-    const evidenceChainHash = createHmac('sha256', HMAC_KEY)
+    const evidenceChainHash = createHmac('sha256', this.hmacKey)
       .update(`${id}:${contentHash}:${timestamp}:${senderEmail}`)
       .digest('hex');
 
@@ -256,7 +257,7 @@ export class SecureFileService {
 
   private generateId(timestamp: string): string {
     const data = `${timestamp}:${randomBytes(8).toString('hex')}`;
-    return createHmac('sha256', HMAC_KEY).update(data).digest('hex').slice(0, 12);
+    return createHmac('sha256', this.hmacKey).update(data).digest('hex').slice(0, 12);
   }
 
   private toSummary(file: SecureFile): SecureFileSummary {

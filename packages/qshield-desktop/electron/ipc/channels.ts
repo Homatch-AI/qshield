@@ -251,6 +251,10 @@ export const IPC_CHANNELS = {
   /** Get a single trust report by ID */
   REPORT_GET: 'report:get',
 
+  // ── Security ──────────────────────────────────────────────────
+  /** Get key management status (initialized, backend type) */
+  SECURITY_KEY_STATUS: 'security:key-status',
+
   // ── Trust History (internal) ──────────────────────────────────
   /** Get lifetime trust stats for the Trust Profile page */
   TRUST_HISTORY_LIFETIME: 'trust-history:lifetime',

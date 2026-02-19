@@ -563,6 +563,11 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<unknown>(IPC_CHANNELS.TRUST_HISTORY_TREND, days),
   },
 
+  security: {
+    keyStatus: (): Promise<{ initialized: boolean; safeStorageAvailable: boolean; backend: string }> =>
+      invoke<{ initialized: boolean; safeStorageAvailable: boolean; backend: string }>(IPC_CHANNELS.SECURITY_KEY_STATUS),
+  },
+
   app: {
     version: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),

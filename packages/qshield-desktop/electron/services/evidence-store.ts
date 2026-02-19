@@ -203,13 +203,17 @@ export class EvidenceStore {
   private stmtPruneOldest!: Statement;
   private stmtRecordCount!: Statement;
 
+  private providedMasterSecret: string | undefined;
+
   /**
    * Create a new EvidenceStore instance.
    *
    * @param dbPath - Path to the SQLite database file (default: app userData)
    * @param config - Optional store configuration overrides
+   * @param masterSecret - Optional master secret from KeyManager (preferred over SQLite-stored one)
    */
-  constructor(dbPath?: string, config?: Partial<EvidenceStoreConfig>) {
+  constructor(dbPath?: string, config?: Partial<EvidenceStoreConfig>, masterSecret?: string) {
+    this.providedMasterSecret = masterSecret;
     this.config = { ...DEFAULT_CONFIG, ...config };
 
     const resolvedPath = dbPath ?? path.join(app.getPath('userData'), 'evidence.db');
@@ -289,13 +293,14 @@ export class EvidenceStore {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     );
 
-    // Retrieve or generate master secret
-    let masterSecret = this.getMeta(META_MASTER_SECRET);
+    // Prefer master secret from KeyManager, fall back to SQLite-stored one
+    let masterSecret = this.providedMasterSecret ?? this.getMeta(META_MASTER_SECRET);
     if (!masterSecret) {
       masterSecret = generateRandomHex(64);
-      this.setMeta(META_MASTER_SECRET, masterSecret);
-      log.info('EvidenceStore: generated new master secret');
+      log.info('EvidenceStore: generated new master secret (legacy fallback)');
     }
+    // Always write to SQLite for backward compatibility
+    this.setMeta(META_MASTER_SECRET, masterSecret);
 
     // Retrieve or generate salt (16 bytes for PBKDF2)
     let saltHex = this.getMeta(META_SALT);

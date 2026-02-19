@@ -416,6 +416,10 @@ interface QShieldReportsAPI {
   get(id: string): Promise<QShieldTrustReport | null>;
 }
 
+interface QShieldSecurityAPI {
+  keyStatus(): Promise<{ initialized: boolean; safeStorageAvailable: boolean; backend: string }>;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -438,6 +442,7 @@ interface QShieldAPI {
   profile: QShieldProfileAPI;
   emailNotify: QShieldEmailNotifyAPI;
   reports: QShieldReportsAPI;
+  security: QShieldSecurityAPI;
   trustHistory: {
     getLifetimeStats(): Promise<QShieldLifetimeStats>;
     getDailySummary(date: string): Promise<QShieldDailySummary | null>;

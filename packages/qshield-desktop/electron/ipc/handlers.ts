@@ -188,6 +188,9 @@ export interface ServiceRegistry {
     get: (id: string) => unknown;
     getPdfPath: (id: string) => string | null;
   };
+  keyManager?: {
+    getStatus: () => { initialized: boolean; safeStorageAvailable: boolean; backend: string };
+  };
 }
 
 // ── Rate limiter ─────────────────────────────────────────────────────────────
@@ -953,6 +956,14 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
 
   wrapHandler(IPC_CHANNELS.EMAIL_NOTIFY_TEST, async () => {
     return ok(await services.emailNotifier.sendTest());
+  });
+
+  // ── Security ────────────────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.SECURITY_KEY_STATUS, async () => {
+    if (!services.keyManager) {
+      return ok({ initialized: false, safeStorageAvailable: false, backend: 'none' });
+    }
+    return ok(services.keyManager.getStatus());
   });
 
   // ── Trust Profile (aliases for trustHistory) ───────────────────────

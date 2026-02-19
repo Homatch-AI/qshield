@@ -80,7 +80,6 @@ export interface MessageSummary {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const HMAC_KEY = 'qshield-secure-msg-v1';
 const MESSAGE_BASE_URL = 'https://qshield.io/m';
 const MAX_MESSAGES = 100;
 
@@ -105,8 +104,11 @@ export class SecureMessageService {
   private messages: SecureMessage[] = [];
   private persistFn: ((messages: SecureMessage[]) => void) | null = null;
   private editionFn: (() => string) | null = null;
+  private hmacKey: string;
 
-  constructor() {}
+  constructor(hmacKey?: string) {
+    this.hmacKey = hmacKey ?? 'qshield-secure-msg-v1';
+  }
 
   /** Set a callback to persist messages to config. */
   setPersist(fn: (messages: SecureMessage[]) => void): void {
@@ -140,7 +142,7 @@ export class SecureMessageService {
     const contentEncrypted = encrypted + '.' + authTag.toString('base64');
 
     // Content hash for evidence
-    const contentHash = createHmac('sha256', HMAC_KEY).update(opts.content).digest('hex');
+    const contentHash = createHmac('sha256', this.hmacKey).update(opts.content).digest('hex');
 
     // Encrypt attachments
     const attachments = this.encryptAttachments(opts.attachments ?? [], key);
@@ -149,7 +151,7 @@ export class SecureMessageService {
     const expiresAt = new Date(Date.now() + EXPIRY_MS[opts.expiresIn]).toISOString();
 
     // Evidence chain hash
-    const evidenceChainHash = createHmac('sha256', HMAC_KEY)
+    const evidenceChainHash = createHmac('sha256', this.hmacKey)
       .update(`${id}:${contentHash}:${createdAt}:${senderEmail}`)
       .digest('hex');
 
@@ -275,7 +277,7 @@ export class SecureMessageService {
 
   private generateId(timestamp: string): string {
     const data = `${timestamp}:${randomBytes(8).toString('hex')}`;
-    return createHmac('sha256', HMAC_KEY).update(data).digest('hex').slice(0, 12);
+    return createHmac('sha256', this.hmacKey).update(data).digest('hex').slice(0, 12);
   }
 
   private encryptAttachments(inputs: AttachmentInput[], key: Buffer): SecureAttachment[] {
