@@ -311,7 +311,7 @@ export interface AssetChangeEvent {
   assetId: string;
   path: string;
   sensitivity: AssetSensitivity;
-  eventType: 'asset-created' | 'asset-modified' | 'asset-deleted' | 'asset-renamed' | 'asset-permission-changed';
+  eventType: 'asset-created' | 'asset-modified' | 'asset-deleted' | 'asset-renamed' | 'asset-permission-changed' | 'asset-accessed' | 'asset-touched';
   previousHash: string | null;
   newHash: string | null;
   trustStateBefore: AssetTrustState;

@@ -318,7 +318,7 @@ interface QShieldAssetChangeEvent {
   assetId: string;
   path: string;
   sensitivity: 'normal' | 'strict' | 'critical';
-  eventType: string;
+  eventType: 'asset-created' | 'asset-modified' | 'asset-deleted' | 'asset-renamed' | 'asset-permission-changed' | 'asset-accessed' | 'asset-touched';
   previousHash: string | null;
   newHash: string | null;
   trustStateBefore: string;

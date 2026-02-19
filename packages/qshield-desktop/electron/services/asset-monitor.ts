@@ -1,4 +1,5 @@
 import * as chokidar from 'chokidar';
+import { execFile } from 'node:child_process';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -39,6 +40,8 @@ export class AssetMonitor {
   private hashCache: Map<string, string> = new Map(); // path → last known hash
   private snapshots: Map<string, FileSnapshot> = new Map(); // path → last snapshot
   private verifyInterval: ReturnType<typeof setInterval> | null = null;
+  private accessPollTimer: ReturnType<typeof setInterval> | null = null;
+  private knownAccessors: Map<string, Set<string>> = new Map(); // assetId → Set<"processName:pid">
   private pausedAssets: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   constructor(store: AssetStore) {
@@ -86,6 +89,11 @@ export class AssetMonitor {
     // is determined by its sensitivity level
     this.verifyInterval = setInterval(() => this.periodicVerify(), 60_000);
 
+    // Poll for file access (lsof) every 10 seconds (macOS only)
+    if (process.platform === 'darwin') {
+      this.accessPollTimer = setInterval(() => this.checkFileAccess(), 10_000);
+    }
+
     log.info(`[AssetMonitor] Watching ${assets.length} high-trust assets`);
   }
 
@@ -99,8 +107,13 @@ export class AssetMonitor {
       clearInterval(this.verifyInterval);
       this.verifyInterval = null;
     }
+    if (this.accessPollTimer) {
+      clearInterval(this.accessPollTimer);
+      this.accessPollTimer = null;
+    }
     this.hashCache.clear();
     this.snapshots.clear();
+    this.knownAccessors.clear();
     log.info('[AssetMonitor] Stopped');
   }
 
@@ -225,6 +238,40 @@ export class AssetMonitor {
       }
 
       if (currentHash === asset.verifiedHash) {
+        // Check for mtime-only change (file touched but content unchanged)
+        try {
+          const stat = await fs.promises.stat(asset.path);
+          const currentMtime = String(stat.mtimeMs);
+          const lastMtime = this.store.getMeta(id, 'lastMtime');
+          if (lastMtime && currentMtime !== lastMtime) {
+            const touchImpact = asset.sensitivity === 'critical' ? -5 : -2;
+            const touchEvent: AssetChangeEvent = {
+              assetId: asset.id,
+              path: asset.path,
+              sensitivity: asset.sensitivity,
+              eventType: 'asset-touched',
+              previousHash: currentHash,
+              newHash: currentHash,
+              trustStateBefore: asset.trustState,
+              trustStateAfter: asset.trustState,
+              timestamp: new Date().toISOString(),
+              metadata: {
+                fileName: path.basename(asset.path),
+                isHighTrustAsset: true,
+                detectedBy: 'periodic-verify',
+                previousMtime: lastMtime,
+                currentMtime,
+                trustImpact: touchImpact,
+              },
+            };
+            this.store.logChange(asset.id, touchEvent);
+            this.notifyListeners(touchEvent, asset);
+            log.info(`[AssetMonitor] Mtime changed but hash identical: ${asset.name}`);
+          }
+          this.store.setMeta(id, 'lastMtime', currentMtime);
+        } catch {
+          /* stat failed — skip mtime check */
+        }
         return this.store.verifyAsset(id);
       } else {
         // Hash mismatch — run through the full change pipeline
@@ -441,6 +488,8 @@ export class AssetMonitor {
       'asset-deleted': -30,
       'asset-renamed': -10,
       'asset-permission-changed': -20,
+      'asset-accessed': -3,
+      'asset-touched': -2,
     };
     const multiplier = SENSITIVITY_MULTIPLIERS[sensitivity];
     return Math.round((baseImpact[eventType] ?? -10) * multiplier);
@@ -614,6 +663,181 @@ export class AssetMonitor {
     await scan(dirPath, 0);
     // Sort most-recently-modified first
     return changed.sort((a, b) => b.localeCompare(a)).slice(0, 20);
+  }
+
+  // -----------------------------------------------------------------------
+  // File access monitoring (lsof-based)
+  // -----------------------------------------------------------------------
+
+  /** Notify all registered listeners of an asset change event. */
+  private notifyListeners(event: AssetChangeEvent, asset: HighTrustAsset): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event, asset);
+      } catch (err) {
+        log.error('[AssetMonitor] Listener error:', err);
+      }
+    }
+  }
+
+  /** Poll lsof for processes that have high-trust asset files open. */
+  private async checkFileAccess(): Promise<void> {
+    const assets = this.store.listAssets().filter((a) => a.enabled && a.type === 'file');
+    if (assets.length === 0) return;
+
+    // System processes to ignore — these are macOS infrastructure, not user activity
+    const IGNORED_PROCESSES = new Set([
+      'mds', 'mds_stores', 'mdworker', 'mdworker_shared',
+      'Spotlight', 'fseventsd', 'fseventssd',
+      'bird', 'cloudd', 'nsurlsessiond', // iCloud
+      'kernel_task', 'launchd', 'diskarbitrationd',
+      'revisiond', 'filecoordinationd',
+    ]);
+
+    for (const asset of assets) {
+      if (this.pausedAssets.has(asset.id)) continue;
+
+      try {
+        const accessors = await this.runLsof(asset.path);
+        if (accessors.length === 0) continue;
+
+        // Initialize known set if first poll
+        if (!this.knownAccessors.has(asset.id)) {
+          const initial = new Set(accessors.map((a) => `${a.processName}:${a.pid}`));
+          this.knownAccessors.set(asset.id, initial);
+          continue; // Don't alert on first poll — these were already open
+        }
+
+        const known = this.knownAccessors.get(asset.id)!;
+        const newAccessors = accessors.filter((a) => {
+          const key = `${a.processName}:${a.pid}`;
+          return !known.has(key) && !IGNORED_PROCESSES.has(a.processName);
+        });
+
+        // Update known set
+        const updated = new Set(accessors.map((a) => `${a.processName}:${a.pid}`));
+        this.knownAccessors.set(asset.id, updated);
+
+        if (newAccessors.length === 0) continue;
+
+        // Emit an access event for meaningful new accessors
+        const impact =
+          asset.sensitivity === 'critical' ? -10
+          : asset.sensitivity === 'strict' ? -5
+          : -2;
+
+        const accessEvent: AssetChangeEvent = {
+          assetId: asset.id,
+          path: asset.path,
+          sensitivity: asset.sensitivity,
+          eventType: 'asset-accessed',
+          previousHash: asset.contentHash,
+          newHash: asset.contentHash,
+          trustStateBefore: asset.trustState,
+          trustStateAfter: asset.trustState,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            fileName: path.basename(asset.path),
+            isHighTrustAsset: true,
+            detectedBy: 'access-poll',
+            accessors: newAccessors.map((a) => ({
+              process: this.friendlyProcessName(a.processName),
+              pid: a.pid,
+              user: a.user,
+              accessType: a.accessType,
+            })),
+            accessorNames: newAccessors.map((a) => this.friendlyProcessName(a.processName)),
+            trustImpact: impact,
+          },
+        };
+
+        this.store.logChange(asset.id, accessEvent);
+        this.notifyListeners(accessEvent, asset);
+
+        log.info(
+          `[AssetMonitor] File access detected: ${asset.name} opened by ${newAccessors.map((a) => a.processName).join(', ')}`,
+        );
+      } catch (err) {
+        log.debug(`[AssetMonitor] lsof check failed for ${asset.name}:`, err);
+      }
+    }
+  }
+
+  /** Run lsof on a file path and parse the output. */
+  private runLsof(filePath: string): Promise<Array<{ processName: string; pid: string; user: string; accessType: string; filePath: string }>> {
+    return new Promise((resolve) => {
+      execFile('lsof', ['-F', 'pcufa', '--', filePath], { timeout: 5_000 }, (err, stdout) => {
+        if (err || !stdout.trim()) {
+          resolve([]);
+          return;
+        }
+        const results: Array<{ processName: string; pid: string; user: string; accessType: string; filePath: string }> = [];
+        let current: { processName: string; pid: string; user: string; accessType: string; filePath: string } = {
+          processName: '', pid: '', user: '', accessType: '', filePath: '',
+        };
+
+        for (const line of stdout.split('\n')) {
+          if (!line) continue;
+          const tag = line[0];
+          const value = line.slice(1);
+          switch (tag) {
+            case 'p':
+              // New process — push previous if complete
+              if (current.pid && current.processName) {
+                results.push({ ...current });
+              }
+              current = { processName: '', pid: value, user: '', accessType: '', filePath: '' };
+              break;
+            case 'c':
+              current.processName = value;
+              break;
+            case 'u':
+              current.user = value;
+              break;
+            case 'a':
+              current.accessType = value; // 'r', 'w', 'u' (read, write, read-write)
+              break;
+            case 'f':
+              // File descriptor — ignore (we have the path)
+              break;
+            case 'n':
+              current.filePath = value;
+              break;
+          }
+        }
+        // Push last entry
+        if (current.pid && current.processName) {
+          results.push(current);
+        }
+
+        // Filter to our own app
+        const appName = 'QShield';
+        resolve(results.filter((r) => !r.processName.includes(appName) && r.processName !== 'Electron'));
+      });
+    });
+  }
+
+  /** Convert raw process names to human-readable app names. */
+  private friendlyProcessName(rawName: string): string {
+    // macOS apps often show as "AppName" already, but some have suffixes
+    const map: Record<string, string> = {
+      'com.apple.TextEdit': 'TextEdit',
+      'com.apple.Preview': 'Preview',
+      'com.apple.finder': 'Finder',
+      'com.microsoft.VSCode': 'VS Code',
+      'code': 'VS Code',
+      'Code Helper': 'VS Code',
+      'vim': 'Vim',
+      'nvim': 'Neovim',
+      'nano': 'Nano',
+      'less': 'Less',
+      'cat': 'cat',
+      'tail': 'tail',
+      'Python': 'Python',
+      'python3': 'Python',
+      'node': 'Node.js',
+    };
+    return map[rawName] ?? rawName;
   }
 
   // -----------------------------------------------------------------------

@@ -27,6 +27,8 @@ const EVENT_DESCRIPTIONS: Record<string, Record<string, string>> = {
     'high-trust:asset-deleted': 'High-trust asset deleted',
     'high-trust:asset-renamed': 'High-trust asset renamed',
     'high-trust:asset-permission-changed': 'High-trust asset permissions changed',
+    'high-trust:asset-accessed': 'High-trust asset opened',
+    'high-trust:asset-touched': 'High-trust asset metadata changed',
   },
   api: {
     'auth.success': 'API authentication successful',
@@ -148,6 +150,8 @@ const EVENT_ICONS: Record<string, Record<string, string>> = {
     'high-trust:asset-deleted': 'file-minus',
     'high-trust:asset-renamed': 'file-arrow',
     'high-trust:asset-permission-changed': 'shield-alert',
+    'high-trust:asset-accessed': 'eye',
+    'high-trust:asset-touched': 'clock',
   },
   api: {
     'auth.success': 'key',
