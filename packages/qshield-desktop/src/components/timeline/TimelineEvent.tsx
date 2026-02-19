@@ -134,6 +134,11 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
               </div>
             </div>
 
+            {/* Forensics detail panel */}
+            {signal.metadata?.forensics != null && (
+              <ForensicsPanel forensics={signal.metadata.forensics as Record<string, unknown>} />
+            )}
+
             {/* Full metadata */}
             {signal.metadata && Object.keys(signal.metadata).length > 0 && (
               <div>
@@ -141,7 +146,9 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
                   Full Metadata
                 </span>
                 <div className="mt-1 rounded-md bg-slate-800/50 px-3 py-2 space-y-0.5">
-                  {Object.entries(signal.metadata).map(([key, value]) => (
+                  {Object.entries(signal.metadata)
+                    .filter(([key]) => key !== 'forensics')
+                    .map(([key, value]) => (
                     <div key={key} className="flex items-baseline gap-2 text-xs">
                       <span className="text-slate-500 shrink-0">{key}:</span>
                       <span className="text-slate-300 truncate font-mono text-[11px]">{String(value)}</span>
@@ -152,6 +159,92 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ForensicsPanel({ forensics }: { forensics: Record<string, unknown> }) {
+  const f = forensics;
+  const changedFiles = (Array.isArray(f.changedFiles) ? f.changedFiles : []) as Array<Record<string, unknown>>;
+  const owner = f.owner ? String(f.owner) : null;
+  const modifiedBy = f.modifiedBy ? String(f.modifiedBy) : null;
+  const pid = f.pid != null ? Number(f.pid) : null;
+  const changeSummary = f.changeSummary ? String(f.changeSummary) : '';
+  const filePermissions = f.filePermissions ? String(f.filePermissions) : null;
+  const isQuarantined = Boolean(f.isQuarantined);
+
+  return (
+    <div>
+      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+        File Change Forensics
+      </span>
+      <div className="mt-1.5 space-y-2">
+        {/* WHO */}
+        <div className="rounded-md bg-slate-800/50 px-3 py-2">
+          <span className="text-[10px] text-slate-500 uppercase">Who</span>
+          <p className="text-sm text-slate-200">
+            {owner ? `Modified by: ${owner}` : 'Owner unknown'}
+            {modifiedBy ? ` via ${modifiedBy}` : ''}
+            {pid ? ` (PID ${pid})` : ''}
+          </p>
+        </div>
+
+        {/* WHAT — changed files list */}
+        {changedFiles.length > 0 && (
+          <div className="rounded-md bg-slate-800/50 px-3 py-2">
+            <span className="text-[10px] text-slate-500 uppercase">Changed Files</span>
+            <div className="mt-1 space-y-0.5">
+              {changedFiles.map((cf, i) => {
+                const changeType = String(cf.changeType ?? '');
+                const sizeChange = cf.sizeChange != null ? Number(cf.sizeChange) : null;
+                const lineCountChange = cf.lineCountChange != null ? Number(cf.lineCountChange) : null;
+                return (
+                  <div key={i} className="flex items-baseline gap-2 text-xs">
+                    <span className={`shrink-0 font-semibold ${
+                      changeType.includes('deleted')
+                        ? 'text-red-400'
+                        : changeType.includes('created')
+                        ? 'text-emerald-400'
+                        : 'text-amber-400'
+                    }`}>
+                      {changeType.includes('deleted') ? '-'
+                        : changeType.includes('created') ? '+'
+                        : '~'}
+                    </span>
+                    <span className="text-slate-300 font-mono text-[11px] truncate">
+                      {String(cf.fileName ?? '')}
+                    </span>
+                    {sizeChange !== null && (
+                      <span className="text-slate-500 text-[10px]">
+                        {sizeChange >= 0 ? '+' : ''}{sizeChange} B
+                      </span>
+                    )}
+                    {lineCountChange !== null && (
+                      <span className="text-slate-500 text-[10px]">
+                        {lineCountChange >= 0 ? '+' : ''}{lineCountChange} lines
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* SUMMARY */}
+        <div className="rounded-md bg-slate-800/50 px-3 py-2">
+          <span className="text-[10px] text-slate-500 uppercase">Summary</span>
+          <p className="text-sm text-slate-300">{changeSummary}</p>
+          {filePermissions && (
+            <p className="text-xs text-slate-500 mt-0.5">Permissions: {filePermissions}</p>
+          )}
+          {isQuarantined && (
+            <p className="text-xs text-amber-400 mt-0.5 font-medium">
+              Quarantine flag detected (macOS Gatekeeper)
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

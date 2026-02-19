@@ -11,6 +11,11 @@ import type {
   AssetChangeEvent,
 } from '@qshield/core';
 import { AssetStore } from './asset-store';
+import {
+  enrichFileChange,
+  captureSnapshot,
+  type FileSnapshot,
+} from './file-forensics';
 
 type AssetEventCallback = (event: AssetChangeEvent, asset: HighTrustAsset) => void;
 
@@ -32,6 +37,7 @@ export class AssetMonitor {
   private watcher: chokidar.FSWatcher | null = null;
   private listeners: AssetEventCallback[] = [];
   private hashCache: Map<string, string> = new Map(); // path → last known hash
+  private snapshots: Map<string, FileSnapshot> = new Map(); // path → last snapshot
   private verifyInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(store: AssetStore) {
@@ -50,10 +56,14 @@ export class AssetMonitor {
       return;
     }
 
-    // Seed the hash cache with known hashes
+    // Seed the hash cache with known hashes and capture initial snapshots
     for (const a of assets) {
       if (a.contentHash) {
         this.hashCache.set(a.path, a.contentHash);
+      }
+      if (a.type === 'file') {
+        const snap = await captureSnapshot(a.path);
+        if (snap) this.snapshots.set(a.path, snap);
       }
     }
 
@@ -90,6 +100,7 @@ export class AssetMonitor {
       this.verifyInterval = null;
     }
     this.hashCache.clear();
+    this.snapshots.clear();
     log.info('[AssetMonitor] Stopped');
   }
 
@@ -116,9 +127,13 @@ export class AssetMonitor {
       this.watcher.add(asset.path);
     }
 
-    // Cache initial hash
+    // Cache initial hash and snapshot
     if (asset.contentHash) {
       this.hashCache.set(asset.path, asset.contentHash);
+    }
+    if (asset.type === 'file') {
+      const snap = await captureSnapshot(asset.path);
+      if (snap) this.snapshots.set(asset.path, snap);
     }
 
     return asset;
@@ -132,6 +147,7 @@ export class AssetMonitor {
         this.watcher.unwatch(asset.path);
       }
       this.hashCache.delete(asset.path);
+      this.snapshots.delete(asset.path);
       this.store.removeAsset(id);
       log.info(`[AssetMonitor] Removed asset: ${asset.name}`);
     }
@@ -155,6 +171,12 @@ export class AssetMonitor {
         return this.store.getAsset(id);
       }
 
+      // Update snapshot after verification
+      if (asset.type === 'file') {
+        const snap = await captureSnapshot(asset.path);
+        if (snap) this.snapshots.set(asset.path, snap);
+      }
+
       if (currentHash === asset.verifiedHash) {
         return this.store.verifyAsset(id);
       } else {
@@ -164,6 +186,15 @@ export class AssetMonitor {
         const impact = this.computeTrustImpact(asset.sensitivity, 'asset-modified');
         const newScore = Math.max(0, asset.trustScore + impact);
         this.store.updateTrustScore(id, newScore);
+
+        // Gather forensics for the detected change
+        const previousSnapshot = this.snapshots.get(asset.path);
+        let forensics;
+        try {
+          forensics = await enrichFileChange(asset.path, 'asset-modified', previousSnapshot);
+        } catch (err) {
+          log.warn(`[AssetMonitor] Forensics enrichment failed for ${asset.name}:`, err);
+        }
 
         const changeEvent: AssetChangeEvent = {
           assetId: asset.id,
@@ -179,6 +210,7 @@ export class AssetMonitor {
             fileName: path.basename(asset.path),
             relativePath: '',
             detectedBy: 'periodic-verify',
+            ...(forensics ? { forensics } : {}),
           },
         };
 
@@ -263,6 +295,23 @@ export class AssetMonitor {
       this.store.updateTrustScore(asset.id, newScore);
     }
 
+    // Gather forensic metadata (non-blocking, with timeouts)
+    const previousSnapshot = this.snapshots.get(filePath);
+    let forensics;
+    try {
+      forensics = await enrichFileChange(filePath, eventType, previousSnapshot);
+    } catch (err) {
+      log.warn(`[AssetMonitor] Forensics enrichment failed for ${filePath}:`, err);
+    }
+
+    // Update snapshot after change
+    if (eventType !== 'asset-deleted') {
+      const snap = await captureSnapshot(filePath);
+      if (snap) this.snapshots.set(filePath, snap);
+    } else {
+      this.snapshots.delete(filePath);
+    }
+
     // Build the change event
     const changeEvent: AssetChangeEvent = {
       assetId: asset.id,
@@ -277,6 +326,7 @@ export class AssetMonitor {
       metadata: {
         fileName: path.basename(filePath),
         relativePath: path.relative(asset.path, filePath),
+        ...(forensics ? { forensics } : {}),
       },
     };
 

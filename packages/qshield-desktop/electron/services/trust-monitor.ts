@@ -424,6 +424,7 @@ export class TrustMonitor {
           trustStateBefore: event.trustStateBefore,
           trustStateAfter: event.trustStateAfter,
           path: event.path,
+          ...event.metadata,
         },
         trustImpact: computeAssetTrustImpact(event),
       };
