@@ -163,6 +163,16 @@ function ResponseActions({ alert }: { alert: Alert }) {
     }
   };
 
+  const handleResumeAsset = async () => {
+    if (!assetId) return;
+    try {
+      await window.qshield.assets.resume(assetId);
+      setPaused(false);
+    } catch (err) {
+      console.error('Failed to resume asset:', err);
+    }
+  };
+
   const handleToggleLock = async () => {
     if (!assetId) return;
     setLockLoading(true);
@@ -276,23 +286,25 @@ function ResponseActions({ alert }: { alert: Alert }) {
         </button>
       )}
 
-      {assetId && !paused && (
+      {assetId && (
         <button
-          onClick={handlePauseAsset}
-          className="flex items-center gap-3 rounded-lg border border-amber-700/50 bg-amber-900/20 px-4 py-3 text-left hover:bg-amber-900/30 transition-colors"
+          onClick={paused ? handleResumeAsset : handlePauseAsset}
+          className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
+            paused
+              ? 'border-emerald-700/50 bg-emerald-900/20 hover:bg-emerald-900/30'
+              : 'border-amber-700/50 bg-amber-900/20 hover:bg-amber-900/30'
+          }`}
         >
-          <span className="text-lg shrink-0">{'⏸'}</span>
+          <span className="text-lg shrink-0">{paused ? '▶️' : '⏸'}</span>
           <div>
-            <div className="text-sm font-medium text-amber-300">Pause Monitoring (1 hour)</div>
-            <div className="text-xs text-amber-500/70">Temporarily stop alerts while you work on this asset</div>
+            <div className={`text-sm font-medium ${paused ? 'text-emerald-300' : 'text-amber-300'}`}>
+              {paused ? 'Resume Monitoring' : 'Pause Monitoring (1 hour)'}
+            </div>
+            <div className={`text-xs ${paused ? 'text-emerald-500/70' : 'text-amber-500/70'}`}>
+              {paused ? 'Start monitoring this asset again' : 'Temporarily stop alerts while you work on it'}
+            </div>
           </div>
         </button>
-      )}
-      {paused && (
-        <div className="flex items-center gap-3 rounded-lg border border-amber-700/50 bg-amber-900/20 px-4 py-3">
-          <span className="text-lg shrink-0">{'⏸'}</span>
-          <div className="text-sm font-medium text-amber-400">Monitoring paused for 1 hour</div>
-        </div>
       )}
 
       {targetPath && (

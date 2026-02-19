@@ -138,6 +138,24 @@ export class AssetMonitor {
     this.pausedAssets.set(assetId, timer);
   }
 
+  /** Resume monitoring for a paused asset immediately. */
+  resumeAsset(assetId: string): void {
+    log.info(`[AssetMonitor] Manually resuming asset ${assetId}`);
+
+    // Clear the pause timer
+    const timer = this.pausedAssets.get(assetId);
+    if (timer) {
+      clearTimeout(timer);
+      this.pausedAssets.delete(assetId);
+    }
+
+    // Restart watching
+    const asset = this.store.getAsset(assetId);
+    if (asset && asset.enabled && this.watcher) {
+      this.watcher.add(asset.path);
+    }
+  }
+
   // -----------------------------------------------------------------------
   // Asset management (wraps store + watcher updates)
   // -----------------------------------------------------------------------

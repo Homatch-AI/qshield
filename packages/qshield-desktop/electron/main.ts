@@ -18,6 +18,8 @@
 import dotenv from 'dotenv';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell, Tray, Menu, nativeImage, screen, Notification } from 'electron';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
+import { chmodSync, statSync, readdirSync } from 'node:fs';
 import { createHmac, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import log from 'electron-log';
@@ -1437,6 +1439,54 @@ async function gracefulShutdown(): Promise<void> {
 //   autoUpdater.on('update-downloaded', (info) => { ... });
 // Configure update feed URL in electron-builder config.
 
+// ── File lock helpers ─────────────────────────────────────────────────────────
+
+function lockDirectoryRecursive(dirPath: string): void {
+  try {
+    const entries = readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = path.join(dirPath, entry.name);
+      try {
+        if (entry.isDirectory()) {
+          lockDirectoryRecursive(fullPath);
+          chmodSync(fullPath, 0o555);
+        } else {
+          chmodSync(fullPath, 0o444);
+        }
+      } catch (e) {
+        log.warn('[Asset:lock] Could not lock:', fullPath, e);
+      }
+    }
+    chmodSync(dirPath, 0o555);
+  } catch (e) {
+    log.warn('[Asset:lock] Could not read directory:', dirPath, e);
+  }
+}
+
+function unlockDirectoryRecursive(dirPath: string): void {
+  try {
+    // Restore directory access first so we can read contents
+    chmodSync(dirPath, 0o755);
+    const entries = readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = path.join(dirPath, entry.name);
+      try {
+        if (entry.isDirectory()) {
+          unlockDirectoryRecursive(fullPath);
+        } else {
+          chmodSync(fullPath, 0o644);
+        }
+      } catch (e) {
+        log.warn('[Asset:unlock] Could not unlock:', fullPath, e);
+      }
+    }
+  } catch (e) {
+    log.warn('[Asset:unlock] Could not read directory:', dirPath, e);
+  }
+}
+
 // ── App lifecycle ────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -1682,7 +1732,6 @@ app.whenReady().then(async () => {
       return { success: true, data: { processes: [], summary: 'Process detection only available on macOS' } };
     }
     try {
-      const { execSync } = require('node:child_process');
       let output = '';
 
       // Try the specific file first
@@ -1712,7 +1761,7 @@ app.whenReady().then(async () => {
         : 'No processes currently accessing this location';
       return { success: true, data: { processes: unique, summary } };
     } catch (err) {
-      return { success: true, data: { processes: [], summary: `Check failed: ${err}` } };
+      return { success: true, data: { processes: [], summary: `Check failed: ${err instanceof Error ? err.message : err}` } };
     }
   });
 
@@ -1725,59 +1774,46 @@ app.whenReady().then(async () => {
     return { success: true, data: null };
   });
 
+  // Resume asset monitoring early
+  ipcMain.handle(IPC_CHANNELS.ASSET_RESUME, (_event, assetId: string) => {
+    if (!moduleAssetMonitor) {
+      return { success: false, error: { message: 'Asset monitor not available', code: 'NOT_AVAILABLE' } };
+    }
+    moduleAssetMonitor.resumeAsset(assetId);
+    return { success: true, data: null };
+  });
+
   // Lock asset — set file/directory to read-only
   ipcMain.handle(IPC_CHANNELS.ASSET_LOCK, (_event, assetId: string) => {
+    log.info('[Asset:lock] Attempting to lock asset:', assetId);
     if (!moduleAssetStore) {
       return { success: false, error: { message: 'Asset store not available', code: 'NOT_AVAILABLE' } };
     }
     const asset = moduleAssetStore.getAsset(assetId);
     if (!asset) {
+      log.error('[Asset:lock] Asset not found:', assetId);
       return { success: false, error: { message: 'Asset not found', code: 'NOT_FOUND' } };
     }
-    const fs = require('node:fs') as typeof import('node:fs');
-    const pathModule = require('node:path') as typeof import('node:path');
+    log.info('[Asset:lock] Asset path:', asset.path, 'type:', asset.type);
 
     try {
+      const stats = statSync(asset.path);
+      const originalPerms = (stats.mode & 0o777).toString(8);
+      log.info('[Asset:lock] Original permissions:', originalPerms);
+      moduleAssetStore.setMeta(assetId, 'originalPermissions', originalPerms);
+
       if (asset.type === 'file') {
-        const stats = fs.statSync(asset.path);
-        const originalPerms = (stats.mode & 0o777).toString(8);
-        moduleAssetStore.setMeta(assetId, 'originalPermissions', originalPerms);
-        fs.chmodSync(asset.path, 0o444);
-        log.info(`[Asset] Locked file: ${asset.path} (was ${originalPerms}, now 444)`);
+        chmodSync(asset.path, 0o444);
       } else {
-        const permsMap: Record<string, string> = {};
-        const lockDir = (dirPath: string) => {
-          let entries: import('node:fs').Dirent[];
-          try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch { return; }
-          for (const entry of entries) {
-            if (entry.name.startsWith('.')) continue;
-            const fullPath = pathModule.join(dirPath, entry.name);
-            try {
-              const s = fs.statSync(fullPath);
-              permsMap[fullPath] = (s.mode & 0o777).toString(8);
-              if (entry.isDirectory()) {
-                fs.chmodSync(fullPath, 0o555);
-                lockDir(fullPath);
-              } else {
-                fs.chmodSync(fullPath, 0o444);
-              }
-            } catch { /* skip unreadable */ }
-          }
-        };
-        try {
-          const dirStats = fs.statSync(asset.path);
-          permsMap[asset.path] = (dirStats.mode & 0o777).toString(8);
-        } catch { /* ok */ }
-        lockDir(asset.path);
-        try { fs.chmodSync(asset.path, 0o555); } catch { /* ok */ }
-        moduleAssetStore.setMeta(assetId, 'originalDirPermissions', JSON.stringify(permsMap));
-        log.info(`[Asset] Locked directory: ${asset.path}`);
+        lockDirectoryRecursive(asset.path);
       }
+
       moduleAssetStore.setMeta(assetId, 'locked', 'true');
+      log.info('[Asset:lock] Successfully locked:', asset.path);
       return { success: true, data: { locked: true } };
     } catch (err) {
-      log.error('[Asset] Lock failed:', err);
-      return { success: false, error: { message: `Failed to lock: ${err}`, code: 'LOCK_FAILED' } };
+      log.error('[Asset:lock] Failed:', err);
+      return { success: false, error: { message: `Failed: ${err instanceof Error ? err.message : err}`, code: 'LOCK_FAILED' } };
     }
   });
 
@@ -1790,41 +1826,22 @@ app.whenReady().then(async () => {
     if (!asset) {
       return { success: false, error: { message: 'Asset not found', code: 'NOT_FOUND' } };
     }
-    const fs = require('node:fs') as typeof import('node:fs');
-    const pathModule = require('node:path') as typeof import('node:path');
 
     try {
       if (asset.type === 'file') {
         const originalPerms = moduleAssetStore.getMeta(assetId, 'originalPermissions') || '644';
-        fs.chmodSync(asset.path, parseInt(originalPerms, 8));
-        log.info(`[Asset] Unlocked file: ${asset.path} (restored to ${originalPerms})`);
+        chmodSync(asset.path, parseInt(originalPerms, 8));
+        log.info(`[Asset:unlock] Unlocked file: ${asset.path} (restored to ${originalPerms})`);
       } else {
-        const permsMapStr = moduleAssetStore.getMeta(assetId, 'originalDirPermissions');
-        const permsMap: Record<string, string> = permsMapStr ? JSON.parse(permsMapStr) : {};
-        const dirPerms = permsMap[asset.path] || '755';
-        try { fs.chmodSync(asset.path, parseInt(dirPerms, 8)); } catch { /* ok */ }
-
-        const unlockDir = (dirPath: string) => {
-          let entries: import('node:fs').Dirent[];
-          try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch { return; }
-          for (const entry of entries) {
-            if (entry.name.startsWith('.')) continue;
-            const fullPath = pathModule.join(dirPath, entry.name);
-            const origPerms = permsMap[fullPath] || (entry.isDirectory() ? '755' : '644');
-            try {
-              fs.chmodSync(fullPath, parseInt(origPerms, 8));
-              if (entry.isDirectory()) unlockDir(fullPath);
-            } catch { /* ok */ }
-          }
-        };
-        unlockDir(asset.path);
-        log.info(`[Asset] Unlocked directory: ${asset.path}`);
+        unlockDirectoryRecursive(asset.path);
+        log.info(`[Asset:unlock] Unlocked directory: ${asset.path}`);
       }
+
       moduleAssetStore.setMeta(assetId, 'locked', 'false');
       return { success: true, data: { locked: false } };
     } catch (err) {
-      log.error('[Asset] Unlock failed:', err);
-      return { success: false, error: { message: `Failed to unlock: ${err}`, code: 'UNLOCK_FAILED' } };
+      log.error('[Asset:unlock] Failed:', err);
+      return { success: false, error: { message: `Failed: ${err instanceof Error ? err.message : err}`, code: 'UNLOCK_FAILED' } };
     }
   });
 

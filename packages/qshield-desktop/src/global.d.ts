@@ -340,6 +340,7 @@ interface QShieldAssetsAPI {
   changeLog(id: string, limit?: number): Promise<QShieldAssetChangeEvent[]>;
   browse(type: 'file' | 'directory'): Promise<string | null>;
   pause(id: string, durationSeconds: number): Promise<null>;
+  resume(id: string): Promise<null>;
   lock(id: string): Promise<{ locked: boolean }>;
   unlock(id: string): Promise<{ locked: boolean }>;
   lockStatus(id: string): Promise<{ locked: boolean }>;

@@ -216,6 +216,8 @@ export const IPC_CHANNELS = {
   ASSET_BROWSE: 'asset:browse',
   /** Pause monitoring for an asset temporarily */
   ASSET_PAUSE: 'asset:pause',
+  /** Resume monitoring for a paused asset */
+  ASSET_RESUME: 'asset:resume',
   /** Lock an asset (set read-only permissions) */
   ASSET_LOCK: 'asset:lock',
   /** Unlock an asset (restore original permissions) */

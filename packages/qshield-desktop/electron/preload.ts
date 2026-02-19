@@ -483,6 +483,9 @@ contextBridge.exposeInMainWorld('qshield', {
     pause: (id: string, durationSeconds: number): Promise<null> =>
       invoke<null>(IPC_CHANNELS.ASSET_PAUSE, id, durationSeconds),
 
+    resume: (id: string): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.ASSET_RESUME, id),
+
     lock: (id: string): Promise<{ locked: boolean }> =>
       invoke<{ locked: boolean }>(IPC_CHANNELS.ASSET_LOCK, id),
 
