@@ -139,23 +139,9 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
               <ForensicsPanel forensics={signal.metadata.forensics as Record<string, unknown>} />
             )}
 
-            {/* Full metadata */}
-            {signal.metadata && Object.keys(signal.metadata).length > 0 && (
-              <div>
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                  Full Metadata
-                </span>
-                <div className="mt-1 rounded-md bg-slate-800/50 px-3 py-2 space-y-0.5">
-                  {Object.entries(signal.metadata)
-                    .filter(([key]) => key !== 'forensics')
-                    .map(([key, value]) => (
-                    <div key={key} className="flex items-baseline gap-2 text-xs">
-                      <span className="text-slate-500 shrink-0">{key}:</span>
-                      <span className="text-slate-300 truncate font-mono text-[11px]">{String(value)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {/* Technical Details — collapsible raw metadata */}
+            {signal.metadata && Object.keys(signal.metadata).filter(k => k !== 'forensics').length > 0 && (
+              <TechnicalDetails metadata={signal.metadata} />
             )}
           </div>
         )}
@@ -173,79 +159,109 @@ function ForensicsPanel({ forensics }: { forensics: Record<string, unknown> }) {
   const changeSummary = f.changeSummary ? String(f.changeSummary) : '';
   const filePermissions = f.filePermissions ? String(f.filePermissions) : null;
   const isQuarantined = Boolean(f.isQuarantined);
+  const totalSizeChange = f.totalSizeChange != null ? String(f.totalSizeChange) : null;
 
   return (
-    <div>
-      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-        File Change Forensics
-      </span>
-      <div className="mt-1.5 space-y-2">
-        {/* WHO */}
-        <div className="rounded-md bg-slate-800/50 px-3 py-2">
-          <span className="text-[10px] text-slate-500 uppercase">Who</span>
-          <p className="text-sm text-slate-200">
-            {owner ? `Modified by: ${owner}` : 'Owner unknown'}
-            {modifiedBy ? ` via ${modifiedBy}` : ''}
-            {pid ? ` (PID ${pid})` : ''}
-          </p>
-        </div>
-
-        {/* WHAT — changed files list */}
-        {changedFiles.length > 0 && (
-          <div className="rounded-md bg-slate-800/50 px-3 py-2">
-            <span className="text-[10px] text-slate-500 uppercase">Changed Files</span>
-            <div className="mt-1 space-y-0.5">
-              {changedFiles.map((cf, i) => {
-                const changeType = String(cf.changeType ?? '');
-                const sizeChange = cf.sizeChange != null ? Number(cf.sizeChange) : null;
-                const lineCountChange = cf.lineCountChange != null ? Number(cf.lineCountChange) : null;
-                return (
-                  <div key={i} className="flex items-baseline gap-2 text-xs">
-                    <span className={`shrink-0 font-semibold ${
-                      changeType.includes('deleted')
-                        ? 'text-red-400'
-                        : changeType.includes('created')
-                        ? 'text-emerald-400'
-                        : 'text-amber-400'
-                    }`}>
-                      {changeType.includes('deleted') ? '-'
-                        : changeType.includes('created') ? '+'
-                        : '~'}
-                    </span>
-                    <span className="text-slate-300 font-mono text-[11px] truncate">
-                      {String(cf.fileName ?? '')}
-                    </span>
-                    {sizeChange !== null && (
-                      <span className="text-slate-500 text-[10px]">
-                        {sizeChange >= 0 ? '+' : ''}{sizeChange} B
-                      </span>
-                    )}
-                    {lineCountChange !== null && (
-                      <span className="text-slate-500 text-[10px]">
-                        {lineCountChange >= 0 ? '+' : ''}{lineCountChange} lines
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+    <div className="space-y-3">
+      {/* WHO changed it */}
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-slate-500">Modified by:</span>
+        <span className="font-medium text-slate-200">{owner || 'unknown'}</span>
+        {modifiedBy && (
+          <>
+            <span className="text-slate-600">via</span>
+            <span className="font-medium text-sky-400">{modifiedBy}</span>
+          </>
         )}
+        {pid != null && (
+          <span className="text-xs text-slate-600">(PID {pid})</span>
+        )}
+      </div>
 
-        {/* SUMMARY */}
-        <div className="rounded-md bg-slate-800/50 px-3 py-2">
-          <span className="text-[10px] text-slate-500 uppercase">Summary</span>
-          <p className="text-sm text-slate-300">{changeSummary}</p>
-          {filePermissions && (
-            <p className="text-xs text-slate-500 mt-0.5">Permissions: {filePermissions}</p>
-          )}
-          {isQuarantined && (
-            <p className="text-xs text-amber-400 mt-0.5 font-medium">
-              Quarantine flag detected (macOS Gatekeeper)
-            </p>
-          )}
+      {/* WHAT changed — file list with emoji indicators */}
+      {changedFiles.length > 0 && (
+        <div>
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Changed Files</span>
+          <div className="mt-1.5 space-y-1">
+            {changedFiles.map((cf, i) => {
+              const changeType = String(cf.changeType ?? '');
+              const sizeChange = cf.sizeChange != null ? Number(cf.sizeChange) : null;
+              const lineCountChange = cf.lineCountChange != null ? Number(cf.lineCountChange) : null;
+              const sizeStr = sizeChange != null
+                ? `${sizeChange >= 0 ? '+' : ''}${formatBytesCompact(sizeChange)}`
+                : null;
+              return (
+                <div key={i} className="flex items-center gap-2 rounded-md bg-slate-800/50 px-3 py-1.5 text-sm">
+                  <span className="text-base">
+                    {changeType.includes('deleted') ? '\uD83D\uDD34' : changeType.includes('created') ? '\uD83D\uDFE2' : '\uD83D\uDFE1'}
+                  </span>
+                  <span className="font-mono text-slate-300 truncate">{String(cf.fileName ?? '')}</span>
+                  <span className="text-xs text-slate-500">&mdash;</span>
+                  <span className="text-xs text-slate-400">{changeType}</span>
+                  {sizeStr && (
+                    <span className={`text-xs ${sizeChange != null && sizeChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      ({sizeStr})
+                    </span>
+                  )}
+                  {lineCountChange != null && (
+                    <span className="text-xs text-slate-500">
+                      {lineCountChange >= 0 ? '+' : ''}{lineCountChange} lines
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
+      )}
+
+      {/* Summary line */}
+      <div className="flex items-center gap-4 text-xs text-slate-500 pt-1">
+        <span>{changeSummary}</span>
+        {totalSizeChange && totalSizeChange !== 'unchanged' && (
+          <span>Total: {totalSizeChange}</span>
+        )}
+        {filePermissions && (
+          <span>Permissions: {filePermissions}</span>
+        )}
+        {isQuarantined && (
+          <span className="text-amber-400">Warning: File downloaded from internet</span>
+        )}
       </div>
     </div>
   );
+}
+
+function TechnicalDetails({ metadata }: { metadata: Record<string, unknown> }) {
+  const [showRaw, setShowRaw] = useState(false);
+  const entries = Object.entries(metadata).filter(([key]) => key !== 'forensics');
+  if (entries.length === 0) return null;
+
+  return (
+    <div>
+      <button
+        onClick={(e) => { e.stopPropagation(); setShowRaw(!showRaw); }}
+        className="text-xs text-slate-600 hover:text-slate-400 flex items-center gap-1 transition-colors"
+      >
+        <span>{showRaw ? '\u25BC' : '\u25B6'}</span> Technical Details
+      </button>
+      {showRaw && (
+        <div className="mt-2 rounded-md bg-slate-800/50 px-3 py-2 space-y-0.5">
+          {entries.map(([key, value]) => (
+            <div key={key} className="flex items-baseline gap-2 text-xs">
+              <span className="text-slate-500 shrink-0">{key}:</span>
+              <span className="text-slate-300 truncate font-mono text-[11px]">{String(value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatBytesCompact(bytes: number): string {
+  const abs = Math.abs(bytes);
+  if (abs < 1024) return `${bytes} B`;
+  if (abs < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
