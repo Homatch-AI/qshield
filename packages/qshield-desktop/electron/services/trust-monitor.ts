@@ -98,11 +98,8 @@ export class TrustMonitor {
 
     // Priority order for adapter limiting: file > email > zoom > teams > api.
     // When maxAdapters < total, only the highest-priority adapters start.
-    // FileWatcherAdapter disabled — chokidar opens thousands of FDs on
-    // large directories, exhausting the FD pool and causing EBADF errors
-    // for all other adapters that use execSync (Zoom, Teams).
     this.adapters = [
-      // new FileWatcherAdapter(),  // priority 1 (disabled)
+      new FileWatcherAdapter(),       // priority 1 — real chokidar (depth:1, native FSEvents)
       new EmailAdapter(authService),  // priority 2 — needs GoogleAuthService
       new ZoomAdapter(),              // priority 3
       new TeamsAdapter(),             // priority 4
