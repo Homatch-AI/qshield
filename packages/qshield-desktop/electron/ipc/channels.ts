@@ -214,6 +214,14 @@ export const IPC_CHANNELS = {
   ASSET_CHANGE_LOG: 'asset:change-log',
   /** Open a native file/folder picker dialog */
   ASSET_BROWSE: 'asset:browse',
+  /** Pause monitoring for an asset temporarily */
+  ASSET_PAUSE: 'asset:pause',
+
+  // ── Shell / Investigation ───────────────────────────────────────
+  /** Open a file or folder in the system file manager */
+  SHELL_SHOW_IN_FOLDER: 'shell:show-in-folder',
+  /** Check what processes have a file/folder open */
+  INVESTIGATE_CHECK_PROCESSES: 'investigate:check-processes',
 
   // ── Trust Profile ──────────────────────────────────────────────
   /** Get lifetime trust profile stats (grades, streaks, milestones) */

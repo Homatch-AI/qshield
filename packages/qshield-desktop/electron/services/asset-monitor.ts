@@ -39,6 +39,7 @@ export class AssetMonitor {
   private hashCache: Map<string, string> = new Map(); // path → last known hash
   private snapshots: Map<string, FileSnapshot> = new Map(); // path → last snapshot
   private verifyInterval: ReturnType<typeof setInterval> | null = null;
+  private pausedAssets: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   constructor(store: AssetStore) {
     this.store = store;
@@ -106,6 +107,35 @@ export class AssetMonitor {
   /** Register a callback for asset change events. */
   onAssetChange(callback: AssetEventCallback): void {
     this.listeners.push(callback);
+  }
+
+  /** Pause monitoring for an asset temporarily. */
+  pauseAsset(assetId: string, durationSeconds: number): void {
+    const asset = this.store.getAsset(assetId);
+    if (!asset) return;
+
+    log.info(`[AssetMonitor] Pausing asset "${asset.name}" for ${durationSeconds}s`);
+
+    // Unwatch the path
+    if (this.watcher) {
+      this.watcher.unwatch(asset.path);
+    }
+
+    // Clear any existing pause timer
+    const existing = this.pausedAssets.get(assetId);
+    if (existing) clearTimeout(existing);
+
+    // Resume after duration
+    const timer = setTimeout(() => {
+      log.info(`[AssetMonitor] Resuming asset "${asset.name}"`);
+      this.pausedAssets.delete(assetId);
+      const current = this.store.getAsset(assetId);
+      if (current && current.enabled && this.watcher) {
+        this.watcher.add(current.path);
+      }
+    }, durationSeconds * 1000);
+
+    this.pausedAssets.set(assetId, timer);
   }
 
   // -----------------------------------------------------------------------
@@ -278,6 +308,9 @@ export class AssetMonitor {
     // Find which registered asset this file belongs to
     const asset = this.findAssetForPath(filePath);
     if (!asset || !asset.enabled) return;
+
+    // Skip paused assets
+    if (this.pausedAssets.has(asset.id)) return;
 
     const previousHash = this.hashCache.get(filePath) ?? asset.contentHash;
     let newHash: string | null = null;

@@ -339,6 +339,7 @@ interface QShieldAssetsAPI {
   stats(): Promise<{ total: number; verified: number; changed: number; unverified: number; bySensitivity: Record<string, number> }>;
   changeLog(id: string, limit?: number): Promise<QShieldAssetChangeEvent[]>;
   browse(type: 'file' | 'directory'): Promise<string | null>;
+  pause(id: string, durationSeconds: number): Promise<null>;
   onChanged(callback: (data: { event: QShieldAssetChangeEvent; asset: QShieldHighTrustAsset }) => void): void;
 }
 
@@ -442,6 +443,14 @@ interface QShieldFeaturesAPI {
   flags(): Promise<QShieldFeatureFlags>;
 }
 
+interface QShieldShellAPI {
+  showInFolder(filePath: string): Promise<null>;
+}
+
+interface QShieldInvestigateAPI {
+  checkProcesses(targetPath: string): Promise<{ processes: Array<{ name: string; pid: string; user: string }>; summary: string }>;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -465,6 +474,8 @@ interface QShieldAPI {
   emailNotify: QShieldEmailNotifyAPI;
   reports: QShieldReportsAPI;
   security: QShieldSecurityAPI;
+  shell: QShieldShellAPI;
+  investigate: QShieldInvestigateAPI;
   trustHistory: {
     getLifetimeStats(): Promise<QShieldLifetimeStats>;
     getDailySummary(date: string): Promise<QShieldDailySummary | null>;

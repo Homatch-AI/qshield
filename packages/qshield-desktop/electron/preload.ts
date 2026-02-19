@@ -480,6 +480,9 @@ contextBridge.exposeInMainWorld('qshield', {
     browse: (type: 'file' | 'directory'): Promise<string | null> =>
       invoke<string | null>(IPC_CHANNELS.ASSET_BROWSE, type),
 
+    pause: (id: string, durationSeconds: number): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.ASSET_PAUSE, id, durationSeconds),
+
     onChanged: (callback: EventCallback<{ event: AssetChangeEvent; asset: HighTrustAsset }>): void => {
       const handler = (_event: Electron.IpcRendererEvent, data: { event: AssetChangeEvent; asset: HighTrustAsset }) => callback(data);
       ipcRenderer.on(IPC_EVENTS.ASSET_CHANGED, handler);
@@ -594,5 +597,15 @@ contextBridge.exposeInMainWorld('qshield', {
 
     openExternal: (url: string): Promise<null> =>
       invoke<null>(IPC_CHANNELS.APP_OPEN_EXTERNAL, url),
+  },
+
+  shell: {
+    showInFolder: (filePath: string): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.SHELL_SHOW_IN_FOLDER, filePath),
+  },
+
+  investigate: {
+    checkProcesses: (targetPath: string): Promise<{ processes: Array<{ name: string; pid: string; user: string }>; summary: string }> =>
+      invoke<{ processes: Array<{ name: string; pid: string; user: string }>; summary: string }>(IPC_CHANNELS.INVESTIGATE_CHECK_PROCESSES, targetPath),
   },
 });

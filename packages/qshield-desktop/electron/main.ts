@@ -1664,6 +1664,58 @@ app.whenReady().then(async () => {
     return { success: true, data: null };
   });
 
+  // Show file/folder in system file manager
+  ipcMain.handle(IPC_CHANNELS.SHELL_SHOW_IN_FOLDER, (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || filePath.length === 0) {
+      return { success: false, error: { message: 'Invalid file path', code: 'INVALID_PATH' } };
+    }
+    shell.showItemInFolder(filePath);
+    return { success: true, data: null };
+  });
+
+  // Check what processes have a file/folder open (macOS lsof)
+  ipcMain.handle(IPC_CHANNELS.INVESTIGATE_CHECK_PROCESSES, (_event, targetPath: string) => {
+    if (typeof targetPath !== 'string' || targetPath.length === 0) {
+      return { success: true, data: { processes: [], summary: 'Invalid path' } };
+    }
+    try {
+      const { execSync } = require('node:child_process');
+      let output = '';
+      if (process.platform === 'darwin') {
+        try {
+          output = execSync(`lsof "${targetPath}" 2>/dev/null | tail -n +2`, { timeout: 5000, encoding: 'utf-8' }).trim();
+        } catch { /* lsof returns exit code 1 when no processes found */ }
+        if (!output) {
+          try {
+            output = execSync(`lsof +D "${targetPath}" 2>/dev/null | tail -n +2 | head -20`, { timeout: 5000, encoding: 'utf-8' }).trim();
+          } catch { /* no results */ }
+        }
+      }
+      if (!output) {
+        return { success: true, data: { processes: [], summary: 'No processes currently accessing this file' } };
+      }
+      const lines = output.split('\n');
+      const processes = lines.map((line: string) => {
+        const parts = line.split(/\s+/);
+        return { name: parts[0], pid: parts[1], user: parts[2], type: parts[4] || '' };
+      });
+      const unique = [...new Map(processes.map((p: { name: string; pid: string }) => [p.name + ':' + p.pid, p])).values()] as Array<{ name: string; pid: string }>;
+      const summary = unique.map((p) => `${p.name} (PID ${p.pid})`).join(', ');
+      return { success: true, data: { processes: unique, summary } };
+    } catch {
+      return { success: true, data: { processes: [], summary: 'Could not check processes' } };
+    }
+  });
+
+  // Pause asset monitoring temporarily
+  ipcMain.handle(IPC_CHANNELS.ASSET_PAUSE, (_event, assetId: string, durationSeconds: number) => {
+    if (!moduleAssetMonitor) {
+      return { success: false, error: { message: 'Asset monitor not available', code: 'NOT_AVAILABLE' } };
+    }
+    moduleAssetMonitor.pauseAsset(assetId, durationSeconds);
+    return { success: true, data: null };
+  });
+
   // Shield toggle handler — registered here because it needs access to shieldWindow
   ipcMain.handle('app:toggle-shield-overlay', () => {
     if (shieldWindow) {

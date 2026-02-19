@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Alert, AlertSourceMetadata } from '@qshield/core';
 import { SEVERITY_COLORS } from '@/lib/constants';
 import { formatDate, formatRelativeTime, formatFileSize, formatAdapterName, truncateHash } from '@/lib/formatters';
@@ -15,6 +16,8 @@ interface AlertDetailProps {
 export function AlertDetail({ alert, onClose, onViewEvidence }: AlertDetailProps) {
   const colors = SEVERITY_COLORS[alert.severity] ?? SEVERITY_COLORS.low;
   const meta = alert.sourceMetadata;
+  const raw = meta?.rawEvent as Record<string, unknown> | undefined;
+  const isHighTrust = Boolean(raw?.isHighTrustAsset);
 
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-900 overflow-hidden">
@@ -67,6 +70,14 @@ export function AlertDetail({ alert, onClose, onViewEvidence }: AlertDetailProps
         </div>
       )}
 
+      {/* Response Actions — for high-trust asset alerts */}
+      {isHighTrust && (
+        <div className="px-5 py-4 space-y-3">
+          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Response Actions</h4>
+          <ResponseActions alert={alert} />
+        </div>
+      )}
+
       {/* Footer Actions */}
       <div className="flex items-center justify-end gap-3 border-t border-slate-700 px-5 py-3">
         {onViewEvidence && (
@@ -84,6 +95,146 @@ export function AlertDetail({ alert, onClose, onViewEvidence }: AlertDetailProps
           Close
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Response Actions                                                   */
+/* ------------------------------------------------------------------ */
+
+function ResponseActions({ alert }: { alert: Alert }) {
+  const [processResults, setProcessResults] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+
+  const raw = alert.sourceMetadata?.rawEvent as Record<string, unknown> | undefined;
+  const targetPath = (raw?.changedFile ?? raw?.path ?? alert.sourceMetadata?.filePath) as string | undefined;
+  const assetId = raw?.assetId as string | undefined;
+
+  const handleShowInFolder = () => {
+    if (targetPath) {
+      window.qshield.shell.showInFolder(targetPath);
+    }
+  };
+
+  const handleCheckProcesses = async () => {
+    if (!targetPath) return;
+    setChecking(true);
+    try {
+      const result = await window.qshield.investigate.checkProcesses(targetPath);
+      setProcessResults(result.summary);
+    } catch {
+      setProcessResults('Could not check processes');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const handleAcceptChanges = async () => {
+    if (!assetId) return;
+    try {
+      await window.qshield.assets.accept(assetId);
+      setAccepted(true);
+    } catch (err) {
+      console.error('Failed to accept changes:', err);
+    }
+  };
+
+  const handlePauseAsset = async () => {
+    if (!assetId) return;
+    try {
+      await window.qshield.assets.pause(assetId, 3600);
+      setPaused(true);
+    } catch (err) {
+      console.error('Failed to pause asset:', err);
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-2">
+      {targetPath && (
+        <button
+          onClick={handleShowInFolder}
+          className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3 text-left hover:bg-slate-800 transition-colors"
+        >
+          <span className="text-lg shrink-0">{'📂'}</span>
+          <div>
+            <div className="text-sm font-medium text-slate-200">Open in Finder</div>
+            <div className="text-xs text-slate-500">Inspect the file or folder directly</div>
+          </div>
+        </button>
+      )}
+
+      {targetPath && (
+        <button
+          onClick={handleCheckProcesses}
+          disabled={checking}
+          className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3 text-left hover:bg-slate-800 transition-colors"
+        >
+          <span className="text-lg shrink-0">{'⚙️'}</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-slate-200">
+              {checking ? 'Checking...' : 'Check Active Processes'}
+            </div>
+            <div className="text-xs text-slate-500">
+              {processResults ?? 'See what apps currently have this file open'}
+            </div>
+          </div>
+        </button>
+      )}
+
+      {assetId && !accepted && (
+        <button
+          onClick={handleAcceptChanges}
+          className="flex items-center gap-3 rounded-lg border border-emerald-700/50 bg-emerald-900/20 px-4 py-3 text-left hover:bg-emerald-900/30 transition-colors"
+        >
+          <span className="text-lg shrink-0">{'✅'}</span>
+          <div>
+            <div className="text-sm font-medium text-emerald-300">Accept Changes</div>
+            <div className="text-xs text-emerald-500/70">Mark changes as authorized, reset asset to verified state</div>
+          </div>
+        </button>
+      )}
+      {accepted && (
+        <div className="flex items-center gap-3 rounded-lg border border-emerald-700/50 bg-emerald-900/20 px-4 py-3">
+          <span className="text-lg shrink-0">{'✅'}</span>
+          <div className="text-sm font-medium text-emerald-400">Changes accepted</div>
+        </div>
+      )}
+
+      {assetId && !paused && (
+        <button
+          onClick={handlePauseAsset}
+          className="flex items-center gap-3 rounded-lg border border-amber-700/50 bg-amber-900/20 px-4 py-3 text-left hover:bg-amber-900/30 transition-colors"
+        >
+          <span className="text-lg shrink-0">{'⏸'}</span>
+          <div>
+            <div className="text-sm font-medium text-amber-300">Pause Monitoring (1 hour)</div>
+            <div className="text-xs text-amber-500/70">Temporarily stop alerts while you work on this asset</div>
+          </div>
+        </button>
+      )}
+      {paused && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-700/50 bg-amber-900/20 px-4 py-3">
+          <span className="text-lg shrink-0">{'⏸'}</span>
+          <div className="text-sm font-medium text-amber-400">Monitoring paused for 1 hour</div>
+        </div>
+      )}
+
+      {targetPath && (
+        <button
+          onClick={handleShowInFolder}
+          className="flex items-center gap-3 rounded-lg border border-red-700/50 bg-red-900/20 px-4 py-3 text-left hover:bg-red-900/30 transition-colors"
+        >
+          <span className="text-lg shrink-0">{'⏪'}</span>
+          <div>
+            <div className="text-sm font-medium text-red-300">Check Time Machine Backup</div>
+            <div className="text-xs text-red-500/70">Open the file location to access backup versions</div>
+          </div>
+        </button>
+      )}
     </div>
   );
 }

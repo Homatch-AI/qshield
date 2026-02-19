@@ -231,11 +231,20 @@ function SingleAlertCard({
     setAckNote('');
   };
 
-  const handleAction = (action: typeof described.actions[number], e: React.MouseEvent) => {
+  const handleAction = async (action: typeof described.actions[number], e: React.MouseEvent) => {
     e.stopPropagation();
     if (action.actionType === 'dismiss') {
       onDismiss(alert.id);
     } else if (action.actionType === 'accept_changes') {
+      const raw = alert.sourceMetadata?.rawEvent as Record<string, unknown> | undefined;
+      const assetId = raw?.assetId as string | undefined;
+      if (assetId) {
+        try {
+          await window.qshield.assets.accept(assetId);
+        } catch (err) {
+          console.error('Failed to accept asset changes:', err);
+        }
+      }
       onAcknowledge(alert.id, 'Changes accepted');
     } else if (action.navigateTo) {
       onNavigate(action.navigateTo);
