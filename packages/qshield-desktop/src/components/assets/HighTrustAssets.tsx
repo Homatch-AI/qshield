@@ -56,15 +56,12 @@ export default function HighTrustAssets() {
 
       {/* Upgrade banner when at asset limit */}
       {atLimit && (
-        <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 flex items-center gap-3">
-          <svg className="h-5 w-5 text-amber-400 shrink-0" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-          </svg>
+        <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-4 flex items-center gap-3">
+          <span className="text-xl shrink-0">🔒</span>
           <div className="flex-1">
-            <span className="text-sm font-medium text-amber-400">Asset limit reached</span>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Your {EDITION_LABELS[tier] ?? tier} plan supports {maxAssets} asset{maxAssets !== 1 ? 's' : ''}.
-              <NavLink to="/settings" className="text-sky-400 hover:text-sky-300 ml-1">Upgrade your plan</NavLink> to monitor more.
+            <p className="text-sm text-slate-200">
+              You've reached the {maxAssets} asset limit on your <span className="font-semibold text-amber-400">{EDITION_LABELS[tier] ?? tier}</span> plan.{' '}
+              <NavLink to="/settings" className="text-sky-400 hover:text-sky-300 font-medium">Upgrade to Pro →</NavLink>
             </p>
           </div>
         </div>

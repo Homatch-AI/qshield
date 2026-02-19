@@ -20,6 +20,7 @@ import { LicenseSettings } from './LicenseSettings';
 export default function Settings() {
   const { config, policyRules, loading, error, fetchConfig, updateConfig, addPolicyRule, updatePolicyRule, removePolicyRule } = useConfigStore();
   const canEmailNotify = useLicenseStore((s) => s.features.emailNotifications);
+  const maxAdapters = useLicenseStore((s) => s.features.maxAdapters);
 
   const [gatewayUrl, setGatewayUrl] = useState('');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -182,21 +183,32 @@ export default function Settings() {
       {/* Adapters */}
       <SettingsSection title="Adapters" description="Enable or disable monitoring adapters">
         <div className="space-y-3">
-          {(['zoom', 'teams', 'email', 'file', 'api'] as AdapterType[]).map((adapter) => {
-            const enabled = (config[`adapter_${adapter}_enabled`] as boolean) ?? (adapter !== 'api');
+          {/* Priority order: email > file > zoom > teams > api */}
+          {(['email', 'file', 'zoom', 'teams', 'api'] as AdapterType[]).map((adapter, idx) => {
+            const tierLocked = idx >= maxAdapters;
+            const enabled = tierLocked ? false : ((config[`adapter_${adapter}_enabled`] as boolean) ?? (adapter !== 'api'));
             return (
-              <div key={adapter} className="flex items-center justify-between">
+              <div key={adapter} className={`flex items-center justify-between ${tierLocked ? 'opacity-50' : ''}`}>
                 <div className="flex items-center gap-3">
-                  <span className={`h-2 w-2 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+                  <span className={`h-2 w-2 rounded-full ${tierLocked ? 'bg-slate-700' : enabled ? 'bg-emerald-500' : 'bg-slate-600'}`} />
                   <div>
-                    <span className="text-sm font-medium text-slate-200">{ADAPTER_LABELS[adapter]}</span>
-                    <p className="text-xs text-slate-500">{enabled ? 'Active' : 'Disabled'}</p>
+                    <span className="text-sm font-medium text-slate-200">
+                      {ADAPTER_LABELS[adapter]}
+                      {tierLocked && (
+                        <span className="ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400">Pro</span>
+                      )}
+                    </span>
+                    <p className="text-xs text-slate-500">{tierLocked ? 'Upgrade to unlock' : enabled ? 'Active' : 'Disabled'}</p>
                   </div>
                 </div>
-                <ToggleSwitch
-                  checked={enabled}
-                  onChange={(v) => handleSave(`adapter_${adapter}_enabled`, v)}
-                />
+                {tierLocked ? (
+                  <span className="text-xs text-slate-600">🔒</span>
+                ) : (
+                  <ToggleSwitch
+                    checked={enabled}
+                    onChange={(v) => handleSave(`adapter_${adapter}_enabled`, v)}
+                  />
+                )}
               </div>
             );
           })}
@@ -278,18 +290,14 @@ export default function Settings() {
       ) : (
         <SettingsSection title="Email Notifications" description="Get notified about trust events via email">
           <div className="rounded-lg bg-slate-800/50 border border-slate-700 p-6 text-center">
-            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-slate-700/50">
-              <svg className="h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-              </svg>
-            </div>
-            <p className="text-sm text-slate-300 font-medium">Feature Locked</p>
-            <p className="text-xs text-slate-500 mt-1">Upgrade to <span className="text-sky-400 font-medium">Pro</span> to receive email alerts for trust score drops, asset changes, and SPF/DKIM failures</p>
+            <div className="text-3xl mb-3">🔒</div>
+            <p className="text-sm text-slate-200 font-medium">Available on Pro plan and above</p>
+            <p className="text-xs text-slate-500 mt-1.5">Receive email alerts for trust score drops, asset changes, and SPF/DKIM failures.</p>
             <NavLink
-              to="/account"
-              className="mt-3 inline-block rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 transition-colors"
+              to="/settings"
+              className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-sky-400 hover:text-sky-300 transition-colors"
             >
-              Upgrade
+              Upgrade →
             </NavLink>
           </div>
         </SettingsSection>
