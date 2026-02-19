@@ -255,17 +255,20 @@ export async function enrichFileChange(
   const fileName = path.basename(filePath);
   const isDeleted = changeType.includes('deleted');
 
-  // Run all independent probes concurrently
+  // Run all independent probes concurrently — each wrapped to never throw
+  const safe = <T>(p: Promise<T>, fallback: T): Promise<T> =>
+    p.catch((err) => { log.debug(`[FileForensics] Probe failed: ${err.message}`); return fallback; });
+
   const [processInfo, owner, quarantined, permissions, currentSize, currentLineCount] =
     await Promise.all([
-      isDeleted ? Promise.resolve({ processName: null, pid: null }) : detectProcess(filePath),
-      isDeleted ? Promise.resolve(null) : detectOwner(filePath),
-      isDeleted ? Promise.resolve(false) : detectQuarantine(filePath),
-      isDeleted ? Promise.resolve(null) : getPermissions(filePath),
+      isDeleted ? Promise.resolve({ processName: null, pid: null }) : safe(detectProcess(filePath), { processName: null, pid: null }),
+      isDeleted ? Promise.resolve(null) : safe(detectOwner(filePath), null),
+      isDeleted ? Promise.resolve(false) : safe(detectQuarantine(filePath), false),
+      isDeleted ? Promise.resolve(null) : safe(getPermissions(filePath), null),
       isDeleted
         ? Promise.resolve(null)
         : fs.promises.stat(filePath).then((s) => s.size).catch(() => null),
-      isDeleted ? Promise.resolve(null) : countFileLines(filePath),
+      isDeleted ? Promise.resolve(null) : safe(countFileLines(filePath), null),
     ]);
 
   // Compute diffs against previous snapshot

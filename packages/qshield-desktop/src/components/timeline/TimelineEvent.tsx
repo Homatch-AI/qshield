@@ -111,6 +111,9 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
         {/* Expanded details */}
         {expanded && (
           <div className="border-t border-slate-700/50 p-4 space-y-3 animate-in slide-in-from-top-1 duration-200">
+            {/* Human-readable event details */}
+            <EventDetails metadata={signal.metadata as Record<string, unknown> | undefined} />
+
             {/* Impact breakdown */}
             <div>
               <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
@@ -134,11 +137,6 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
               </div>
             </div>
 
-            {/* Forensics detail panel */}
-            {signal.metadata?.forensics != null && (
-              <ForensicsPanel forensics={signal.metadata.forensics as Record<string, unknown>} />
-            )}
-
             {/* Technical Details — collapsible raw metadata */}
             {signal.metadata && Object.keys(signal.metadata).filter(k => k !== 'forensics').length > 0 && (
               <TechnicalDetails metadata={signal.metadata} />
@@ -150,63 +148,123 @@ export function TimelineEvent({ signal }: TimelineEventProps) {
   );
 }
 
-function ForensicsPanel({ forensics }: { forensics: Record<string, unknown> }) {
-  const f = forensics;
-  const changedFiles = (Array.isArray(f.changedFiles) ? f.changedFiles : []) as Array<Record<string, unknown>>;
-  const owner = f.owner ? String(f.owner) : null;
-  const modifiedBy = f.modifiedBy ? String(f.modifiedBy) : null;
-  const pid = f.pid != null ? Number(f.pid) : null;
-  const changeSummary = f.changeSummary ? String(f.changeSummary) : '';
-  const filePermissions = f.filePermissions ? String(f.filePermissions) : null;
-  const isQuarantined = Boolean(f.isQuarantined);
-  const totalSizeChange = f.totalSizeChange != null ? String(f.totalSizeChange) : null;
+function EventDetails({ metadata }: { metadata: Record<string, unknown> | undefined }) {
+  if (!metadata) return null;
+  const m = metadata;
+  const forensics = m.forensics as Record<string, unknown> | undefined;
+
+  // Extract typed values to avoid `unknown && <JSX>` TS errors
+  const fileName = m.fileName ? String(m.fileName) : null;
+  const extension = m.extension ? String(m.extension) : null;
+  const size = m.size != null ? Number(m.size) : null;
+  const filePath = m.path ? String(m.path) : null;
+  const owner = m.owner ? String(m.owner) : null;
+  const permissions = m.permissions ? String(m.permissions) : null;
+  const isHidden = Boolean(m.isHidden);
+  const assetName = m.assetName ? String(m.assetName) : null;
+  const sensitivity = m.sensitivity ? String(m.sensitivity) : null;
+  const trustBefore = m.trustStateBefore ? String(m.trustStateBefore) : null;
+  const trustAfter = m.trustStateAfter ? String(m.trustStateAfter) : null;
+  const modifiedBy = forensics?.modifiedBy ? String(forensics.modifiedBy) : null;
+  const pid = forensics?.pid != null ? Number(forensics.pid) : null;
+  const isQuarantined = Boolean(forensics?.isQuarantined);
+  const changeSummary = forensics?.changeSummary ? String(forensics.changeSummary) : null;
+  const changedFiles = forensics?.changedFiles && Array.isArray(forensics.changedFiles)
+    ? (forensics.changedFiles as Array<Record<string, unknown>>)
+    : [];
 
   return (
-    <div className="space-y-3">
-      {/* WHO changed it */}
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-slate-500">Modified by:</span>
-        <span className="font-medium text-slate-200">{owner || 'unknown'}</span>
-        {modifiedBy && (
-          <>
-            <span className="text-slate-600">via</span>
-            <span className="font-medium text-sky-400">{modifiedBy}</span>
-          </>
-        )}
-        {pid != null && (
-          <span className="text-xs text-slate-600">(PID {pid})</span>
-        )}
-      </div>
+    <div className="space-y-2 pb-3 border-b border-slate-700/50">
+      {/* File info */}
+      {fileName && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-slate-500">File:</span>
+          <span className="font-mono text-slate-200">{fileName}</span>
+          {extension && (
+            <span className="text-xs text-slate-500">({extension})</span>
+          )}
+          {size != null && (
+            <span className="text-xs text-slate-400">{formatBytesCompact(size)}</span>
+          )}
+        </div>
+      )}
 
-      {/* WHAT changed — file list with emoji indicators */}
+      {/* Path */}
+      {filePath && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-slate-500">Path:</span>
+          <span className="font-mono text-xs text-slate-400 truncate max-w-lg">{filePath}</span>
+        </div>
+      )}
+
+      {/* Owner / Modified by */}
+      {(owner || modifiedBy) && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-slate-500">Owner:</span>
+          <span className="font-medium text-slate-200">{owner || 'unknown'}</span>
+          {modifiedBy && modifiedBy !== 'unknown process' && (
+            <>
+              <span className="text-slate-600">via</span>
+              <span className="font-medium text-sky-400">{modifiedBy}</span>
+            </>
+          )}
+          {pid != null && (
+            <span className="text-xs text-slate-600">(PID {pid})</span>
+          )}
+        </div>
+      )}
+
+      {/* Permissions & flags */}
+      {(permissions || isHidden || isQuarantined) && (
+        <div className="flex items-center gap-4 text-xs text-slate-500">
+          {permissions && <span>Permissions: {permissions}</span>}
+          {isHidden && <span className="text-amber-400">Hidden file</span>}
+          {isQuarantined && <span className="text-amber-400">Warning: Downloaded from internet</span>}
+        </div>
+      )}
+
+      {/* High-trust asset info */}
+      {assetName && (
+        <div className="mt-2 rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-amber-400">{'\uD83D\uDEE1'}</span>
+            <span className="font-medium text-amber-300">{assetName}</span>
+            {sensitivity && (
+              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                sensitivity === 'critical' ? 'bg-red-500/20 text-red-400' :
+                sensitivity === 'strict' ? 'bg-amber-500/20 text-amber-400' :
+                'bg-blue-500/20 text-blue-400'
+              }`}>
+                {sensitivity}
+              </span>
+            )}
+          </div>
+          {trustBefore && trustAfter && (
+            <div className="text-xs text-slate-400 mt-1">
+              State: {trustBefore} &rarr; {trustAfter}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Forensics: changed files list */}
       {changedFiles.length > 0 && (
-        <div>
+        <div className="mt-2">
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Changed Files</span>
-          <div className="mt-1.5 space-y-1">
-            {changedFiles.map((cf, i) => {
-              const changeType = String(cf.changeType ?? '');
-              const sizeChange = cf.sizeChange != null ? Number(cf.sizeChange) : null;
-              const lineCountChange = cf.lineCountChange != null ? Number(cf.lineCountChange) : null;
-              const sizeStr = sizeChange != null
-                ? `${sizeChange >= 0 ? '+' : ''}${formatBytesCompact(sizeChange)}`
-                : null;
+          <div className="mt-1 space-y-1">
+            {changedFiles.map((f, i) => {
+              const ct = String(f.changeType ?? '');
+              const sc = f.sizeChange != null ? Number(f.sizeChange) : null;
               return (
                 <div key={i} className="flex items-center gap-2 rounded-md bg-slate-800/50 px-3 py-1.5 text-sm">
                   <span className="text-base">
-                    {changeType.includes('deleted') ? '\uD83D\uDD34' : changeType.includes('created') ? '\uD83D\uDFE2' : '\uD83D\uDFE1'}
+                    {ct.includes('deleted') ? '\uD83D\uDD34' : ct.includes('created') ? '\uD83D\uDFE2' : '\uD83D\uDFE1'}
                   </span>
-                  <span className="font-mono text-slate-300 truncate">{String(cf.fileName ?? '')}</span>
+                  <span className="font-mono text-slate-300 truncate">{String(f.fileName ?? '')}</span>
                   <span className="text-xs text-slate-500">&mdash;</span>
-                  <span className="text-xs text-slate-400">{changeType}</span>
-                  {sizeStr && (
-                    <span className={`text-xs ${sizeChange != null && sizeChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      ({sizeStr})
-                    </span>
-                  )}
-                  {lineCountChange != null && (
-                    <span className="text-xs text-slate-500">
-                      {lineCountChange >= 0 ? '+' : ''}{lineCountChange} lines
-                    </span>
+                  <span className="text-xs text-slate-400">{ct}</span>
+                  {sc != null && (
+                    <span className="text-xs text-slate-500">({sc >= 0 ? '+' : ''}{formatBytesCompact(sc)})</span>
                   )}
                 </div>
               );
@@ -215,19 +273,10 @@ function ForensicsPanel({ forensics }: { forensics: Record<string, unknown> }) {
         </div>
       )}
 
-      {/* Summary line */}
-      <div className="flex items-center gap-4 text-xs text-slate-500 pt-1">
-        <span>{changeSummary}</span>
-        {totalSizeChange && totalSizeChange !== 'unchanged' && (
-          <span>Total: {totalSizeChange}</span>
-        )}
-        {filePermissions && (
-          <span>Permissions: {filePermissions}</span>
-        )}
-        {isQuarantined && (
-          <span className="text-amber-400">Warning: File downloaded from internet</span>
-        )}
-      </div>
+      {/* Forensics summary */}
+      {changeSummary && (
+        <div className="text-xs text-slate-500">{changeSummary}</div>
+      )}
     </div>
   );
 }
