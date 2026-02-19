@@ -519,7 +519,7 @@ function updateTray(score: number, level: typeof currentTrustLevel): void {
 // ── Evidence data with HMAC-SHA256 hash chain ───────────────────────────────
 
 function computeEvidenceHash(data: string, previousHash: string | null, hmacKey?: string): string {
-  const key = hmacKey ?? keyManager?.getSeedEvidenceHmacKey() ?? 'qshield-evidence-v1';
+  const key = hmacKey ?? keyManager!.getSeedEvidenceHmacKey();
   const hmac = createHmac('sha256', key);
   hmac.update(previousHash ?? 'genesis');
   hmac.update(data);
@@ -791,7 +791,7 @@ function seedEvidenceRecords(monitor: TrustMonitor): void {
   if (monitor.getEvidenceRecords().length > 0) return;
 
   const sessionId = monitor.getSessionId();
-  const hmacKey = keyManager?.getTrustMonitorHmacKey() ?? 'qshield-evidence-hmac-key-v1';
+  const hmacKey = keyManager!.getTrustMonitorHmacKey();
   const records: EvidenceRecord[] = [];
   let prevHash: string | null = null;
   let prevStructHash: string | null = null;
@@ -844,7 +844,7 @@ function seedInitialReport(monitor: TrustMonitor, assetStore: AssetStore): void 
   const grade = score >= 95 ? 'A+' : score >= 90 ? 'A' : score >= 85 ? 'A-' : score >= 80 ? 'B+' : score >= 70 ? 'B' : score >= 65 ? 'B-' : score >= 55 ? 'C+' : score >= 40 ? 'C' : score >= 25 ? 'D' : 'F';
   const now = new Date();
   const sigData = `snapshot:${score}:${now.toISOString()}`;
-  const reportKey = keyManager?.getReportHmacKey() ?? 'qshield-report-hmac-key-v1';
+  const reportKey = keyManager!.getReportHmacKey();
   const signatureChain = createHmac('sha256', reportKey).update(sigData).digest('hex');
 
   const report: TrustReport = {
@@ -1232,7 +1232,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         }
 
         // Generate signature chain hash
-        const rptKey = keyManager?.getReportHmacKey() ?? 'qshield-report-key-v1';
+        const rptKey = keyManager!.getReportHmacKey();
         const signatureChain = createHmac('sha256', rptKey)
           .update(`${id}:${now}:${(state as { score: number }).score}`)
           .digest('hex');

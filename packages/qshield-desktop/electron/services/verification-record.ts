@@ -36,7 +36,10 @@ export class VerificationRecordService {
   private hmacKey: string;
 
   constructor(hmacKey?: string) {
-    this.hmacKey = hmacKey ?? 'qshield-verification-v1';
+    if (!hmacKey) {
+      throw new Error('VerificationRecordService requires an HMAC key — pass one from KeyManager');
+    }
+    this.hmacKey = hmacKey;
     // Generate a stable referral ID (in production this would be persisted)
     this.referralId = randomBytes(8).toString('hex');
   }

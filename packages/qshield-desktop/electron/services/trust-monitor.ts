@@ -88,7 +88,10 @@ export class TrustMonitor {
    * @param hmacKey - optional HMAC key for evidence hashing (falls back to legacy default)
    */
   constructor(googleAuth?: GoogleAuthService, policyEnforcer?: PolicyEnforcer, hmacKey?: string) {
-    this.hmacKey = hmacKey ?? 'qshield-evidence-hmac-key-v1';
+    if (!hmacKey) {
+      throw new Error('TrustMonitor requires an HMAC key — pass one from KeyManager');
+    }
+    this.hmacKey = hmacKey;
     this.sessionId = uuidv4();
     this.policyEnforcer = policyEnforcer ?? new PolicyEnforcer();
     this.trustHistory = new TrustHistoryService();

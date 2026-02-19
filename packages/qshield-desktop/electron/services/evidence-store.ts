@@ -315,7 +315,7 @@ export class EvidenceStore {
     const encryptionKey = deriveKey(masterSecret, salt);
 
     // Derive a separate HMAC key from the master secret for hash-chain integrity
-    const hmacKey = hmacSha256(masterSecret, 'qshield-hmac-key');
+    const hmacKey = hmacSha256(masterSecret, 'qshield:v1:evidence:hmac-chain');
 
     return { encryptionKey, hmacKey };
   }
@@ -545,7 +545,7 @@ export class EvidenceStore {
 
     // Update in-memory key
     this.encryptionKey = newKey;
-    this.hmacKey = hmacSha256(newMasterSecret, 'qshield-hmac-key');
+    this.hmacKey = hmacSha256(newMasterSecret, 'qshield:v1:evidence:hmac-chain');
 
     log.info(`EvidenceStore: rotated encryption key, re-encrypted ${rows.length} records`);
     return rows.length;
