@@ -1,7 +1,7 @@
-import { execSync } from 'node:child_process';
 import log from 'electron-log';
 import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
+import { safeExec } from '../services/safe-exec';
 
 /** Zoom process state machine */
 type ZoomState = 'idle' | 'running' | 'in-meeting';
@@ -85,11 +85,11 @@ export class ZoomAdapter extends BaseAdapter {
   // Simple inline detection (no process-monitor dependency)
   // ---------------------------------------------------------------------------
 
-  private isZoomRunning(): boolean {
+  private async isZoomRunning(): Promise<boolean> {
     try {
-      const result = execSync(
+      const result = await safeExec(
         'pgrep -x "zoom.us" 2>/dev/null',
-        { encoding: 'utf-8', timeout: 3000 },
+        { timeout: 3000 },
       );
       const found = result.trim().length > 0;
       log.info(`[ZoomAdapter] pgrep result: found=${found} pids="${result.trim().split('\n').join(',')}"`)
@@ -100,11 +100,11 @@ export class ZoomAdapter extends BaseAdapter {
     }
   }
 
-  private isInMeeting(): boolean {
+  private async isInMeeting(): Promise<boolean> {
     try {
-      const result = execSync(
+      const result = await safeExec(
         'lsof -i -nP 2>/dev/null | grep "zoom.us" | grep "ESTABLISHED" | wc -l',
-        { encoding: 'utf-8', timeout: 5000 },
+        { timeout: 5000 },
       );
       const count = parseInt(result.trim(), 10);
       log.info(`[ZoomAdapter] lsof ESTABLISHED count: ${count}`);
@@ -117,12 +117,12 @@ export class ZoomAdapter extends BaseAdapter {
     }
   }
 
-  private checkCamera(): boolean {
+  private async checkCamera(): Promise<boolean> {
     if (process.platform !== 'darwin') return false;
     try {
-      const result = execSync(
+      const result = await safeExec(
         'pgrep -f "VDCAssistant|AppleCameraAssistant" 2>/dev/null',
-        { encoding: 'utf-8', timeout: 3000 },
+        { timeout: 3000 },
       );
       return result.trim().length > 0;
     } catch {
@@ -130,12 +130,12 @@ export class ZoomAdapter extends BaseAdapter {
     }
   }
 
-  private checkMic(): boolean {
+  private async checkMic(): Promise<boolean> {
     if (process.platform !== 'darwin') return false;
     try {
-      const result = execSync(
+      const result = await safeExec(
         'ioreg -l | grep -i "IOAudioEngineState" 2>/dev/null | head -5',
-        { encoding: 'utf-8', timeout: 3000 },
+        { timeout: 3000 },
       );
       return result.includes('1');
     } catch {
@@ -143,12 +143,12 @@ export class ZoomAdapter extends BaseAdapter {
     }
   }
 
-  private checkScreenShare(): boolean {
+  private async checkScreenShare(): Promise<boolean> {
     if (process.platform !== 'darwin') return false;
     try {
-      const result = execSync(
+      const result = await safeExec(
         'pgrep -f "screencapture|CptHost" 2>/dev/null',
-        { encoding: 'utf-8', timeout: 3000 },
+        { timeout: 3000 },
       );
       return result.trim().length > 0;
     } catch {
@@ -160,15 +160,15 @@ export class ZoomAdapter extends BaseAdapter {
   // Polling & State Machine
   // ---------------------------------------------------------------------------
 
-  private poll(): void {
+  private async poll(): Promise<void> {
     if (!this.connected) return;
 
     try {
-      const zoomRunning = this.isZoomRunning();
-      const inMeeting = this.isInMeeting();
-      const camera = this.checkCamera();
-      const mic = this.checkMic();
-      const screenShare = this.checkScreenShare();
+      const zoomRunning = await this.isZoomRunning();
+      const inMeeting = await this.isInMeeting();
+      const camera = await this.checkCamera();
+      const mic = await this.checkMic();
+      const screenShare = await this.checkScreenShare();
 
       log.info(`[ZoomAdapter] Poll: state=${this.zoomState} running=${zoomRunning} inMeeting=${inMeeting} camera=${camera} mic=${mic} screenShare=${screenShare}`);
 
@@ -185,7 +185,7 @@ export class ZoomAdapter extends BaseAdapter {
 
       // State transitions
       if (previousState !== this.zoomState) {
-        this.handleStateTransition(previousState, this.zoomState);
+        this.handleStateTransition(previousState, this.zoomState, camera, mic, screenShare);
       }
 
       // Track peripheral changes during a meeting
@@ -199,7 +199,7 @@ export class ZoomAdapter extends BaseAdapter {
     }
   }
 
-  private handleStateTransition(from: ZoomState, to: ZoomState): void {
+  private handleStateTransition(from: ZoomState, to: ZoomState, camera: boolean, mic: boolean, screenShare: boolean): void {
     log.info(`[ZoomAdapter] State: ${from} → ${to}`);
 
     switch (to) {
@@ -227,9 +227,9 @@ export class ZoomAdapter extends BaseAdapter {
       case 'in-meeting':
         this.meetingStartTime = new Date().toISOString();
         this.emitEvent(this.createEvent('meeting-started', -10, {
-          cameraActive: this.checkCamera(),
-          micActive: this.checkMic(),
-          screenSharing: this.checkScreenShare(),
+          cameraActive: camera,
+          micActive: mic,
+          screenSharing: screenShare,
         }));
         break;
 

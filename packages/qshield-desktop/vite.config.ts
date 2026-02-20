@@ -62,6 +62,17 @@ export default defineConfig({
           plugins: [preloadToCjs()],
         },
       },
+      {
+        entry: 'electron/services/exec-daemon.ts',
+        vite: {
+          build: {
+            outDir: 'dist/electron',
+            rollupOptions: {
+              external: ['electron'],
+            },
+          },
+        },
+      },
     ]),
     electronRenderer(),
   ],

@@ -1,8 +1,8 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execFile } from 'node:child_process';
 import log from 'electron-log';
+import { safeExecFile } from './safe-exec';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -136,41 +136,38 @@ interface ProcessInfo {
   pid: number | null;
 }
 
-function detectProcess(filePath: string): Promise<ProcessInfo> {
-  return new Promise((resolve) => {
-    if (process.platform !== 'darwin') {
-      resolve({ processName: null, pid: null });
-      return;
+async function detectProcess(filePath: string): Promise<ProcessInfo> {
+  if (process.platform !== 'darwin') {
+    return { processName: null, pid: null };
+  }
+
+  try {
+    const stdout = await safeExecFile('lsof', ['-t', filePath], { timeout: 3000 });
+    if (!stdout.trim()) {
+      return { processName: null, pid: null };
     }
 
-    const child = execFile('lsof', ['-t', filePath], { timeout: 3000 }, (err, stdout) => {
-      if (err || !stdout.trim()) {
-        resolve({ processName: null, pid: null });
-        return;
+    // Take the first PID
+    const pidStr = stdout.trim().split('\n')[0];
+    const pid = parseInt(pidStr, 10);
+    if (isNaN(pid)) {
+      return { processName: null, pid: null };
+    }
+
+    // Get process name from PID
+    try {
+      const psOut = await safeExecFile('ps', ['-p', String(pid), '-o', 'comm='], { timeout: 2000 });
+      if (!psOut.trim()) {
+        return { processName: null, pid };
       }
-
-      // Take the first PID
-      const pidStr = stdout.trim().split('\n')[0];
-      const pid = parseInt(pidStr, 10);
-      if (isNaN(pid)) {
-        resolve({ processName: null, pid: null });
-        return;
-      }
-
-      // Get process name from PID
-      execFile('ps', ['-p', String(pid), '-o', 'comm='], { timeout: 2000 }, (psErr, psOut) => {
-        if (psErr || !psOut.trim()) {
-          resolve({ processName: null, pid });
-          return;
-        }
-        const name = path.basename(psOut.trim());
-        resolve({ processName: name, pid });
-      });
-    });
-
-    // Safety: if execFile itself throws synchronously (shouldn't happen)
-    child.on('error', () => resolve({ processName: null, pid: null }));
-  });
+      const name = path.basename(psOut.trim());
+      return { processName: name, pid };
+    } catch {
+      return { processName: null, pid };
+    }
+  } catch {
+    return { processName: null, pid: null };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -186,15 +183,12 @@ async function detectOwner(filePath: string): Promise<string | null> {
       return `uid:${uid}`;
     }
 
-    return new Promise((resolve) => {
-      execFile('id', ['-un', String(uid)], { timeout: 2000 }, (err, stdout) => {
-        if (err || !stdout.trim()) {
-          resolve(`uid:${uid}`);
-          return;
-        }
-        resolve(stdout.trim());
-      });
-    });
+    try {
+      const stdout = await safeExecFile('id', ['-un', String(uid)], { timeout: 2000 });
+      return stdout.trim() || `uid:${uid}`;
+    } catch {
+      return `uid:${uid}`;
+    }
   } catch {
     return null;
   }
@@ -204,21 +198,17 @@ async function detectOwner(filePath: string): Promise<string | null> {
 // Quarantine detection (macOS)
 // ---------------------------------------------------------------------------
 
-function detectQuarantine(filePath: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (process.platform !== 'darwin') {
-      resolve(false);
-      return;
-    }
+async function detectQuarantine(filePath: string): Promise<boolean> {
+  if (process.platform !== 'darwin') {
+    return false;
+  }
 
-    execFile('xattr', ['-l', filePath], { timeout: 2000 }, (err, stdout) => {
-      if (err) {
-        resolve(false);
-        return;
-      }
-      resolve(stdout.includes('com.apple.quarantine'));
-    });
-  });
+  try {
+    const stdout = await safeExecFile('xattr', ['-l', filePath], { timeout: 2000 });
+    return stdout.includes('com.apple.quarantine');
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

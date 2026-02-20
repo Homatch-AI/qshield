@@ -18,8 +18,8 @@
 import dotenv from 'dotenv';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell, Tray, Menu, nativeImage, screen, Notification } from 'electron';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
 import { chmodSync, statSync, readdirSync } from 'node:fs';
+import { initExecDaemon, safeExec, shutdownExecDaemon } from './services/safe-exec';
 import { createHmac, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import log from 'electron-log';
@@ -49,6 +49,9 @@ import { IPC_CHANNELS, IPC_EVENTS } from './ipc/channels';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Fork exec daemon BEFORE Chromium initializes (clean FD table window)
+initExecDaemon();
 
 // Try multiple possible .env locations
 const possiblePaths = [
@@ -1421,6 +1424,9 @@ async function gracefulShutdown(): Promise<void> {
     log.info('Key manager destroyed');
   }
 
+  // 5c. Shutdown exec daemon
+  shutdownExecDaemon();
+
   // 6. Mark clean shutdown
   if (configManager) {
     configManager.setCleanShutdown(true);
@@ -1736,13 +1742,13 @@ app.whenReady().then(async () => {
 
       // Try the specific file first
       try {
-        output = execSync(`lsof "${targetPath}" 2>/dev/null | tail -n +2 | head -20`, { timeout: 5000, encoding: 'utf-8' }).trim();
+        output = (await safeExec(`lsof "${targetPath}" 2>/dev/null | tail -n +2 | head -20`, { timeout: 5000 })).trim();
       } catch { /* lsof returns exit code 1 when no processes found */ }
 
       // If it's a directory or nothing found, scan the directory
       if (!output) {
         try {
-          output = execSync(`lsof +D "${targetPath}" 2>/dev/null | tail -n +2 | head -20`, { timeout: 8000, encoding: 'utf-8' }).trim();
+          output = (await safeExec(`lsof +D "${targetPath}" 2>/dev/null | tail -n +2 | head -20`, { timeout: 8000 })).trim();
         } catch { /* no results */ }
       }
 

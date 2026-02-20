@@ -1,9 +1,9 @@
 import * as chokidar from 'chokidar';
-import { execFile } from 'node:child_process';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import log from 'electron-log';
+import { safeExecFile } from './safe-exec';
 import { SENSITIVITY_MULTIPLIERS } from '@qshield/core';
 import type {
   HighTrustAsset,
@@ -33,6 +33,61 @@ type AssetEventCallback = (event: AssetChangeEvent, asset: HighTrustAsset) => vo
  *   - Strict:   every 15 minutes
  *   - Normal:   every 60 minutes
  */
+/** Chokidar ignore patterns for OS/editor junk files that should never trigger alerts. */
+const ASSET_IGNORED_PATTERNS = [
+  // macOS system files
+  '**/.DS_Store',
+  '**/.Spotlight-V100',
+  '**/.fseventsd',
+  '**/.Trashes',
+  '**/.TemporaryItems',
+  '**/._*',
+  '**/.localized',
+  // Windows system files
+  '**/Thumbs.db',
+  '**/desktop.ini',
+  '**/ehthumbs.db',
+  // Temp/swap files
+  '**/*.tmp',
+  '**/*.swp',
+  '**/*.swo',
+  '**/*~',
+  '**/~$*',
+  '**/.~lock.*',
+  // Version control
+  '**/.git/**',
+  '**/.svn/**',
+  // OS caches
+  '**/Library/Caches/**',
+  '**/node_modules/**',
+];
+
+/** File names that should always be ignored (safety net if chokidar misses). */
+const IGNORED_FILE_NAMES = new Set([
+  '.DS_Store', '.ds_store',
+  'Thumbs.db', 'desktop.ini', 'ehthumbs.db',
+  '.localized', '.gitkeep',
+]);
+
+/** Patterns for file names that should always be ignored. */
+const IGNORED_FILE_PATTERNS = [
+  /^\._/,          // macOS resource forks: ._filename
+  /^~\$/,          // Office temp files: ~$filename
+  /\.tmp$/i,
+  /\.swp$/i,
+  /\.swo$/i,
+  /~$/,
+  /^\.~lock\./,    // LibreOffice locks
+];
+
+/** Path segments that indicate OS infrastructure, not user files. */
+const IGNORED_PATH_SEGMENTS = [
+  '.Spotlight-V100',
+  '.fseventsd',
+  '.Trashes',
+  '.TemporaryItems',
+];
+
 export class AssetMonitor {
   private store: AssetStore;
   private watcher: chokidar.FSWatcher | null = null;
@@ -76,6 +131,7 @@ export class AssetMonitor {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
       depth: 5,
+      ignored: ASSET_IGNORED_PATTERNS,
     });
 
     this.watcher
@@ -366,10 +422,22 @@ export class AssetMonitor {
   // Change handling
   // -----------------------------------------------------------------------
 
+  /** Check whether a file path is OS/editor junk that should be silently ignored. */
+  private shouldIgnoreFile(filePath: string): boolean {
+    const fileName = path.basename(filePath);
+    if (IGNORED_FILE_NAMES.has(fileName)) return true;
+    if (IGNORED_FILE_PATTERNS.some((p) => p.test(fileName))) return true;
+    if (IGNORED_PATH_SEGMENTS.some((seg) => filePath.includes(seg))) return true;
+    return false;
+  }
+
   private async handleChange(
     filePath: string,
     eventType: AssetChangeEvent['eventType'],
   ): Promise<void> {
+    // Skip OS/editor junk files (safety net — chokidar ignored should catch most)
+    if (this.shouldIgnoreFile(filePath)) return;
+
     // Find which registered asset this file belongs to
     const asset = this.findAssetForPath(filePath);
     if (!asset || !asset.enabled) return;
@@ -613,8 +681,12 @@ export class AssetMonitor {
     }
     const files: string[] = [];
     for (const entry of entries) {
+      // Skip OS/editor junk files in directory hashing
+      if (IGNORED_FILE_NAMES.has(entry.name)) continue;
+      if (IGNORED_FILE_PATTERNS.some((p) => p.test(entry.name))) continue;
       const full = path.join(dirPath, entry.name);
       if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        if (IGNORED_PATH_SEGMENTS.includes(entry.name)) continue;
         files.push(...(await this.walkDir(full)));
       } else if (entry.isFile()) {
         files.push(full);
@@ -646,8 +718,11 @@ export class AssetMonitor {
       }
       for (const entry of entries) {
         if (entry.name.startsWith('.')) continue;
+        if (IGNORED_FILE_NAMES.has(entry.name)) continue;
+        if (IGNORED_FILE_PATTERNS.some((p) => p.test(entry.name))) continue;
         const full = path.join(dir, entry.name);
         if (entry.isDirectory() && !entry.isSymbolicLink()) {
+          if (IGNORED_PATH_SEGMENTS.includes(entry.name)) continue;
           await scan(full, depth + 1);
         } else if (entry.isFile()) {
           try {
@@ -692,6 +767,7 @@ export class AssetMonitor {
       'bird', 'cloudd', 'nsurlsessiond', // iCloud
       'kernel_task', 'launchd', 'diskarbitrationd',
       'revisiond', 'filecoordinationd',
+      'Finder', 'finder',               // Finder directory indexing / .DS_Store writes
     ]);
 
     for (const asset of assets) {
@@ -764,57 +840,57 @@ export class AssetMonitor {
   }
 
   /** Run lsof on a file path and parse the output. */
-  private runLsof(filePath: string): Promise<Array<{ processName: string; pid: string; user: string; accessType: string; filePath: string }>> {
-    return new Promise((resolve) => {
-      execFile('lsof', ['-F', 'pcufa', '--', filePath], { timeout: 5_000 }, (err, stdout) => {
-        if (err || !stdout.trim()) {
-          resolve([]);
-          return;
-        }
-        const results: Array<{ processName: string; pid: string; user: string; accessType: string; filePath: string }> = [];
-        let current: { processName: string; pid: string; user: string; accessType: string; filePath: string } = {
-          processName: '', pid: '', user: '', accessType: '', filePath: '',
-        };
+  private async runLsof(filePath: string): Promise<Array<{ processName: string; pid: string; user: string; accessType: string; filePath: string }>> {
+    try {
+      const stdout = await safeExecFile('lsof', ['-F', 'pcufa', '--', filePath], { timeout: 5_000 });
+      if (!stdout.trim()) {
+        return [];
+      }
+      const results: Array<{ processName: string; pid: string; user: string; accessType: string; filePath: string }> = [];
+      let current: { processName: string; pid: string; user: string; accessType: string; filePath: string } = {
+        processName: '', pid: '', user: '', accessType: '', filePath: '',
+      };
 
-        for (const line of stdout.split('\n')) {
-          if (!line) continue;
-          const tag = line[0];
-          const value = line.slice(1);
-          switch (tag) {
-            case 'p':
-              // New process — push previous if complete
-              if (current.pid && current.processName) {
-                results.push({ ...current });
-              }
-              current = { processName: '', pid: value, user: '', accessType: '', filePath: '' };
-              break;
-            case 'c':
-              current.processName = value;
-              break;
-            case 'u':
-              current.user = value;
-              break;
-            case 'a':
-              current.accessType = value; // 'r', 'w', 'u' (read, write, read-write)
-              break;
-            case 'f':
-              // File descriptor — ignore (we have the path)
-              break;
-            case 'n':
-              current.filePath = value;
-              break;
-          }
+      for (const line of stdout.split('\n')) {
+        if (!line) continue;
+        const tag = line[0];
+        const value = line.slice(1);
+        switch (tag) {
+          case 'p':
+            // New process — push previous if complete
+            if (current.pid && current.processName) {
+              results.push({ ...current });
+            }
+            current = { processName: '', pid: value, user: '', accessType: '', filePath: '' };
+            break;
+          case 'c':
+            current.processName = value;
+            break;
+          case 'u':
+            current.user = value;
+            break;
+          case 'a':
+            current.accessType = value; // 'r', 'w', 'u' (read, write, read-write)
+            break;
+          case 'f':
+            // File descriptor — ignore (we have the path)
+            break;
+          case 'n':
+            current.filePath = value;
+            break;
         }
-        // Push last entry
-        if (current.pid && current.processName) {
-          results.push(current);
-        }
+      }
+      // Push last entry
+      if (current.pid && current.processName) {
+        results.push(current);
+      }
 
-        // Filter to our own app
-        const appName = 'QShield';
-        resolve(results.filter((r) => !r.processName.includes(appName) && r.processName !== 'Electron'));
-      });
-    });
+      // Filter out our own app
+      const appName = 'QShield';
+      return results.filter((r) => !r.processName.includes(appName) && r.processName !== 'Electron');
+    } catch {
+      return [];
+    }
   }
 
   /** Convert raw process names to human-readable app names. */

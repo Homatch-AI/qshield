@@ -3,11 +3,11 @@ import * as chokidar from 'chokidar';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import { execFile } from 'node:child_process';
 import { app } from 'electron';
 import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
 import { isTextFile } from '../services/file-forensics';
+import { safeExecFile } from '../services/safe-exec';
 
 interface FileWatcherConfig {
   /** Directories to watch. Defaults to [home/Documents, home/Downloads, home/Desktop] */
@@ -192,11 +192,8 @@ export class FileWatcherAdapter extends BaseAdapter {
       let owner: string | null = null;
       if (stats && process.platform === 'darwin') {
         try {
-          owner = await new Promise<string | null>((resolve) => {
-            execFile('id', ['-un', String(stats.uid)], { timeout: 2000 }, (err, stdout) => {
-              resolve(err || !stdout.trim() ? `uid:${stats.uid}` : stdout.trim());
-            });
-          });
+          const stdout = await safeExecFile('id', ['-un', String(stats.uid)], { timeout: 2000 });
+          owner = stdout.trim() || `uid:${stats.uid}`;
         } catch {
           owner = `uid:${stats.uid}`;
         }

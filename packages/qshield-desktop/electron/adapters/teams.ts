@@ -1,7 +1,7 @@
-import { execSync } from 'node:child_process';
 import log from 'electron-log';
 import type { AdapterType, AdapterEvent } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
+import { safeExec } from '../services/safe-exec';
 
 /** Teams process state machine */
 type TeamsState = 'idle' | 'running' | 'in-call';
@@ -85,11 +85,11 @@ export class TeamsAdapter extends BaseAdapter {
   // Simple inline detection (no process-monitor dependency)
   // ---------------------------------------------------------------------------
 
-  private isTeamsRunning(): boolean {
+  private async isTeamsRunning(): Promise<boolean> {
     try {
-      const result = execSync(
+      const result = await safeExec(
         'pgrep -f "MSTeams|Microsoft Teams" 2>/dev/null',
-        { encoding: 'utf-8', timeout: 3000 },
+        { timeout: 3000 },
       );
       const found = result.trim().length > 0;
       log.info(`[TeamsAdapter] pgrep result: found=${found} pids="${result.trim().split('\n').join(',')}"`)
@@ -100,20 +100,20 @@ export class TeamsAdapter extends BaseAdapter {
     }
   }
 
-  private isInCall(): boolean {
+  private async isInCall(): Promise<boolean> {
     try {
       // Check for UDP connections — Teams uses UDP for real-time media (audio/video)
       // during calls. Idle Teams has 0 UDP connections; a call opens several.
-      const udpResult = execSync(
+      const udpResult = await safeExec(
         'lsof -i UDP -nP 2>/dev/null | grep -i "MSTeams\\|Microsoft" | wc -l',
-        { encoding: 'utf-8', timeout: 5000 },
+        { timeout: 5000 },
       );
       const udpCount = parseInt(udpResult.trim(), 10);
 
       // Also count TCP ESTABLISHED as a secondary signal
-      const tcpResult = execSync(
+      const tcpResult = await safeExec(
         'lsof -i TCP -nP 2>/dev/null | grep -i "MSTeams\\|Microsoft" | grep "ESTABLISHED" | wc -l',
-        { encoding: 'utf-8', timeout: 5000 },
+        { timeout: 5000 },
       );
       const tcpCount = parseInt(tcpResult.trim(), 10);
 
@@ -129,12 +129,12 @@ export class TeamsAdapter extends BaseAdapter {
     }
   }
 
-  private checkCamera(): boolean {
+  private async checkCamera(): Promise<boolean> {
     if (process.platform !== 'darwin') return false;
     try {
-      const result = execSync(
+      const result = await safeExec(
         'pgrep -f "VDCAssistant|AppleCameraAssistant" 2>/dev/null',
-        { encoding: 'utf-8', timeout: 3000 },
+        { timeout: 3000 },
       );
       return result.trim().length > 0;
     } catch {
@@ -142,12 +142,12 @@ export class TeamsAdapter extends BaseAdapter {
     }
   }
 
-  private checkMic(): boolean {
+  private async checkMic(): Promise<boolean> {
     if (process.platform !== 'darwin') return false;
     try {
-      const result = execSync(
+      const result = await safeExec(
         'ioreg -l | grep -i "IOAudioEngineState" 2>/dev/null | head -5',
-        { encoding: 'utf-8', timeout: 3000 },
+        { timeout: 3000 },
       );
       return result.includes('1');
     } catch {
@@ -155,12 +155,12 @@ export class TeamsAdapter extends BaseAdapter {
     }
   }
 
-  private checkScreenShare(): boolean {
+  private async checkScreenShare(): Promise<boolean> {
     if (process.platform !== 'darwin') return false;
     try {
-      const result = execSync(
+      const result = await safeExec(
         'pgrep -f "screencapture|CptHost" 2>/dev/null',
-        { encoding: 'utf-8', timeout: 3000 },
+        { timeout: 3000 },
       );
       return result.trim().length > 0;
     } catch {
@@ -172,15 +172,15 @@ export class TeamsAdapter extends BaseAdapter {
   // Polling & State Machine
   // ---------------------------------------------------------------------------
 
-  private poll(): void {
+  private async poll(): Promise<void> {
     if (!this.connected) return;
 
     try {
-      const teamsRunning = this.isTeamsRunning();
-      const inCall = this.isInCall();
-      const camera = this.checkCamera();
-      const mic = this.checkMic();
-      const screenShare = this.checkScreenShare();
+      const teamsRunning = await this.isTeamsRunning();
+      const inCall = await this.isInCall();
+      const camera = await this.checkCamera();
+      const mic = await this.checkMic();
+      const screenShare = await this.checkScreenShare();
 
       log.info(`[TeamsAdapter] Poll: state=${this.teamsState} running=${teamsRunning} inCall=${inCall} camera=${camera} mic=${mic} screenShare=${screenShare}`);
 
@@ -197,7 +197,7 @@ export class TeamsAdapter extends BaseAdapter {
 
       // State transitions
       if (previousState !== this.teamsState) {
-        this.handleStateTransition(previousState, this.teamsState);
+        this.handleStateTransition(previousState, this.teamsState, camera, mic, screenShare);
       }
 
       // Track peripheral changes during a call
@@ -211,7 +211,7 @@ export class TeamsAdapter extends BaseAdapter {
     }
   }
 
-  private handleStateTransition(from: TeamsState, to: TeamsState): void {
+  private handleStateTransition(from: TeamsState, to: TeamsState, camera: boolean, mic: boolean, screenShare: boolean): void {
     log.info(`[TeamsAdapter] State: ${from} → ${to}`);
 
     switch (to) {
@@ -239,9 +239,9 @@ export class TeamsAdapter extends BaseAdapter {
       case 'in-call':
         this.callStartTime = new Date().toISOString();
         this.emitEvent(this.createEvent('call-started', -10, {
-          cameraActive: this.checkCamera(),
-          micActive: this.checkMic(),
-          screenSharing: this.checkScreenShare(),
+          cameraActive: camera,
+          micActive: mic,
+          screenSharing: screenShare,
         }));
         break;
 
