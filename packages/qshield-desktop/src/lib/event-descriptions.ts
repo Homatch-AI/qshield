@@ -62,6 +62,8 @@ const NEGATIVE_EVENTS = new Set([
   'high-trust:asset-deleted',
   'high-trust:asset-renamed',
   'high-trust:asset-permission-changed',
+  'high-trust:asset-accessed',
+  'high-trust:asset-touched',
 ]);
 
 function titleCase(eventType: string): string {

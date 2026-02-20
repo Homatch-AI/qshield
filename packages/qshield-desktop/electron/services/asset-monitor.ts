@@ -115,7 +115,7 @@ export class AssetMonitor {
       return;
     }
 
-    // Seed the hash cache with known hashes and capture initial snapshots
+    // Seed the hash cache with known hashes, capture initial snapshots and mtimes
     for (const a of assets) {
       if (a.contentHash) {
         this.hashCache.set(a.path, a.contentHash);
@@ -124,6 +124,11 @@ export class AssetMonitor {
         const snap = await captureSnapshot(a.path);
         if (snap) this.snapshots.set(a.path, snap);
       }
+      // Seed initial mtime so periodic verify can detect touches
+      try {
+        const stat = await fs.promises.stat(a.path);
+        this.store.setMeta(a.id, 'lastMtime', String(stat.mtimeMs));
+      } catch { /* skip if can't stat */ }
     }
 
     const paths = assets.map((a) => a.path);
@@ -278,9 +283,14 @@ export class AssetMonitor {
     if (!asset) return null;
 
     try {
+      const previousCachedHash = this.hashCache.get(asset.path) ?? asset.contentHash;
       const currentHash = await this.computeHash(asset.path, asset.type);
       this.store.updateHash(id, currentHash);
       this.hashCache.set(asset.path, currentHash);
+
+      // Check for mtime-only change (file touched but content unchanged)
+      // Runs for ALL assets, not just verified ones
+      await this.checkMtimeTouch(id, asset, currentHash, previousCachedHash);
 
       // Never verified by user — just update the content hash, keep unverified
       if (!asset.verifiedHash) {
@@ -294,40 +304,6 @@ export class AssetMonitor {
       }
 
       if (currentHash === asset.verifiedHash) {
-        // Check for mtime-only change (file touched but content unchanged)
-        try {
-          const stat = await fs.promises.stat(asset.path);
-          const currentMtime = String(stat.mtimeMs);
-          const lastMtime = this.store.getMeta(id, 'lastMtime');
-          if (lastMtime && currentMtime !== lastMtime) {
-            const touchImpact = asset.sensitivity === 'critical' ? -5 : -2;
-            const touchEvent: AssetChangeEvent = {
-              assetId: asset.id,
-              path: asset.path,
-              sensitivity: asset.sensitivity,
-              eventType: 'asset-touched',
-              previousHash: currentHash,
-              newHash: currentHash,
-              trustStateBefore: asset.trustState,
-              trustStateAfter: asset.trustState,
-              timestamp: new Date().toISOString(),
-              metadata: {
-                fileName: path.basename(asset.path),
-                isHighTrustAsset: true,
-                detectedBy: 'periodic-verify',
-                previousMtime: lastMtime,
-                currentMtime,
-                trustImpact: touchImpact,
-              },
-            };
-            this.store.logChange(asset.id, touchEvent);
-            this.notifyListeners(touchEvent, asset);
-            log.info(`[AssetMonitor] Mtime changed but hash identical: ${asset.name}`);
-          }
-          this.store.setMeta(id, 'lastMtime', currentMtime);
-        } catch {
-          /* stat failed — skip mtime check */
-        }
         return this.store.verifyAsset(id);
       } else {
         // Hash mismatch — run through the full change pipeline
@@ -755,9 +731,57 @@ export class AssetMonitor {
     }
   }
 
+  /**
+   * Detect mtime-only changes (file touched but content unchanged).
+   * Called during periodic verify for both verified and unverified assets.
+   */
+  private async checkMtimeTouch(
+    id: string,
+    asset: HighTrustAsset,
+    currentHash: string,
+    previousHash: string | undefined,
+  ): Promise<void> {
+    try {
+      const stat = await fs.promises.stat(asset.path);
+      const currentMtime = String(stat.mtimeMs);
+      const lastMtime = this.store.getMeta(id, 'lastMtime');
+
+      if (lastMtime && currentMtime !== lastMtime && currentHash === previousHash) {
+        // Mtime changed but content hash didn't — this is a "touch"
+        const touchImpact = asset.sensitivity === 'critical' ? -5 : -2;
+        const touchEvent: AssetChangeEvent = {
+          assetId: asset.id,
+          path: asset.path,
+          sensitivity: asset.sensitivity,
+          eventType: 'asset-touched',
+          previousHash: currentHash,
+          newHash: currentHash,
+          trustStateBefore: asset.trustState,
+          trustStateAfter: asset.trustState,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            fileName: path.basename(asset.path),
+            isHighTrustAsset: true,
+            detectedBy: 'periodic-verify',
+            previousMtime: lastMtime,
+            currentMtime,
+            trustImpact: touchImpact,
+          },
+        };
+        this.store.logChange(asset.id, touchEvent);
+        this.notifyListeners(touchEvent, asset);
+        log.info(`[AssetMonitor] Mtime changed but hash identical: ${asset.name}`);
+      }
+
+      this.store.setMeta(id, 'lastMtime', currentMtime);
+    } catch {
+      /* stat failed — skip mtime check */
+    }
+  }
+
   /** Poll lsof for processes that have high-trust asset files open. */
   private async checkFileAccess(): Promise<void> {
-    const assets = this.store.listAssets().filter((a) => a.enabled && a.type === 'file');
+    const assets = this.store.listAssets().filter((a) => a.enabled);
     if (assets.length === 0) return;
 
     // System processes to ignore — these are macOS infrastructure, not user activity
@@ -770,11 +794,14 @@ export class AssetMonitor {
       'Finder', 'finder',               // Finder directory indexing / .DS_Store writes
     ]);
 
+    log.debug(`[AssetMonitor] checkFileAccess: polling ${assets.length} assets`);
+
     for (const asset of assets) {
       if (this.pausedAssets.has(asset.id)) continue;
 
       try {
-        const accessors = await this.runLsof(asset.path);
+        const accessors = await this.runLsof(asset.path, asset.type === 'directory');
+        log.debug(`[AssetMonitor] lsof ${asset.type} "${asset.name}": ${accessors.length} accessor(s)`);
         if (accessors.length === 0) continue;
 
         // Initialize known set if first poll
@@ -816,13 +843,16 @@ export class AssetMonitor {
             fileName: path.basename(asset.path),
             isHighTrustAsset: true,
             detectedBy: 'access-poll',
+            ...(asset.type === 'directory' ? { directoryName: path.basename(asset.path) } : {}),
             accessors: newAccessors.map((a) => ({
               process: this.friendlyProcessName(a.processName),
               pid: a.pid,
               user: a.user,
               accessType: a.accessType,
+              filePath: a.filePath,
             })),
             accessorNames: newAccessors.map((a) => this.friendlyProcessName(a.processName)),
+            accessedFiles: [...new Set(newAccessors.map((a) => a.filePath).filter(Boolean))],
             trustImpact: impact,
           },
         };
@@ -839,10 +869,14 @@ export class AssetMonitor {
     }
   }
 
-  /** Run lsof on a file path and parse the output. */
-  private async runLsof(filePath: string): Promise<Array<{ processName: string; pid: string; user: string; accessType: string; filePath: string }>> {
+  /** Run lsof on a file or directory path and parse the output. */
+  private async runLsof(targetPath: string, isDirectory = false): Promise<Array<{ processName: string; pid: string; user: string; accessType: string; filePath: string }>> {
     try {
-      const stdout = await safeExecFile('lsof', ['-F', 'pcufa', '--', filePath], { timeout: 5_000 });
+      // For directories, use +D (recursive) to find processes accessing files within
+      const args = isDirectory
+        ? ['-F', 'pcufan', '+D', targetPath]
+        : ['-F', 'pcufa', '--', targetPath];
+      const stdout = await safeExecFile('lsof', args, { timeout: 5_000 });
       if (!stdout.trim()) {
         return [];
       }
@@ -934,9 +968,6 @@ export class AssetMonitor {
     let checked = 0;
 
     for (const asset of assets) {
-      // Skip assets never verified by user — no baseline to compare against
-      if (!asset.verifiedHash) continue;
-
       const lastCheck = asset.lastVerified
         ? new Date(asset.lastVerified).getTime()
         : 0;

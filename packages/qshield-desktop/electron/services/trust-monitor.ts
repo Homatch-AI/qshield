@@ -38,6 +38,8 @@ const ASSET_BASE_IMPACT: Record<string, number> = {
   'asset-deleted': -30,
   'asset-renamed': -10,
   'asset-permission-changed': -20,
+  'asset-accessed': -3,
+  'asset-touched': -2,
 };
 
 /**
