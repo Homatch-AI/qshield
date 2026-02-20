@@ -26,12 +26,39 @@ const DEFAULT_IGNORED = [
   '**/node_modules/**',
   '**/.git/**',
   '**/.DS_Store',
+  '**/.Spotlight-V100',
+  '**/.fseventsd',
+  '**/.Trashes',
+  '**/.TemporaryItems',
+  '**/._*',
+  '**/.localized',
   '**/Thumbs.db',
+  '**/desktop.ini',
   '**/*.tmp',
   '**/*.swp',
+  '**/*.swo',
   '**/~$*',
+  '**/.~lock.*',
   '**/.Trash/**',
   '**/Library/Caches/**',
+];
+
+/** File names that should always be silently ignored (safety net). */
+const IGNORED_FILE_NAMES = new Set([
+  '.DS_Store', '.ds_store',
+  'Thumbs.db', 'desktop.ini', 'ehthumbs.db',
+  '.localized', '.gitkeep',
+]);
+
+/** Patterns for file names that should always be ignored. */
+const IGNORED_FILE_PATTERNS = [
+  /^\._/,          // macOS resource forks
+  /^~\$/,          // Office temp files
+  /\.tmp$/i,
+  /\.swp$/i,
+  /\.swo$/i,
+  /~$/,
+  /^\.~lock\./,    // LibreOffice locks
 ];
 
 const FIFTY_MB = 50 * 1024 * 1024;
@@ -168,6 +195,12 @@ export class FileWatcherAdapter extends BaseAdapter {
 
   private async handleFileEvent(eventType: string, filePath: string): Promise<void> {
     if (!this.connected) return;
+
+    // Skip OS/editor junk files (safety net — chokidar ignored should catch most)
+    const fileName = path.basename(filePath);
+    if (IGNORED_FILE_NAMES.has(fileName)) return;
+    if (IGNORED_FILE_PATTERNS.some((p) => p.test(fileName))) return;
+
     try {
       const isDeleted = eventType.includes('deleted');
       const stats = isDeleted ? null : await this.safeStats(filePath);
