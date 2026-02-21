@@ -1,10 +1,16 @@
 {
   "name": "@qshield/desktop",
   "version": "1.1.0",
-  "description": "QShield Desktop — Electron application",
+  "description": "QShield Desktop — Trust monitoring and evidence protection",
   "private": true,
   "type": "module",
   "main": "dist/electron/main.js",
+  "author": {
+    "name": "QShield",
+    "email": "support@qshield.app"
+  },
+  "homepage": "https://qshield.app",
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -12,9 +18,12 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "lint": "eslint src/ electron/",
-    "clean": "rm -rf dist",
-    "package:mac": "electron-builder --mac",
-    "package:win": "electron-builder --win"
+    "clean": "rm -rf dist dist-package",
+    "package:mac": "pnpm build && electron-builder --mac",
+    "package:win": "pnpm build && electron-builder --win",
+    "package:linux": "pnpm build && electron-builder --linux",
+    "package:all": "pnpm build && electron-builder --mac --win --linux",
+    "release": "pnpm build && electron-builder --mac --win --publish always"
   },
   "dependencies": {
     "@qshield/core": "workspace:*",
@@ -23,6 +32,7 @@
     "dotenv": "^17.3.1",
     "electron-log": "^5.2.0",
     "electron-store": "^10.0.0",
+    "electron-updater": "^6.8.3",
     "google-auth-library": "^10.5.0",
     "googleapis": "^171.4.0",
     "node-machine-id": "^1.1.12",

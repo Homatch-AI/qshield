@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0e7490;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e293b;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect width="1024" height="1024" rx="220" fill="url(#bgGrad)"/>
+  <!-- Shield shape -->
+  <path d="M512 160 L780 280 L780 520 C780 680 660 820 512 880 C364 820 244 680 244 520 L244 280 Z"
+        fill="url(#shieldGrad)" opacity="0.9"/>
+  <!-- Inner shield highlight -->
+  <path d="M512 210 L740 315 L740 520 C740 660 635 785 512 840 C389 785 284 660 284 520 L284 315 Z"
+        fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="3"/>
+  <!-- Q letter -->
+  <text x="512" y="580" font-family="SF Pro Display, -apple-system, Helvetica Neue, Arial"
+        font-size="340" font-weight="700" fill="white" text-anchor="middle" dominant-baseline="central">Q</text>
+  <!-- Small lock icon at bottom of shield -->
+  <rect x="482" y="680" width="60" height="45" rx="8" fill="rgba(255,255,255,0.8)"/>
+  <path d="M497 680 L497 660 C497 645 505 637 512 637 C519 637 527 645 527 660 L527 680"
+        fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="6" stroke-linecap="round"/>
+</svg>

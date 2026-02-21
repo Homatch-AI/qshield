@@ -455,6 +455,18 @@ interface QShieldInvestigateAPI {
   checkProcesses(targetPath: string): Promise<{ processes: Array<{ name: string; pid: string; user: string }>; summary: string }>;
 }
 
+interface QShieldUpdateAPI {
+  check(): Promise<null>;
+  download(): Promise<null>;
+  install(): Promise<null>;
+  onChecking(callback: () => void): void;
+  onAvailable(callback: (info: { version: string; releaseDate?: string; releaseNotes?: string }) => void): void;
+  onNotAvailable(callback: () => void): void;
+  onProgress(callback: (progress: { percent: number; transferred: number; total: number }) => void): void;
+  onDownloaded(callback: (info: { version: string }) => void): void;
+  onError(callback: (err: { message: string }) => void): void;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -478,6 +490,7 @@ interface QShieldAPI {
   emailNotify: QShieldEmailNotifyAPI;
   reports: QShieldReportsAPI;
   security: QShieldSecurityAPI;
+  update: QShieldUpdateAPI;
   shell: QShieldShellAPI;
   investigate: QShieldInvestigateAPI;
   trustHistory: {

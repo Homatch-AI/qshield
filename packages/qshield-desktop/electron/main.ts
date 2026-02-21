@@ -44,6 +44,7 @@ import { EmailNotifierService } from './services/email-notifier';
 import { TrustReportStore } from './services/trust-report-store';
 import { TrustReportGenerator } from './services/trust-report-generator';
 import { KeyManager } from './services/key-manager';
+import { setupAutoUpdater } from './services/auto-updater';
 import type { TrustReport, TrustReportType, TrustLevel, EvidenceRecord, AdapterType } from '@qshield/core';
 import { IPC_CHANNELS, IPC_EVENTS } from './ipc/channels';
 
@@ -1436,14 +1437,7 @@ async function gracefulShutdown(): Promise<void> {
   log.info('Graceful shutdown complete');
 }
 
-// ── Auto-updater placeholder ─────────────────────────────────────────────────
-// TODO: Auto-updater integration
-// When ready, add:
-//   import { autoUpdater } from 'electron-updater';
-//   autoUpdater.checkForUpdatesAndNotify();
-//   autoUpdater.on('update-available', (info) => { ... });
-//   autoUpdater.on('update-downloaded', (info) => { ... });
-// Configure update feed URL in electron-builder config.
+// Auto-updater is set up after main window creation via setupAutoUpdater().
 
 // ── File lock helpers ─────────────────────────────────────────────────────────
 
@@ -1949,6 +1943,9 @@ app.whenReady().then(async () => {
 
   // Create main window
   mainWindow = createMainWindow();
+
+  // Set up auto-updater (checks for updates on startup, registers IPC handlers)
+  setupAutoUpdater(mainWindow);
 
   // Create shield overlay if enabled
   const shieldConfig = configManager.getShieldConfig();

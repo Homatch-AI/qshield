@@ -571,6 +571,41 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<{ initialized: boolean; safeStorageAvailable: boolean; backend: string }>(IPC_CHANNELS.SECURITY_KEY_STATUS),
   },
 
+  update: {
+    check: (): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.UPDATE_CHECK),
+
+    download: (): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.UPDATE_DOWNLOAD),
+
+    install: (): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.UPDATE_INSTALL),
+
+    onChecking: (callback: () => void): void => {
+      ipcRenderer.on(IPC_EVENTS.UPDATE_CHECKING, () => callback());
+    },
+
+    onAvailable: (callback: (info: { version: string; releaseDate?: string; releaseNotes?: string }) => void): void => {
+      ipcRenderer.on(IPC_EVENTS.UPDATE_AVAILABLE, (_event: Electron.IpcRendererEvent, info: { version: string; releaseDate?: string; releaseNotes?: string }) => callback(info));
+    },
+
+    onNotAvailable: (callback: () => void): void => {
+      ipcRenderer.on(IPC_EVENTS.UPDATE_NOT_AVAILABLE, () => callback());
+    },
+
+    onProgress: (callback: (progress: { percent: number; transferred: number; total: number }) => void): void => {
+      ipcRenderer.on(IPC_EVENTS.UPDATE_PROGRESS, (_event: Electron.IpcRendererEvent, progress: { percent: number; transferred: number; total: number }) => callback(progress));
+    },
+
+    onDownloaded: (callback: (info: { version: string }) => void): void => {
+      ipcRenderer.on(IPC_EVENTS.UPDATE_DOWNLOADED, (_event: Electron.IpcRendererEvent, info: { version: string }) => callback(info));
+    },
+
+    onError: (callback: (err: { message: string }) => void): void => {
+      ipcRenderer.on(IPC_EVENTS.UPDATE_ERROR, (_event: Electron.IpcRendererEvent, err: { message: string }) => callback(err));
+    },
+  },
+
   app: {
     version: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),

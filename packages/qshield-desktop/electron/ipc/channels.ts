@@ -270,6 +270,14 @@ export const IPC_CHANNELS = {
   TRUST_HISTORY_MILESTONES: 'trust-history:milestones',
   /** Get the trust trend over the last N days */
   TRUST_HISTORY_TREND: 'trust-history:trend',
+
+  // ── Auto-Update ──────────────────────────────────────────────
+  /** Check for available updates */
+  UPDATE_CHECK: 'update:check',
+  /** Download an available update */
+  UPDATE_DOWNLOAD: 'update:download',
+  /** Install a downloaded update and restart */
+  UPDATE_INSTALL: 'update:install',
 } as const;
 
 /** Union type of all valid IPC channel strings */
@@ -292,6 +300,18 @@ export const IPC_EVENTS = {
   ASSET_CHANGED: 'event:asset-changed',
   /** Fired when an asset's trust state is updated (verified → changed, etc.) */
   ASSET_STATE_UPDATED: 'event:asset-state-updated',
+  /** Fired when checking for updates */
+  UPDATE_CHECKING: 'update:checking',
+  /** Fired when an update is available */
+  UPDATE_AVAILABLE: 'update:available',
+  /** Fired when no update is available */
+  UPDATE_NOT_AVAILABLE: 'update:not-available',
+  /** Fired with download progress */
+  UPDATE_PROGRESS: 'update:progress',
+  /** Fired when update has been downloaded */
+  UPDATE_DOWNLOADED: 'update:downloaded',
+  /** Fired when an update error occurs */
+  UPDATE_ERROR: 'update:error',
 } as const;
 
 /** Union type of all valid IPC event strings */

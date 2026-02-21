@@ -455,6 +455,9 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Updates */}
+      <UpdateSection />
+
       {/* App Info */}
       <SettingsSection title="About">
         <div className="flex items-center justify-between text-sm">
@@ -904,6 +907,130 @@ function GmailConnectionSection() {
             </p>
           </div>
         </div>
+      </div>
+    </SettingsSection>
+  );
+}
+
+function UpdateSection() {
+  const [version, setVersion] = useState('...');
+  const [status, setStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle');
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [downloadPercent, setDownloadPercent] = useState(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isIPCAvailable()) return;
+    window.qshield.app.getVersion().then(setVersion).catch(() => setVersion('unknown'));
+
+    window.qshield.update.onChecking(() => setStatus('checking'));
+    window.qshield.update.onAvailable((info) => {
+      setStatus('available');
+      setUpdateVersion(info.version);
+    });
+    window.qshield.update.onNotAvailable(() => setStatus('not-available'));
+    window.qshield.update.onProgress((p) => {
+      setStatus('downloading');
+      setDownloadPercent(Math.round(p.percent));
+    });
+    window.qshield.update.onDownloaded((info) => {
+      setStatus('downloaded');
+      setUpdateVersion(info.version);
+    });
+    window.qshield.update.onError((err) => {
+      setStatus('error');
+      setErrorMsg(err.message);
+    });
+  }, []);
+
+  const handleCheck = useCallback(() => {
+    if (!isIPCAvailable()) return;
+    setStatus('checking');
+    setErrorMsg(null);
+    window.qshield.update.check().catch(() => setStatus('error'));
+  }, []);
+
+  const handleDownload = useCallback(() => {
+    if (!isIPCAvailable()) return;
+    setStatus('downloading');
+    setDownloadPercent(0);
+    window.qshield.update.download().catch(() => setStatus('error'));
+  }, []);
+
+  const handleInstall = useCallback(() => {
+    if (!isIPCAvailable()) return;
+    window.qshield.update.install();
+  }, []);
+
+  return (
+    <SettingsSection title="Updates" description="Keep QShield Desktop up to date">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-sm">
+            <span className="text-slate-400">Current version: </span>
+            <span className="font-mono text-slate-300">v{version}</span>
+          </div>
+
+          {status === 'idle' || status === 'not-available' || status === 'error' ? (
+            <button
+              onClick={handleCheck}
+              className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-600 transition-colors"
+            >
+              Check for Updates
+            </button>
+          ) : status === 'checking' ? (
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-600 border-t-sky-400" />
+              Checking...
+            </div>
+          ) : status === 'available' ? (
+            <button
+              onClick={handleDownload}
+              className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 transition-colors"
+            >
+              Download v{updateVersion}
+            </button>
+          ) : status === 'downloading' ? (
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-600 border-t-sky-400" />
+              Downloading... {downloadPercent}%
+            </div>
+          ) : status === 'downloaded' ? (
+            <button
+              onClick={handleInstall}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors"
+            >
+              Install & Restart
+            </button>
+          ) : null}
+        </div>
+
+        {status === 'downloading' && (
+          <div className="h-1.5 w-full rounded-full bg-slate-700 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-sky-500 transition-all duration-300"
+              style={{ width: `${downloadPercent}%` }}
+            />
+          </div>
+        )}
+
+        {status === 'not-available' && (
+          <p className="text-xs text-slate-500">You're on the latest version.</p>
+        )}
+
+        {status === 'available' && (
+          <p className="text-xs text-sky-400">Update v{updateVersion} is available.</p>
+        )}
+
+        {status === 'downloaded' && (
+          <p className="text-xs text-emerald-400">
+            Update v{updateVersion} is ready. Click "Install & Restart" to apply.
+          </p>
+        )}
+
+        {status === 'error' && (
+          <p className="text-xs text-red-400">{errorMsg || 'Update check failed. You may be offline or no releases are published yet.'}</p>
+        )}
       </div>
     </SettingsSection>
   );

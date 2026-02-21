@@ -1,0 +1,29 @@
+QShield Desktop — End User License Agreement
+
+Copyright (c) 2026 QShield. All rights reserved.
+
+This software is licensed, not sold. By installing or using QShield Desktop,
+you agree to the following terms:
+
+1. LICENSE GRANT
+   You are granted a non-exclusive, non-transferable license to use QShield
+   Desktop on the number of machines specified by your license tier.
+
+2. RESTRICTIONS
+   You may not reverse engineer, decompile, or disassemble this software.
+   You may not redistribute or sublicense this software.
+
+3. DATA PRIVACY
+   QShield Desktop monitors file, email, and meeting activity on your device
+   to compute trust scores. All data is stored locally on your machine and
+   encrypted at rest. No data is transmitted to external servers without
+   your explicit consent.
+
+4. WARRANTY DISCLAIMER
+   This software is provided "as is" without warranty of any kind.
+
+5. LIMITATION OF LIABILITY
+   In no event shall QShield be liable for any damages arising from the
+   use of this software.
+
+For full terms, visit: https://qshield.app/terms

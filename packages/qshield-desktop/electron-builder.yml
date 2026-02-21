@@ -1,29 +1,106 @@
 appId: com.qshield.desktop
 productName: QShield Desktop
+copyright: "Copyright © 2026 QShield"
+
 directories:
-  output: dist
+  output: dist-package
   buildResources: resources
+
+# === macOS ===
 mac:
   category: public.app-category.utilities
+  icon: resources/icon.png
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch:
+        - universal
+    - target: zip
+      arch:
+        - universal
   hardenedRuntime: true
   gatekeeperAssess: false
-  notarize: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.inherit.plist
+  # Notarization — requires Apple Developer account
+  # Uncomment when you have credentials:
+  # notarize:
+  #   teamId: YOUR_TEAM_ID
+
+dmg:
+  title: "QShield Desktop"
+  icon: resources/icon.png
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+
+# === Windows ===
 win:
+  icon: resources/icon.png
   target:
-    - nsis
-  sign: true
+    - target: nsis
+      arch:
+        - x64
+  # Code signing — uncomment when you have a certificate:
+  # certificateFile: certs/windows-cert.pfx
+  # certificatePassword: ${WIN_CSC_KEY_PASSWORD}
+
 nsis:
   oneClick: false
-  perMachine: true
+  perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: "QShield Desktop"
+  uninstallDisplayName: "QShield Desktop"
+  license: resources/license.txt
+
+# === Linux ===
+linux:
+  icon: resources/icon.png
+  target:
+    - AppImage
+    - deb
+  category: Utility
+  synopsis: "Trust monitoring and evidence protection"
+  description: "QShield Desktop monitors your digital trust across email, files, meetings, and more."
+
+# === Auto Update ===
 publish:
   provider: github
+  owner: Homatch-AI
+  repo: qshield
   releaseType: release
+
+# === Files ===
 files:
   - dist/**/*
   - "!dist/electron"
   - dist/electron/main.js
   - dist/electron/preload.js
+  - dist/electron/preload.cjs
+  - dist/electron/exec-daemon.js
+  - "!**/*.map"
+  - "!**/node_modules/.cache"
+
+# === Extra files to include ===
+extraResources:
+  - from: resources/
+    to: resources/
+    filter:
+      - "**/*"
+      - "!*.psd"
+      - "!*.ai"
+
+# === asar ===
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/node_modules/better-sqlite3/**"
+  - "**/node_modules/chokidar/**"
