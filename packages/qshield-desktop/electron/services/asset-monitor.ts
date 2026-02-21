@@ -242,10 +242,14 @@ export class AssetMonitor {
     name?: string,
   ): Promise<HighTrustAsset> {
     const asset = this.store.addAsset(assetPath, type, sensitivity, name);
+    log.info(`[AssetMonitor] addAsset: "${asset.name}" (${asset.type}) at ${asset.path}`);
 
     // Add to live watcher if running
     if (this.watcher) {
       this.watcher.add(asset.path);
+      log.info(`[AssetMonitor] Chokidar watcher added path: ${asset.path}`);
+    } else {
+      log.warn(`[AssetMonitor] Watcher not running — path not watched: ${asset.path}`);
     }
 
     // Cache initial hash and snapshot
@@ -257,6 +261,13 @@ export class AssetMonitor {
       if (snap) this.snapshots.set(asset.path, snap);
     }
 
+    // Seed initial mtime so periodic verify can detect touches
+    try {
+      const stat = await fs.promises.stat(asset.path);
+      this.store.setMeta(asset.id, 'lastMtime', String(stat.mtimeMs));
+    } catch { /* skip if can't stat */ }
+
+    log.info(`[AssetMonitor] Asset "${asset.name}" is now being monitored`);
     return asset;
   }
 
@@ -269,8 +280,9 @@ export class AssetMonitor {
       }
       this.hashCache.delete(asset.path);
       this.snapshots.delete(asset.path);
+      this.knownAccessors.delete(id);
       this.store.removeAsset(id);
-      log.info(`[AssetMonitor] Removed asset: ${asset.name}`);
+      log.info(`[AssetMonitor] Removed asset: ${asset.name} (unwatched + cleaned up)`);
     }
   }
 
