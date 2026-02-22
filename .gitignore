@@ -1,11 +1,13 @@
 node_modules/
 dist/
+dist-package/
 *.tsbuildinfo
 .turbo/
 .vite/
 *.dmg
 *.exe
 *.AppImage
+*.deb
 *.snap
 .env
 .env.local
@@ -15,3 +17,9 @@ thumbs.db
 coverage/
 test-results/
 playwright-report/
+
+# Code signing
+*.p12
+*.pfx
+*.cer
+certs/

@@ -1,0 +1,179 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package macOS (unsigned)
+        working-directory: packages/qshield-desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac
+
+      # Code-signed build (uncomment when you have Apple Developer credentials)
+      # - name: Package macOS (signed + notarized)
+      #   working-directory: packages/qshield-desktop
+      #   env:
+      #     CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+      #     CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+      #     APPLE_ID: ${{ secrets.APPLE_ID }}
+      #     APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      #     APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: npx electron-builder --mac
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: |
+            packages/qshield-desktop/dist-package/*.dmg
+            packages/qshield-desktop/dist-package/*.zip
+            packages/qshield-desktop/dist-package/latest-mac.yml
+          retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package Windows (unsigned)
+        working-directory: packages/qshield-desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win
+
+      # Code-signed build (uncomment when you have Windows signing certificate)
+      # - name: Package Windows (signed)
+      #   working-directory: packages/qshield-desktop
+      #   env:
+      #     WIN_CSC_LINK: ${{ secrets.WIN_CERT_PFX_BASE64 }}
+      #     WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: npx electron-builder --win
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            packages/qshield-desktop/dist-package/*.exe
+            packages/qshield-desktop/dist-package/latest.yml
+          retention-days: 30
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package Linux
+        working-directory: packages/qshield-desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            packages/qshield-desktop/dist-package/*.AppImage
+            packages/qshield-desktop/dist-package/*.deb
+            packages/qshield-desktop/dist-package/latest-linux.yml
+          retention-days: 30
+
+  create-release:
+    needs: [build-mac, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | head -20
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            artifacts/macos-build/*.dmg
+            artifacts/macos-build/*.zip
+            artifacts/macos-build/latest-mac.yml
+            artifacts/windows-build/*.exe
+            artifacts/windows-build/latest.yml
+            artifacts/linux-build/*.AppImage
+            artifacts/linux-build/*.deb
+            artifacts/linux-build/latest-linux.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
