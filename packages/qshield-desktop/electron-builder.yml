@@ -11,12 +11,8 @@ mac:
   category: public.app-category.utilities
   icon: resources/icon.png
   target:
-    - target: dmg
-      arch:
-        - universal
-    - target: zip
-      arch:
-        - universal
+    - dmg
+    - zip
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
@@ -78,7 +74,17 @@ publish:
   repo: qshield
   releaseType: release
 
+# === Native rebuild ===
+# Disable @electron/rebuild — native deps (better-sqlite3) are built
+# during pnpm install via node-gyp. Rebuild traverses pnpm workspace
+# symlinks and fails on missing devDependencies in sibling packages.
+npmRebuild: false
+
 # === Files ===
+# Vite bundles everything into dist/ — we only need the built output
+# plus node_modules for native addons (better-sqlite3).
+# Exclude workspace symlinks (@qshield/core) which point outside
+# the package root and break asar packing.
 files:
   - dist/**/*
   - "!dist/electron"
@@ -88,6 +94,8 @@ files:
   - dist/electron/exec-daemon.js
   - "!**/*.map"
   - "!**/node_modules/.cache"
+  - "!**/node_modules/@qshield/**"
+  - "!**/.turbo"
 
 # === Extra files to include ===
 extraResources:
