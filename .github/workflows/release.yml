@@ -36,7 +36,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --mac
+        run: npx electron-builder --mac --publish never
 
       # Code-signed build (uncomment when you have Apple Developer credentials)
       # - name: Package macOS (signed + notarized)
@@ -48,7 +48,7 @@ jobs:
       #     APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       #     APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   run: npx electron-builder --mac
+      #   run: npx electron-builder --mac --publish never
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -85,7 +85,7 @@ jobs:
         working-directory: packages/qshield-desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win
+        run: npx electron-builder --win --publish never
 
       # Code-signed build (uncomment when you have Windows signing certificate)
       # - name: Package Windows (signed)
@@ -94,7 +94,7 @@ jobs:
       #     WIN_CSC_LINK: ${{ secrets.WIN_CERT_PFX_BASE64 }}
       #     WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
       #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   run: npx electron-builder --win
+      #   run: npx electron-builder --win --publish never
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -130,7 +130,7 @@ jobs:
         working-directory: packages/qshield-desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --linux
+        run: npx electron-builder --linux --publish never
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
