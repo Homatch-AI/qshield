@@ -29,7 +29,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm build
+        run: pnpm -F @qshield/core build && pnpm -F @qshield/desktop build
 
       - name: Package macOS (unsigned)
         working-directory: packages/qshield-desktop
@@ -79,7 +79,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm build
+        run: pnpm -F @qshield/core build && pnpm -F @qshield/desktop build
 
       - name: Package Windows (unsigned)
         working-directory: packages/qshield-desktop
@@ -124,7 +124,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm build
+        run: pnpm -F @qshield/core build && pnpm -F @qshield/desktop build
 
       - name: Package Linux
         working-directory: packages/qshield-desktop

@@ -64,8 +64,12 @@ linux:
     - AppImage
     - deb
   category: Utility
+  executableName: qshield-desktop
   synopsis: "Trust monitoring and evidence protection"
   description: "QShield Desktop monitors your digital trust across email, files, meetings, and more."
+
+deb:
+  artifactName: "QShield-Desktop-${version}-${arch}.deb"
 
 # === Auto Update ===
 publish:
