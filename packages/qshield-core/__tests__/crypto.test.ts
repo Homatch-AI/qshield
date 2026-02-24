@@ -321,7 +321,8 @@ describe('AES-256-GCM encryption', () => {
 
   it('detects tampered auth tag', () => {
     const encrypted = encryptAesGcm('secret', key);
-    encrypted.authTag = 'ff' + encrypted.authTag.slice(2);
+    // Flip every hex digit to ensure a different auth tag
+    encrypted.authTag = encrypted.authTag.split('').map(c => c === 'f' ? '0' : 'f').join('');
     expect(() => decryptAesGcm(encrypted, key)).toThrow();
   });
 
