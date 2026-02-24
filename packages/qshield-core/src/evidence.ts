@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { hashEvidenceRecord, hmacSha256, constantTimeEqual } from './crypto';
-import type { AdapterType, DualPathVerification, EvidenceRecord } from './types';
+import { hashEvidenceRecord, hmacSha256, constantTimeEqual } from './crypto.js';
+import type { AdapterType, DualPathVerification, EvidenceRecord } from './types.js';
 
 /** Result of a full chain integrity check. */
 export interface ChainIntegrity {

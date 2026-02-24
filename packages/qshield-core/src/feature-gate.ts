@@ -1,7 +1,7 @@
-import type { Feature, QShieldEdition } from './types/features';
-import type { QShieldLicense, LicenseLimits } from './license-types';
-import { LICENSE_LIMITS } from './license-types';
-import { verifyLicenseSignature, isLicenseExpired } from './license-validator';
+import type { Feature, QShieldEdition } from './types/features.js';
+import type { QShieldLicense, LicenseLimits } from './license-types.js';
+import { LICENSE_LIMITS } from './license-types.js';
+import { verifyLicenseSignature, isLicenseExpired } from './license-validator.js';
 
 /**
  * Features available to unregistered users (no license at all).

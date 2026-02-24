@@ -4,7 +4,7 @@
  * scam database lookups, and transaction hash validation.
  */
 import jsSha3 from 'js-sha3';
-import type { CryptoChain, TransactionCheck } from './types';
+import type { CryptoChain, TransactionCheck } from './types.js';
 
 const { keccak_256 } = jsSha3;
 

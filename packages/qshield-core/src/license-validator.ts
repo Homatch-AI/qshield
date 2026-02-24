@@ -1,4 +1,4 @@
-import type { QShieldLicense } from './license-types';
+import type { QShieldLicense } from './license-types.js';
 
 /**
  * Verify the cryptographic signature of a license.

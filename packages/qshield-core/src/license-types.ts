@@ -1,5 +1,5 @@
-import type { Feature, QShieldEdition } from './types/features';
-import { EDITION_FEATURES } from './types/features';
+import type { Feature, QShieldEdition } from './types/features.js';
+import { EDITION_FEATURES } from './types/features.js';
 
 /** License-specific limits (snake_case, used by QShieldLicense payloads). */
 export interface LicenseLimits {

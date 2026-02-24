@@ -1,5 +1,5 @@
-import type { AdapterType, TrustDimensionKey, TrustDimensions, TrustLevel, TrustSignal, TrustState } from './types';
-import { TRUST_DIMENSION_KEYS } from './types';
+import type { AdapterType, TrustDimensionKey, TrustDimensions, TrustLevel, TrustSignal, TrustState } from './types.js';
+import { TRUST_DIMENSION_KEYS } from './types.js';
 
 /** Configuration for the trust scoring engine. */
 export interface TrustScorerConfig {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FeatureGate, EDITION_FEATURES } from '../types/features';
+import { FeatureGate, EDITION_FEATURES } from '../types/features.js';
 
 describe('FeatureGate', () => {
   it('free edition has basic features', () => {

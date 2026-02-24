@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: packages/qshield-gateway/Dockerfile
+    ports:
+      - "3847:3847"
+    volumes:
+      - gateway-data:/app/data
+    environment:
+      - QSHIELD_JWT_SECRET=${QSHIELD_JWT_SECRET:-dev-secret-change-me}
+      - QSHIELD_SERVER_HMAC_KEY=${QSHIELD_SERVER_HMAC_KEY:-dev-hmac-change-me}
+    restart: unless-stopped
+
+volumes:
+  gateway-data:
