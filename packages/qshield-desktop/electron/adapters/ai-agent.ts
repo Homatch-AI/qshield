@@ -1,8 +1,8 @@
-import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import log from 'electron-log';
 import type { AdapterType, AdapterEvent, ExecutionMode, AgentSession, AgentEnvelope, AITrustState } from '@qshield/core';
 import { BaseAdapter } from './adapter-interface';
+import { safeExec } from '../services/safe-exec';
 
 /** Known AI agent process signatures */
 const AI_PROCESS_SIGNATURES: Record<string, { name: string; mode: ExecutionMode }> = {
@@ -127,14 +127,14 @@ export class AIAgentAdapter extends BaseAdapter {
 
   // === Process Detection ===
 
-  private detectAgents(): void {
+  private async detectAgents(): Promise<void> {
     if (process.platform !== 'darwin' && process.platform !== 'linux') return;
 
     try {
-      const psOutput = execSync(
+      const psOutput = (await safeExec(
         'ps aux 2>/dev/null | head -200',
-        { timeout: 5000, encoding: 'utf-8' },
-      ).trim();
+        { timeout: 5000 },
+      )).trim();
 
       const lines = psOutput.split('\n').slice(1);
       const detectedAgents = new Map<string, { pid: string; name: string; mode: ExecutionMode }>();
@@ -252,14 +252,14 @@ export class AIAgentAdapter extends BaseAdapter {
     this.stepCounters.delete(key);
   }
 
-  private monitorAgentActivity(session: AgentSession, pid: string): void {
+  private async monitorAgentActivity(session: AgentSession, pid: string): Promise<void> {
     if (process.platform !== 'darwin') return;
 
     try {
-      const lsofOutput = execSync(
+      const lsofOutput = (await safeExec(
         `lsof -p ${pid} -Fn 2>/dev/null | grep "^n/" | head -20`,
-        { timeout: 3000, encoding: 'utf-8' },
-      ).trim();
+        { timeout: 3000 },
+      )).trim();
 
       if (!lsofOutput) return;
 
@@ -301,10 +301,10 @@ export class AIAgentAdapter extends BaseAdapter {
 
       // Check network connections
       try {
-        const netOutput = execSync(
+        const netOutput = (await safeExec(
           `lsof -p ${pid} -iTCP -sTCP:ESTABLISHED -Fn 2>/dev/null | grep "^n" | head -10`,
-          { timeout: 3000, encoding: 'utf-8' },
-        ).trim();
+          { timeout: 3000 },
+        )).trim();
 
         if (netOutput) {
           const domains = netOutput.split('\n')
