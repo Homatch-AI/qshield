@@ -1320,6 +1320,16 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
       getInfo: () => ({ port: 3847, token: '', running: false }),
       regenerateToken: () => ({ token: '' }),
     },
+    aiAdapter: (() => {
+      const adapter = realTrustMonitor.getAdapter('ai') as import('./adapters/ai-agent').AIAgentAdapter | undefined;
+      return {
+        getActiveSessions: () => adapter?.getActiveSessions() ?? [],
+        getSession: (id: string) => adapter?.getSession(id),
+        freezeSession: (id: string, reason: string) => adapter?.freezeSession(id, reason),
+        unfreezeSession: (id: string) => adapter?.unfreezeSession(id),
+        allowAction: (id: string, scope: 'once' | 'session') => adapter?.allowAction(id, scope),
+      };
+    })(),
   };
 }
 

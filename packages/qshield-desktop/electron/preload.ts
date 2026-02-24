@@ -606,6 +606,23 @@ contextBridge.exposeInMainWorld('qshield', {
     },
   },
 
+  ai: {
+    sessions: (): Promise<unknown[]> =>
+      invoke<unknown[]>(IPC_CHANNELS.AI_SESSIONS),
+
+    session: (id: string): Promise<unknown> =>
+      invoke<unknown>(IPC_CHANNELS.AI_SESSION, id),
+
+    freeze: (id: string, reason?: string): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.AI_FREEZE, id, reason),
+
+    unfreeze: (id: string): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.AI_UNFREEZE, id),
+
+    allow: (id: string, scope: 'once' | 'session'): Promise<null> =>
+      invoke<null>(IPC_CHANNELS.AI_ALLOW, id, scope),
+  },
+
   app: {
     version: (): Promise<string> =>
       invoke<string>(IPC_CHANNELS.APP_VERSION),

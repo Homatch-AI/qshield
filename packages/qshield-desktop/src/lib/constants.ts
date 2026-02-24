@@ -82,6 +82,7 @@ export const NAV_ITEMS = [
   { path: '/alerts', label: 'Alerts', icon: 'bell',
     requiredFeature: 'alerts_full' as const, visibleFrom: 'alerts_basic' as const },
   { path: '/assets', label: 'High-Trust Assets', icon: 'shield' },
+  { path: '/ai-governance', label: 'AI Governance', icon: 'cpu' },
   { path: '/profile', label: 'Trust Profile', icon: 'user-shield' },
   { path: '/crypto', label: 'Crypto Security', icon: 'shield-check',
     requiredFeature: 'crypto_basic' as const },
@@ -95,4 +96,5 @@ export const ADAPTER_LABELS: Record<string, string> = {
   file: 'File Monitor',
   api: 'API Gateway',
   crypto: 'Crypto Wallet',
+  ai: 'AI Agent Monitor',
 };

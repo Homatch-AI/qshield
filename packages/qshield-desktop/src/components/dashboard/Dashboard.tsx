@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useTrustState } from '@/hooks/useTrustState';
 import { TrustScoreGauge } from '@/components/dashboard/TrustScoreGauge';
@@ -188,6 +188,9 @@ export default function Dashboard() {
         </div>
         <ActiveMonitors />
       </section>
+
+      {/* AI Governance */}
+      <AIGovernanceCard />
 
       {/* Asset Health */}
       <AssetHealthCard />
@@ -392,6 +395,99 @@ function TrustReputationCard() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AIGovernanceCard() {
+  const navigate = useNavigate();
+  const [aiStatus, setAiStatus] = useState<{
+    sessions: number;
+    autonomous: number;
+    frozen: number;
+    avgRisk: number;
+  } | null>(null);
+
+  const fetchAI = useCallback(() => {
+    if (!isIPCAvailable()) return;
+    window.qshield.ai.sessions()
+      .then((sessions) => {
+        const arr = sessions as Array<{ executionMode: string; frozen: boolean; riskVelocity: number }>;
+        setAiStatus({
+          sessions: arr.length,
+          autonomous: arr.filter((s) => s.executionMode === 'AI_AUTONOMOUS').length,
+          frozen: arr.filter((s) => s.frozen).length,
+          avgRisk: arr.length > 0 ? Math.round(arr.reduce((a, s) => a + s.riskVelocity, 0) / arr.length) : 0,
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchAI();
+    const interval = setInterval(fetchAI, 5000);
+    return () => clearInterval(interval);
+  }, [fetchAI]);
+
+  const hasActivity = (aiStatus?.sessions ?? 0) > 0;
+  const hasFrozen = (aiStatus?.frozen ?? 0) > 0;
+
+  return (
+    <section
+      className="rounded-xl border border-slate-700 bg-slate-900 p-5 cursor-pointer hover:border-slate-600 transition-colors"
+      onClick={() => navigate('/ai-governance')}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter') navigate('/ai-governance'); }}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-slate-100">AI Governance</h2>
+          {hasActivity && (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+              hasFrozen ? 'bg-red-500/10 border border-red-500/30 text-red-400'
+              : 'bg-violet-500/10 border border-violet-500/30 text-violet-400'
+            }`}>
+              {hasFrozen ? 'Frozen Sessions' : 'Active'}
+            </span>
+          )}
+        </div>
+        <span className="text-xs text-slate-500">View details &rarr;</span>
+      </div>
+      <div className="grid grid-cols-4 gap-4">
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wider">Sessions</span>
+          <p className={`mt-1 text-sm font-semibold ${hasActivity ? 'text-violet-500' : 'text-slate-400'}`}>
+            {aiStatus?.sessions ?? '--'}
+          </p>
+          <span className="text-xs text-slate-600">active agents</span>
+        </div>
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wider">Autonomous</span>
+          <p className="mt-1 text-sm font-semibold text-purple-500">
+            {aiStatus?.autonomous ?? '--'}
+          </p>
+          <span className="text-xs text-slate-600">self-driving</span>
+        </div>
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wider">Frozen</span>
+          <p className={`mt-1 text-sm font-semibold ${hasFrozen ? 'text-red-500' : 'text-emerald-500'}`}>
+            {aiStatus?.frozen ?? '--'}
+          </p>
+          <span className="text-xs text-slate-600">halted sessions</span>
+        </div>
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wider">Avg Risk</span>
+          <p className={`mt-1 text-sm font-semibold ${
+            (aiStatus?.avgRisk ?? 0) >= 70 ? 'text-red-500'
+            : (aiStatus?.avgRisk ?? 0) >= 40 ? 'text-amber-500'
+            : 'text-emerald-500'
+          }`}>
+            {aiStatus ? `${aiStatus.avgRisk}%` : '--'}
+          </p>
+          <span className="text-xs text-slate-600">velocity</span>
+        </div>
+      </div>
+    </section>
   );
 }
 

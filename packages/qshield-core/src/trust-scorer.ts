@@ -33,12 +33,13 @@ export interface AnomalyResult {
 
 /** Default weights for each adapter type. */
 const DEFAULT_WEIGHTS: Record<AdapterType, number> = {
-  zoom: 0.20,
-  teams: 0.20,
-  email: 0.18,
-  file: 0.14,
-  api: 0.13,
-  crypto: 0.15,
+  zoom: 0.18,
+  teams: 0.18,
+  email: 0.16,
+  file: 0.12,
+  api: 0.12,
+  crypto: 0.12,
+  ai: 0.12,
 };
 
 /** Default weights for each trust dimension. */
@@ -58,6 +59,7 @@ export const ADAPTER_DIMENSION_MAP: Record<AdapterType, TrustDimensionKey> = {
   file: 'cryptographic',
   api: 'spatial',
   crypto: 'behavioral',
+  ai: 'behavioral',
 };
 
 /** Default trust scorer configuration. */

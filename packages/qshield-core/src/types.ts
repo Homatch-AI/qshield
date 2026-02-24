@@ -39,7 +39,7 @@ export interface TrustSignal {
   dimension?: TrustDimensionKey;
 }
 
-export type AdapterType = 'zoom' | 'teams' | 'email' | 'file' | 'api' | 'crypto';
+export type AdapterType = 'zoom' | 'teams' | 'email' | 'file' | 'api' | 'crypto' | 'ai';
 
 export interface DualPathVerification {
   contentValid: boolean;
@@ -370,3 +370,61 @@ export interface TrustReport {
   assetName?: string;
   pdfPath?: string;
 }
+
+// ---------------------------------------------------------------------------
+// AI Execution Governance (Extension Layer)
+// ---------------------------------------------------------------------------
+
+export type ExecutionMode = 'HUMAN_DIRECT' | 'AI_ASSISTED' | 'AI_AUTONOMOUS';
+
+export type AITrustState = 'VALID' | 'DEGRADED' | 'INVALID' | 'FROZEN';
+
+export type RiskSource = 'ENVIRONMENT' | 'AI_EXECUTION' | 'MIXED';
+
+export interface AgentSession {
+  sessionId: string;
+  agentName: string;
+  executionMode: ExecutionMode;
+  startedAt: string;
+  lastActivityAt: string;
+  aiTrustState: AITrustState;
+  riskVelocity: number;
+  scopeExpansions: number;
+  totalActions: number;
+  allowedPaths: string[];
+  allowedDomains: string[];
+  allowedApis: string[];
+  delegationDepth: number;
+  frozen: boolean;
+  frozenReason?: string;
+}
+
+export interface AgentEnvelope {
+  agentSessionId: string;
+  step: number;
+  actionType: string;
+  executionMode: ExecutionMode;
+  resourceRef: {
+    pathHash?: string;
+    domain?: string;
+    api?: string;
+    processName?: string;
+  };
+  prevChainHash: string;
+  chainHash: string;
+  timestamp: string;
+  aiTrustState: AITrustState;
+  scopeChange: boolean;
+}
+
+export const TRUST_DECAY_RATES: Record<ExecutionMode, number> = {
+  HUMAN_DIRECT: 300,
+  AI_ASSISTED: 180,
+  AI_AUTONOMOUS: 120,
+};
+
+export const RISK_THRESHOLDS = {
+  DEGRADED: 40,
+  INVALID: 70,
+  FROZEN: 90,
+};

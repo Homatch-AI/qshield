@@ -467,6 +467,35 @@ interface QShieldUpdateAPI {
   onError(callback: (err: { message: string }) => void): void;
 }
 
+type QShieldExecutionMode = 'HUMAN_DIRECT' | 'AI_ASSISTED' | 'AI_AUTONOMOUS';
+type QShieldAITrustState = 'VALID' | 'DEGRADED' | 'INVALID' | 'FROZEN';
+
+interface QShieldAgentSession {
+  sessionId: string;
+  agentName: string;
+  executionMode: QShieldExecutionMode;
+  startedAt: string;
+  lastActivityAt: string;
+  aiTrustState: QShieldAITrustState;
+  riskVelocity: number;
+  scopeExpansions: number;
+  totalActions: number;
+  allowedPaths: string[];
+  allowedDomains: string[];
+  allowedApis: string[];
+  delegationDepth: number;
+  frozen: boolean;
+  frozenReason?: string;
+}
+
+interface QShieldAIAPI {
+  sessions(): Promise<QShieldAgentSession[]>;
+  session(id: string): Promise<QShieldAgentSession>;
+  freeze(id: string, reason?: string): Promise<null>;
+  unfreeze(id: string): Promise<null>;
+  allow(id: string, scope: 'once' | 'session'): Promise<null>;
+}
+
 interface QShieldAPI {
   trust: QShieldTrustAPI;
   evidence: QShieldEvidenceAPI;
@@ -493,6 +522,7 @@ interface QShieldAPI {
   update: QShieldUpdateAPI;
   shell: QShieldShellAPI;
   investigate: QShieldInvestigateAPI;
+  ai: QShieldAIAPI;
   trustHistory: {
     getLifetimeStats(): Promise<QShieldLifetimeStats>;
     getDailySummary(date: string): Promise<QShieldDailySummary | null>;

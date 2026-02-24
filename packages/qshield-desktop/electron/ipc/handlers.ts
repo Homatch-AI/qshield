@@ -185,6 +185,13 @@ export interface ServiceRegistry {
   keyManager?: {
     getStatus: () => { initialized: boolean; safeStorageAvailable: boolean; backend: string };
   };
+  aiAdapter: {
+    getActiveSessions: () => unknown[];
+    getSession: (id: string) => unknown | undefined;
+    freezeSession: (id: string, reason: string) => void;
+    unfreezeSession: (id: string) => void;
+    allowAction: (id: string, scope: 'once' | 'session') => void;
+  };
 }
 
 // ── Rate limiter ─────────────────────────────────────────────────────────────
@@ -625,6 +632,40 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
 
   wrapHandler(IPC_CHANNELS.API_REGENERATE_TOKEN, async () => {
     return ok(services.localApiManager.regenerateToken());
+  });
+
+  // ── AI Governance ──────────────────────────────────────────────────
+  wrapHandler(IPC_CHANNELS.AI_SESSIONS, async () => {
+    return ok(services.aiAdapter.getActiveSessions());
+  });
+
+  wrapHandler(IPC_CHANNELS.AI_SESSION, async (_event, id) => {
+    const validId = validateString(id, 'sessionId');
+    const session = services.aiAdapter.getSession(validId);
+    if (!session) return fail('NOT_FOUND', 'AI session not found');
+    return ok(session);
+  });
+
+  wrapHandler(IPC_CHANNELS.AI_FREEZE, async (_event, id, reason) => {
+    const validId = validateString(id, 'sessionId');
+    const validReason = typeof reason === 'string' ? reason : 'Manual freeze by user';
+    services.aiAdapter.freezeSession(validId, validReason);
+    return ok(null);
+  });
+
+  wrapHandler(IPC_CHANNELS.AI_UNFREEZE, async (_event, id) => {
+    const validId = validateString(id, 'sessionId');
+    services.aiAdapter.unfreezeSession(validId);
+    return ok(null);
+  });
+
+  wrapHandler(IPC_CHANNELS.AI_ALLOW, async (_event, id, scope) => {
+    const validId = validateString(id, 'sessionId');
+    if (scope !== 'once' && scope !== 'session') {
+      return fail('VALIDATION_ERROR', 'scope must be "once" or "session"');
+    }
+    services.aiAdapter.allowAction(validId, scope);
+    return ok(null);
   });
 
   // ── App ──────────────────────────────────────────────────────────────

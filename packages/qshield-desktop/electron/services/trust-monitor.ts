@@ -1,7 +1,7 @@
 import log from 'electron-log';
 import { v4 as uuidv4 } from 'uuid';
-import type { TrustState, TrustSignal, AdapterEvent, Alert, EvidenceRecord, AssetChangeEvent, AssetSensitivity } from '@qshield/core';
-import { buildTrustState, createEvidenceRecord, SENSITIVITY_MULTIPLIERS } from '@qshield/core';
+import type { TrustState, TrustSignal, AdapterEvent, Alert, EvidenceRecord, AssetChangeEvent, AssetSensitivity, ExecutionMode } from '@qshield/core';
+import { buildTrustState, createEvidenceRecord, SENSITIVITY_MULTIPLIERS, TRUST_DECAY_RATES } from '@qshield/core';
 import type { AssetMonitor } from './asset-monitor';
 import type { AssetStore } from './asset-store';
 import type { EmailNotifierService } from './email-notifier';
@@ -12,6 +12,7 @@ import { TeamsAdapter } from '../adapters/teams';
 import { EmailAdapter } from '../adapters/email';
 import { FileWatcherAdapter } from '../adapters/file-watcher';
 import { ApiListenerAdapter } from '../adapters/api-listener';
+import { AIAgentAdapter } from '../adapters/ai-agent';
 import { PolicyEnforcer } from './policy-enforcer';
 import type { GoogleAuthService } from './google-auth';
 import { TrustHistoryService } from './trust-history';
@@ -109,6 +110,7 @@ export class TrustMonitor {
       new ZoomAdapter(),              // priority 3
       new TeamsAdapter(),             // priority 4
       new ApiListenerAdapter(),       // priority 5
+      new AIAgentAdapter(),           // priority 6 — AI execution governance
     ];
 
     // Initialize with a baseline trust state (neutral score)
@@ -449,6 +451,10 @@ export class TrustMonitor {
    * @param options - configuration options to apply
    * @returns true if the adapter was found and configured
    */
+  getAdapter(adapterId: string) {
+    return this.adapters.find((a) => a.id === adapterId);
+  }
+
   configureAdapter(adapterId: string, options: AdapterOptions): boolean {
     const adapter = this.adapters.find((a) => a.id === adapterId);
     if (!adapter) {
@@ -627,10 +633,43 @@ export class TrustMonitor {
   /**
    * Rebuild the trust state from the current signal set and notify
    * all subscribers and event listeners.
+   *
+   * When AI agents are active, applies an additional trust decay penalty
+   * based on the most aggressive execution mode and aggregate risk velocity.
    */
   private updateTrustState(): void {
     const previousLevel = this.currentState.level;
     this.currentState = buildTrustState(this.signals, this.sessionId);
+
+    // AI execution decay: reduce score based on active agent modes
+    const aiAdapter = this.getAdapter('ai') as import('../adapters/ai-agent').AIAgentAdapter | undefined;
+    if (aiAdapter) {
+      const sessions = aiAdapter.getActiveSessions();
+      if (sessions.length > 0) {
+        // Determine the most aggressive execution mode
+        const modeOrder: ExecutionMode[] = ['HUMAN_DIRECT', 'AI_ASSISTED', 'AI_AUTONOMOUS'];
+        let maxMode: ExecutionMode = 'HUMAN_DIRECT';
+        let totalRisk = 0;
+        for (const s of sessions) {
+          if (modeOrder.indexOf(s.executionMode) > modeOrder.indexOf(maxMode)) {
+            maxMode = s.executionMode;
+          }
+          totalRisk += s.riskVelocity;
+        }
+
+        // Apply decay: faster for autonomous, proportional to risk velocity
+        const decayRate = TRUST_DECAY_RATES[maxMode]; // seconds between decay ticks
+        const avgRisk = totalRisk / sessions.length;
+        // Penalty: 0-5 points based on risk velocity and mode aggressiveness
+        const penalty = Math.min(5, (avgRisk / 100) * (300 / decayRate));
+        if (penalty > 0.1) {
+          this.currentState = {
+            ...this.currentState,
+            score: Math.max(0, Math.round((this.currentState.score - penalty) * 100) / 100),
+          };
+        }
+      }
+    }
 
     // Notify subscribers
     for (const subscriber of this.subscribers) {

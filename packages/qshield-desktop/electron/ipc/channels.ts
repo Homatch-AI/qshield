@@ -120,6 +120,18 @@ export const IPC_CHANNELS = {
   /** Get all feature flags for the current license */
   FEATURE_FLAGS: 'feature:flags',
 
+  // ── AI Governance ────────────────────────────────────────────────────
+  /** List active AI agent sessions */
+  AI_SESSIONS: 'ai:sessions',
+  /** Get a single AI agent session by ID */
+  AI_SESSION: 'ai:session',
+  /** Freeze an AI agent session */
+  AI_FREEZE: 'ai:freeze',
+  /** Unfreeze an AI agent session */
+  AI_UNFREEZE: 'ai:unfreeze',
+  /** Allow an AI agent action */
+  AI_ALLOW: 'ai:allow',
+
   // ── App ────────────────────────────────────────────────────────────────
   /** Get the application version string */
   APP_VERSION: 'app:version',

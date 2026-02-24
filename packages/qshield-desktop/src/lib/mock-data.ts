@@ -53,7 +53,7 @@ function daysAgo(d: number): string {
   return hoursAgo(d * 24);
 }
 
-const ADAPTERS: AdapterType[] = ['zoom', 'teams', 'email', 'file', 'api', 'crypto'];
+const ADAPTERS: AdapterType[] = ['zoom', 'teams', 'email', 'file', 'api', 'crypto', 'ai'];
 const SEVERITIES = ['critical', 'high', 'medium', 'low'] as const;
 
 const EVENT_TYPES: Record<AdapterType, string[]> = {
@@ -63,6 +63,7 @@ const EVENT_TYPES: Record<AdapterType, string[]> = {
   file: ['file.created', 'file.modified', 'file.deleted', 'file.moved', 'file.accessed'],
   api: ['request.inbound', 'request.outbound', 'auth.success', 'auth.failure', 'rate.limited'],
   crypto: ['clipboard.check', 'address.verified', 'transaction.signed', 'wallet.connected', 'chain.mismatch'],
+  ai: ['ai-session-started', 'ai-session-ended', 'ai-scope-expansion', 'ai-trust-state-changed', 'ai-session-frozen'],
 };
 
 const SIGNAL_DESCRIPTIONS: Record<AdapterType, string[]> = {
@@ -107,6 +108,13 @@ const SIGNAL_DESCRIPTIONS: Record<AdapterType, string[]> = {
     'Transaction signed and broadcast',
     'Hardware wallet connected',
     'Chain mismatch warning triggered',
+  ],
+  ai: [
+    'AI agent session started (Claude Code)',
+    'AI agent scope expansion detected',
+    'AI trust state degraded',
+    'AI agent session ended',
+    'AI agent frozen due to high risk',
   ],
 };
 
