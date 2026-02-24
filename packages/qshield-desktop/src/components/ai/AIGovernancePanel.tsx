@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { useAIStore, type AgentSession } from '@/stores/ai-store';
 import { AISessionDetail } from './AISessionDetail';
 import { formatRelativeTime } from '@/lib/formatters';
+
+const AIProtectedZones = lazy(() => import('./AIProtectedZones'));
 
 const TRUST_STATE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   VALID: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', dot: 'bg-emerald-500' },
@@ -114,6 +116,13 @@ export default function AIGovernancePanel() {
           ))}
         </div>
       )}
+
+      {/* Protected Zones section */}
+      <div className="border-t border-slate-700 pt-6">
+        <Suspense fallback={<div className="text-sm text-slate-500">Loading zones...</div>}>
+          <AIProtectedZones />
+        </Suspense>
+      </div>
     </div>
   );
 }

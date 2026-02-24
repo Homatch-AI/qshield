@@ -41,7 +41,8 @@ interface QShieldGatewayAPI {
 interface QShieldAlertsAPI {
   list(): Promise<Alert[]>;
   dismiss(id: string): Promise<void>;
-  subscribe(callback: (alert: Alert) => void): () => void;
+  subscribe(callback: (alert: Alert) => void): void;
+  unsubscribe(): void;
 }
 
 interface QShieldPolicyAPI {
@@ -338,7 +339,7 @@ interface QShieldAssetsAPI {
   enable(id: string, enabled: boolean): Promise<boolean>;
   stats(): Promise<{ total: number; verified: number; changed: number; unverified: number; bySensitivity: Record<string, number> }>;
   changeLog(id: string, limit?: number): Promise<QShieldAssetChangeEvent[]>;
-  browse(type: 'file' | 'directory'): Promise<string | null>;
+  browse(): Promise<{ canceled: boolean; path?: string }>;
   pause(id: string, durationSeconds: number): Promise<null>;
   resume(id: string): Promise<null>;
   lock(id: string): Promise<{ locked: boolean }>;
@@ -488,12 +489,43 @@ interface QShieldAgentSession {
   frozenReason?: string;
 }
 
+interface QShieldAccessedFile {
+  path: string;
+  fileName: string;
+  pathHash: string;
+  firstSeen: string;
+  accessCount: number;
+}
+
+interface QShieldAIProtectedZone {
+  id: string;
+  path: string;
+  name: string;
+  type: 'file' | 'directory';
+  protectionLevel: 'warn' | 'block' | 'freeze';
+  createdAt: string;
+  enabled: boolean;
+  violationCount: number;
+  lastViolation: string | null;
+}
+
+interface QShieldAIZonesAPI {
+  list(): Promise<QShieldAIProtectedZone[]>;
+  add(opts: { path: string; name: string; type: 'file' | 'directory'; protectionLevel: string }): Promise<QShieldAIProtectedZone>;
+  remove(id: string): Promise<null>;
+  updateLevel(id: string, level: string): Promise<null>;
+  toggle(id: string): Promise<null>;
+  browse(): Promise<{ canceled: boolean; path?: string; type?: string; name?: string }>;
+}
+
 interface QShieldAIAPI {
   sessions(): Promise<QShieldAgentSession[]>;
   session(id: string): Promise<QShieldAgentSession>;
   freeze(id: string, reason?: string): Promise<null>;
   unfreeze(id: string): Promise<null>;
   allow(id: string, scope: 'once' | 'session'): Promise<null>;
+  sessionFiles(id: string): Promise<QShieldAccessedFile[]>;
+  zones: QShieldAIZonesAPI;
 }
 
 interface QShieldAPI {

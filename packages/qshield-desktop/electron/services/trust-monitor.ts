@@ -575,8 +575,10 @@ export class TrustMonitor {
     const previousScore = this.currentState.score;
     this.updateTrustState();
 
-    // Create evidence record for significant events
-    if (Math.abs(event.trustImpact) >= EVIDENCE_THRESHOLD) {
+    // Create evidence record for significant events.
+    // High-trust asset events (file adapter) always create evidence regardless of
+    // impact magnitude, so that accessed/touched events appear in the timeline.
+    if (Math.abs(event.trustImpact) >= EVIDENCE_THRESHOLD || event.adapterId === 'file') {
       this.createEvidence(event);
     }
 
@@ -587,8 +589,59 @@ export class TrustMonitor {
       });
     }
 
-    // Feed to policy enforcer (only if score changed significantly)
-    if (Math.abs(this.currentState.score - previousScore) > 0) {
+    // For high-trust asset events, always emit a direct alert so every event
+    // appears in the Alerts page (not gated by policy thresholds/cooldowns).
+    // Timeline shows signals for every event; Alerts must match.
+    const isAssetEvent = event.adapterId === 'file';
+    if (isAssetEvent) {
+      const meta = event.data as Record<string, unknown> | undefined;
+      const assetName = (meta?.assetName ?? meta?.fileName ?? 'Unknown asset') as string;
+      const sensitivity = (meta?.sensitivity ?? 'normal') as string;
+      const rawEventType = event.eventType.replace('high-trust:', '');
+
+      // Derive severity from event type
+      const severity = rawEventType === 'asset-deleted' || rawEventType === 'asset-permission-changed'
+        ? 'critical' as const
+        : rawEventType === 'asset-modified' || rawEventType === 'asset-renamed'
+          ? 'high' as const
+          : 'medium' as const;
+
+      // Build description from metadata
+      const descParts: string[] = [];
+      const forensics = meta?.forensics as Record<string, unknown> | undefined;
+      if (forensics?.owner) descParts.push(`User: ${forensics.owner}`);
+      if (forensics?.modifiedBy) descParts.push(`App: ${forensics.modifiedBy}`);
+      if (meta?.changedFileName) descParts.push(`File: ${meta.changedFileName}`);
+      if (assetName && assetName !== meta?.changedFileName) descParts.push(`Asset: ${assetName}`);
+      descParts.push(`Event: ${rawEventType}`);
+      descParts.push(`Sensitivity: ${sensitivity}`);
+
+      const alert: Alert = {
+        id: uuidv4(),
+        severity,
+        title: `High-trust asset: ${rawEventType.replace('asset-', '')}`,
+        description: descParts.join(' | '),
+        source: 'file',
+        timestamp: event.timestamp,
+        dismissed: false,
+        sourceMetadata: {
+          fileName: (meta?.changedFileName ?? meta?.assetName) as string | undefined,
+          filePath: meta?.path as string | undefined,
+          operation: rawEventType,
+          ...(forensics ? { forensics: forensics as import('@qshield/core').AlertSourceMetadata['forensics'] } : {}),
+          rawEvent: meta,
+        },
+      };
+
+      this.emitMonitorEvent('alert', alert);
+      log.info(`[TrustMonitor] Direct alert for asset event: ${alert.title} — ${assetName}`);
+    }
+
+    // Feed to policy enforcer for freeze/escalation checks.
+    // High-trust asset events always evaluate (the overall score may not shift
+    // when many other signals average it out, but the file signal score itself
+    // may still violate a policy rule).
+    if (isAssetEvent || Math.abs(this.currentState.score - previousScore) > 0) {
       const result = this.policyEnforcer.evaluate(this.currentState);
 
       // If policy enforcer triggered a freeze, stop all adapters

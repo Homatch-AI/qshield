@@ -72,11 +72,11 @@ const useAlertStore = create<AlertStore>((set, get) => ({
   },
 
   subscribe: () => {
-    const existing = get()._unsubscribe;
-    if (existing) return;
+    // Guard: alerts.subscribe returns void, so use a sentinel function (like trust-store)
+    if (get()._unsubscribe) return;
 
     if (isIPCAvailable()) {
-      const unsubscribe = window.qshield.alerts.subscribe((alert: Alert) => {
+      window.qshield.alerts.subscribe((alert: Alert) => {
         const { alerts } = get();
         const exists = alerts.find((a) => a.id === alert.id);
         if (exists) {
@@ -91,7 +91,12 @@ const useAlertStore = create<AlertStore>((set, get) => ({
           });
         }
       });
-      set({ _unsubscribe: unsubscribe });
+      // Store a sentinel so we know we're subscribed
+      set({ _unsubscribe: () => {
+        if (isIPCAvailable() && window.qshield.alerts.unsubscribe) {
+          window.qshield.alerts.unsubscribe();
+        }
+      }});
     } else {
       // Simulate periodic new alerts in mock mode
       const interval = setInterval(() => {

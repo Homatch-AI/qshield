@@ -5,7 +5,7 @@ import type { AdapterType, AdapterStatus, AdapterEvent } from '@qshield/core';
  * Configuration options for adapter behavior.
  */
 export interface AdapterOptions {
-  /** Interval in milliseconds between simulated events */
+  /** Interval in milliseconds between poll cycles */
   pollInterval?: number;
   /** Whether the adapter is enabled */
   enabled?: boolean;
@@ -72,14 +72,15 @@ type EventListener = (event: AdapterEvent) => void;
 
 /**
  * Abstract base class implementing common adapter functionality.
- * Concrete adapters extend this and provide domain-specific event generation
- * via the `generateSimulatedEvent()` method.
  *
  * Provides:
  * - Lifecycle management (initialize, start, stop, destroy)
  * - Event emission to registered listeners
- * - Configurable simulation interval
+ * - Configurable poll interval
  * - Error counting and status reporting
+ *
+ * Subclasses implement their own polling / monitoring in start().
+ * No automatic simulation loop — all events must come from real sources.
  */
 export abstract class BaseAdapter implements QShieldAdapter {
   abstract readonly id: AdapterType;
@@ -94,16 +95,12 @@ export abstract class BaseAdapter implements QShieldAdapter {
   protected config: Record<string, unknown> = {};
 
   private listeners: EventListener[] = [];
-  private simulationTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Default event interval in milliseconds (subclasses should override) */
   protected defaultInterval = 10000;
 
   /** Current configured poll interval in milliseconds */
   protected pollInterval: number;
-
-  /** Jitter factor (0-1) applied to interval to prevent synchronization */
-  private static readonly JITTER_FACTOR = 0.3;
 
   constructor() {
     this.pollInterval = this.defaultInterval;
@@ -124,8 +121,8 @@ export abstract class BaseAdapter implements QShieldAdapter {
   }
 
   /**
-   * Start the adapter and begin generating simulated events.
-   * @throws if the adapter has not been initialized
+   * Start the adapter. Subclasses override this for real monitoring.
+   * No simulation loop — all events come from real sources.
    */
   async start(): Promise<void> {
     if (!this.enabled) {
@@ -134,7 +131,6 @@ export abstract class BaseAdapter implements QShieldAdapter {
     }
     this.connected = true;
     log.info(`[${this.name}] Adapter started`);
-    this.scheduleNextEvent();
   }
 
   /**
@@ -143,10 +139,6 @@ export abstract class BaseAdapter implements QShieldAdapter {
    */
   async stop(): Promise<void> {
     this.connected = false;
-    if (this.simulationTimer !== null) {
-      clearTimeout(this.simulationTimer);
-      this.simulationTimer = null;
-    }
     log.info(`[${this.name}] Adapter stopped`);
   }
 
@@ -233,33 +225,8 @@ export abstract class BaseAdapter implements QShieldAdapter {
   }
 
   /**
-   * Generate a simulated event. Concrete adapters must implement this
-   * to produce domain-specific events with realistic metadata.
-   * @returns a fully populated AdapterEvent
+   * Generate a simulated event. Required by the abstract contract but
+   * real-monitoring adapters should throw — no simulation runs in production.
    */
   protected abstract generateSimulatedEvent(): AdapterEvent;
-
-  /**
-   * Schedule the next simulated event with jitter to prevent
-   * all adapters from firing simultaneously.
-   */
-  private scheduleNextEvent(): void {
-    if (!this.connected) return;
-
-    const jitter = 1 - BaseAdapter.JITTER_FACTOR + Math.random() * BaseAdapter.JITTER_FACTOR * 2;
-    const delay = Math.round(this.pollInterval * jitter);
-
-    this.simulationTimer = setTimeout(() => {
-      if (!this.connected) return;
-      try {
-        const event = this.generateSimulatedEvent();
-        this.emitEvent(event);
-      } catch (err) {
-        this.errorCount++;
-        this.lastError = err instanceof Error ? err.message : String(err);
-        log.error(`[${this.name}] Error generating event:`, err);
-      }
-      this.scheduleNextEvent();
-    }, delay);
-  }
 }

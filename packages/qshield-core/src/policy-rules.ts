@@ -131,6 +131,14 @@ export function createDefaultPolicy(): PolicyConfig {
       },
       {
         id: uuidv4(),
+        name: 'High-trust asset access',
+        condition: { signal: 'file', operator: 'lt', threshold: 48 },
+        action: 'alert',
+        severity: 'medium',
+        enabled: true,
+      },
+      {
+        id: uuidv4(),
         name: 'High-trust asset change',
         condition: { signal: 'file', operator: 'lt', threshold: 45 },
         action: 'alert',

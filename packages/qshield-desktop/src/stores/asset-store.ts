@@ -64,7 +64,7 @@ interface AssetState {
   acceptChanges: (id: string) => Promise<void>;
   updateSensitivity: (id: string, sensitivity: AssetSensitivity) => Promise<void>;
   enableAsset: (id: string, enabled: boolean) => Promise<void>;
-  browseForPath: (type: 'file' | 'directory') => Promise<string | null>;
+  browseForPath: () => Promise<string | null>;
   subscribe: () => void;
 }
 
@@ -158,9 +158,11 @@ export const useAssetStore = create<AssetState>((set, get) => ({
     await get().fetchAssets();
   },
 
-  browseForPath: async (type) => {
+  browseForPath: async () => {
     if (!isIPCAvailable()) return null;
-    return window.qshield.assets.browse(type);
+    const result = await window.qshield.assets.browse();
+    if (result.canceled || !result.path) return null;
+    return result.path;
   },
 
   subscribe: () => {

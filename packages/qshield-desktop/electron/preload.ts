@@ -284,12 +284,26 @@ contextBridge.exposeInMainWorld('qshield', {
       invoke<{ id: string; dismissed: boolean }>(IPC_CHANNELS.ALERT_DISMISS, id),
 
     subscribe: (callback: EventCallback<Alert>): void => {
-      const handler = (_event: Electron.IpcRendererEvent, data: Alert) => callback(data);
+      const handler = (_event: Electron.IpcRendererEvent, data: Alert) => {
+        try {
+          callback(data);
+        } catch (err) {
+          console.error('[Preload] Alert subscribe callback error:', err);
+        }
+      };
       ipcRenderer.on(IPC_EVENTS.ALERT_RECEIVED, handler);
       ipcRenderer.invoke(IPC_CHANNELS.ALERT_SUBSCRIBE);
       unsubscribers.set('alerts', () => {
         ipcRenderer.removeListener(IPC_EVENTS.ALERT_RECEIVED, handler);
       });
+    },
+
+    unsubscribe: (): void => {
+      const unsub = unsubscribers.get('alerts');
+      if (unsub) {
+        unsub();
+        unsubscribers.delete('alerts');
+      }
     },
   },
 
@@ -477,8 +491,8 @@ contextBridge.exposeInMainWorld('qshield', {
     changeLog: (id: string, limit?: number): Promise<AssetChangeEvent[]> =>
       invoke<AssetChangeEvent[]>(IPC_CHANNELS.ASSET_CHANGE_LOG, id, limit),
 
-    browse: (type: 'file' | 'directory'): Promise<string | null> =>
-      invoke<string | null>(IPC_CHANNELS.ASSET_BROWSE, type),
+    browse: (): Promise<{ canceled: boolean; path?: string }> =>
+      invoke<{ canceled: boolean; path?: string }>(IPC_CHANNELS.ASSET_BROWSE),
 
     pause: (id: string, durationSeconds: number): Promise<null> =>
       invoke<null>(IPC_CHANNELS.ASSET_PAUSE, id, durationSeconds),
@@ -621,6 +635,29 @@ contextBridge.exposeInMainWorld('qshield', {
 
     allow: (id: string, scope: 'once' | 'session'): Promise<null> =>
       invoke<null>(IPC_CHANNELS.AI_ALLOW, id, scope),
+
+    sessionFiles: (id: string): Promise<Array<{ path: string; fileName: string; pathHash: string; firstSeen: string; accessCount: number }>> =>
+      invoke<Array<{ path: string; fileName: string; pathHash: string; firstSeen: string; accessCount: number }>>(IPC_CHANNELS.AI_SESSION_FILES, id),
+
+    zones: {
+      list: (): Promise<unknown[]> =>
+        invoke<unknown[]>(IPC_CHANNELS.AI_ZONE_LIST),
+
+      add: (opts: { path: string; name: string; type: 'file' | 'directory'; protectionLevel: string }): Promise<unknown> =>
+        invoke<unknown>(IPC_CHANNELS.AI_ZONE_ADD, opts),
+
+      remove: (id: string): Promise<null> =>
+        invoke<null>(IPC_CHANNELS.AI_ZONE_REMOVE, id),
+
+      updateLevel: (id: string, level: string): Promise<null> =>
+        invoke<null>(IPC_CHANNELS.AI_ZONE_UPDATE_LEVEL, id, level),
+
+      toggle: (id: string): Promise<null> =>
+        invoke<null>(IPC_CHANNELS.AI_ZONE_TOGGLE, id),
+
+      browse: (): Promise<{ canceled: boolean; path?: string; type?: string; name?: string }> =>
+        invoke<{ canceled: boolean; path?: string; type?: string; name?: string }>(IPC_CHANNELS.AI_ZONE_BROWSE),
+    },
   },
 
   app: {

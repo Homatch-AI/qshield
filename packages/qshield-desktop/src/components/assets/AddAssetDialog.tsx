@@ -79,7 +79,7 @@ export function AddAssetDialog({ isOpen, onClose }: AddAssetDialogProps) {
 
   const handleBrowse = async () => {
     try {
-      const path = await browseForPath(assetType);
+      const path = await browseForPath();
       if (path) {
         setSelectedPath(path);
         setError(null);

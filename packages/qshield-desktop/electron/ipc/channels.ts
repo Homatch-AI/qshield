@@ -131,6 +131,20 @@ export const IPC_CHANNELS = {
   AI_UNFREEZE: 'ai:unfreeze',
   /** Allow an AI agent action */
   AI_ALLOW: 'ai:allow',
+  /** Get accessed files for an AI agent session */
+  AI_SESSION_FILES: 'ai:session-files',
+  /** List AI-protected zones */
+  AI_ZONE_LIST: 'ai-zone:list',
+  /** Add an AI-protected zone */
+  AI_ZONE_ADD: 'ai-zone:add',
+  /** Remove an AI-protected zone */
+  AI_ZONE_REMOVE: 'ai-zone:remove',
+  /** Update protection level of a zone */
+  AI_ZONE_UPDATE_LEVEL: 'ai-zone:update-level',
+  /** Toggle a zone on/off */
+  AI_ZONE_TOGGLE: 'ai-zone:toggle',
+  /** Browse for file/directory to protect */
+  AI_ZONE_BROWSE: 'ai-zone:browse',
 
   // ── App ────────────────────────────────────────────────────────────────
   /** Get the application version string */

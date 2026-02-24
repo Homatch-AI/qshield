@@ -166,6 +166,7 @@ export interface ServiceRegistry {
   assetService: {
     list: () => unknown;
     add: (assetPath: string, type: 'file' | 'directory', sensitivity: string, name?: string) => Promise<unknown>;
+    getByPath: (assetPath: string) => unknown;
     remove: (id: string) => Promise<void>;
     get: (id: string) => unknown;
     verify: (id: string) => Promise<unknown>;
@@ -174,7 +175,7 @@ export interface ServiceRegistry {
     enable: (id: string, enabled: boolean) => boolean;
     stats: () => unknown;
     changeLog: (id: string, limit?: number) => unknown;
-    browse: (type: 'file' | 'directory') => Promise<string | null>;
+    browse: () => Promise<{ canceled: boolean; path?: string }>;
   };
   reportService: {
     generate: (opts: { type: string; fromDate?: string; toDate?: string; assetId?: string; notes?: string }) => Promise<unknown>;
@@ -191,6 +192,7 @@ export interface ServiceRegistry {
     freezeSession: (id: string, reason: string) => void;
     unfreezeSession: (id: string) => void;
     allowAction: (id: string, scope: 'once' | 'session') => void;
+    getAccessedFiles: (id: string) => unknown[];
   };
 }
 
@@ -668,6 +670,11 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     return ok(null);
   });
 
+  wrapHandler(IPC_CHANNELS.AI_SESSION_FILES, async (_event, id) => {
+    const validId = validateString(id, 'sessionId');
+    return ok(services.aiAdapter.getAccessedFiles(validId));
+  });
+
   // ── App ──────────────────────────────────────────────────────────────
   wrapHandler(IPC_CHANNELS.APP_VERSION, async () => {
     return ok(app.getVersion());
@@ -806,6 +813,11 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     if (!sensitivity || typeof sensitivity !== 'string' || !validSensitivities.includes(sensitivity)) {
       return fail('VALIDATION_ERROR', 'sensitivity must be "normal", "strict", or "critical"');
     }
+    // Duplicate check
+    const existing = services.assetService.getByPath(assetPath as string);
+    if (existing) {
+      return fail('DUPLICATE_ASSET', 'This file is already being monitored');
+    }
     // Feature gate: check asset limit
     const license = services.licenseManager.getLicense() as { features: { maxHighTrustAssets: number } };
     const currentAssets = services.assetService.list() as unknown[];
@@ -870,11 +882,8 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     return ok(services.assetService.changeLog(validId, validLimit));
   });
 
-  wrapHandler(IPC_CHANNELS.ASSET_BROWSE, async (_event, type) => {
-    if (type !== 'file' && type !== 'directory') {
-      return fail('VALIDATION_ERROR', 'type must be "file" or "directory"');
-    }
-    return ok(await services.assetService.browse(type));
+  wrapHandler(IPC_CHANNELS.ASSET_BROWSE, async () => {
+    return ok(await services.assetService.browse());
   });
 
   // ── Trust History ──────────────────────────────────────────────

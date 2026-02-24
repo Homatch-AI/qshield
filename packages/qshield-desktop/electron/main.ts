@@ -1037,7 +1037,9 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
     },
     alertService: {
       list: () => {
-        return seedAlerts.filter((a) => !dismissedAlertIds.has(a.id));
+        const result = seedAlerts.filter((a) => !dismissedAlertIds.has(a.id));
+        log.info(`[AlertService] list() returning ${result.length} alerts (seedAlerts total: ${seedAlerts.length})`);
+        return result;
       },
       dismiss: (id: string) => {
         dismissedAlertIds.add(id);
@@ -1164,6 +1166,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
       list: () => assetStore.listAssets(),
       add: (assetPath: string, type: 'file' | 'directory', sensitivity: string, name?: string) =>
         assetMonitor.addAsset(assetPath, type, sensitivity as 'normal' | 'strict' | 'critical', name),
+      getByPath: (assetPath: string) => assetStore.getAssetByPath(assetPath),
       remove: (id: string) => assetMonitor.removeAsset(id),
       get: (id: string) => assetStore.getAsset(id),
       verify: (id: string) => assetMonitor.verifyAsset(id),
@@ -1173,15 +1176,15 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
       enable: (id: string, enabled: boolean) => assetStore.enableAsset(id, enabled),
       stats: () => assetStore.getStats(),
       changeLog: (id: string, limit?: number) => assetStore.getChangeLog(id, limit),
-      browse: async (type: 'file' | 'directory') => {
-        const win = mainWindow;
-        if (!win || win.isDestroyed()) return null;
-        const result = await dialog.showOpenDialog(win, {
-          properties: type === 'directory' ? ['openDirectory'] : ['openFile'],
-          title: type === 'directory' ? 'Select Directory to Monitor' : 'Select File to Monitor',
+      browse: async () => {
+        const result = await dialog.showOpenDialog({
+          properties: ['openFile', 'openDirectory'],
+          title: 'Select file or folder to monitor',
         });
-        if (result.canceled || result.filePaths.length === 0) return null;
-        return result.filePaths[0];
+        if (result.canceled || result.filePaths.length === 0) {
+          return { canceled: true };
+        }
+        return { canceled: false, path: result.filePaths[0] };
       },
     },
     reportService: {
@@ -1328,6 +1331,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         freezeSession: (id: string, reason: string) => adapter?.freezeSession(id, reason),
         unfreezeSession: (id: string) => adapter?.unfreezeSession(id),
         allowAction: (id: string, scope: 'once' | 'session') => adapter?.allowAction(id, scope),
+        getAccessedFiles: (id: string) => adapter?.getAccessedFiles(id) ?? [],
       };
     })(),
   };
@@ -1546,6 +1550,13 @@ app.whenReady().then(async () => {
   reportStore = new TrustReportStore();
   reportGenerator = new TrustReportGenerator();
 
+  // Wire assetStore into AI adapter so it can check protected zones
+  const aiAdapter = realTrustMonitor.getAdapter('ai') as import('./adapters/ai-agent').AIAgentAdapter | undefined;
+  if (aiAdapter) {
+    aiAdapter.setAssetStore(assetStore);
+    log.info('[AI] AssetStore wired into AI adapter for zone checking');
+  }
+
   // Connect asset monitor to trust monitor so asset changes affect global trust score
   realTrustMonitor.connectAssetMonitor(assetMonitor);
 
@@ -1613,10 +1624,7 @@ app.whenReady().then(async () => {
     log.error('[AssetMonitor] Failed to start:', err);
   });
 
-  // Seed demo data
-  initSeedAlerts();
-  seedEvidenceRecords(realTrustMonitor);
-  seedInitialReport(realTrustMonitor, assetStore);
+  // No seed/demo data — all events come from real monitoring adapters.
 
   // Register IPC handlers
   services = createServiceRegistry(configManager, realTrustMonitor, assetMonitor, assetStore);
@@ -1862,6 +1870,75 @@ app.whenReady().then(async () => {
     }
     const locked = moduleAssetStore.getMeta(assetId, 'locked') === 'true';
     return { success: true, data: { locked } };
+  });
+
+  // ── AI-Protected Zone IPC handlers ─────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.AI_ZONE_LIST, () => {
+    if (!moduleAssetStore) {
+      return { success: true, data: [] };
+    }
+    return { success: true, data: moduleAssetStore.listProtectedZones() };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AI_ZONE_ADD, (_event, opts: { path: string; name: string; type: 'file' | 'directory'; protectionLevel: string }) => {
+    if (!moduleAssetStore) {
+      return { success: false, error: { message: 'Asset store not available', code: 'NOT_AVAILABLE' } };
+    }
+    try {
+      const zone = moduleAssetStore.addProtectedZone(opts);
+      log.info(`[AI-Zone] Added protected zone: ${opts.name} (${opts.path}) — ${opts.protectionLevel}`);
+      return { success: true, data: zone };
+    } catch (err) {
+      return { success: false, error: { message: err instanceof Error ? err.message : String(err), code: 'ZONE_ADD_FAILED' } };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AI_ZONE_REMOVE, (_event, zoneId: string) => {
+    if (!moduleAssetStore) {
+      return { success: false, error: { message: 'Asset store not available', code: 'NOT_AVAILABLE' } };
+    }
+    moduleAssetStore.removeProtectedZone(zoneId);
+    log.info(`[AI-Zone] Removed protected zone: ${zoneId}`);
+    return { success: true, data: null };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AI_ZONE_UPDATE_LEVEL, (_event, zoneId: string, level: string) => {
+    if (!moduleAssetStore) {
+      return { success: false, error: { message: 'Asset store not available', code: 'NOT_AVAILABLE' } };
+    }
+    moduleAssetStore.updateZoneProtectionLevel(zoneId, level as 'warn' | 'block' | 'freeze');
+    log.info(`[AI-Zone] Updated zone ${zoneId} protection level to ${level}`);
+    return { success: true, data: null };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AI_ZONE_TOGGLE, (_event, zoneId: string) => {
+    if (!moduleAssetStore) {
+      return { success: false, error: { message: 'Asset store not available', code: 'NOT_AVAILABLE' } };
+    }
+    moduleAssetStore.toggleZone(zoneId);
+    log.info(`[AI-Zone] Toggled zone: ${zoneId}`);
+    return { success: true, data: null };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AI_ZONE_BROWSE, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'openDirectory'],
+      title: 'Select file or folder to protect',
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: true, data: { canceled: true } };
+    }
+    const selectedPath = result.filePaths[0];
+    const stats = statSync(selectedPath);
+    return {
+      success: true,
+      data: {
+        canceled: false,
+        path: selectedPath,
+        type: stats.isDirectory() ? 'directory' : 'file',
+        name: path.basename(selectedPath),
+      },
+    };
   });
 
   // Shield toggle handler — registered here because it needs access to shieldWindow

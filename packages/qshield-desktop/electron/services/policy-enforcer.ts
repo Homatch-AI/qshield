@@ -173,7 +173,13 @@ export class PolicyEnforcer {
       };
 
       alerts.push(alert);
-      this.emitAlert(alert);
+
+      // Skip emitting alerts for file-source rules — the TrustMonitor creates
+      // direct alerts for every high-trust asset event (not gated by cooldown).
+      // Policy enforcer still tracks the rule for escalation/freeze logic.
+      if (rule.condition.signal !== 'file') {
+        this.emitAlert(alert);
+      }
 
       // Track for escalation
       this.pendingAcks.set(alert.id, {

@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { useAIStore, type AgentSession } from '@/stores/ai-store';
 import { formatRelativeTime } from '@/lib/formatters';
+import { isIPCAvailable } from '@/lib/mock-data';
 
 const TRUST_STATE_COLORS: Record<string, { bg: string; text: string }> = {
   VALID: { bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
@@ -8,8 +10,25 @@ const TRUST_STATE_COLORS: Record<string, { bg: string; text: string }> = {
   FROZEN: { bg: 'bg-red-500/10', text: 'text-red-400' },
 };
 
+interface AccessedFile {
+  path: string;
+  fileName: string;
+  pathHash: string;
+  firstSeen: string;
+  accessCount: number;
+}
+
 interface Props {
   session: AgentSession;
+}
+
+/** Extract a clean display name and PID from the session ID (format: "AgentName:PID") */
+function parseSessionId(sessionId: string): { displayName: string; pid: string } {
+  const colonIdx = sessionId.lastIndexOf(':');
+  if (colonIdx > 0) {
+    return { displayName: sessionId.slice(0, colonIdx), pid: sessionId.slice(colonIdx + 1) };
+  }
+  return { displayName: sessionId, pid: '' };
 }
 
 /**
@@ -21,6 +40,24 @@ export function AISessionDetail({ session }: Props) {
   const unfreezeSession = useAIStore((s) => s.unfreezeSession);
   const allowAction = useAIStore((s) => s.allowAction);
   const trustColors = TRUST_STATE_COLORS[session.aiTrustState] ?? TRUST_STATE_COLORS.VALID;
+
+  const [accessedFiles, setAccessedFiles] = useState<AccessedFile[]>([]);
+  const { pid } = parseSessionId(session.sessionId);
+
+  // Fetch accessed files for this session
+  useEffect(() => {
+    if (!isIPCAvailable()) return;
+    let cancelled = false;
+    const fetchFiles = async () => {
+      try {
+        const files = await window.qshield.ai.sessionFiles(session.sessionId);
+        if (!cancelled) setAccessedFiles(files);
+      } catch { /* ignore */ }
+    };
+    fetchFiles();
+    const interval = setInterval(fetchFiles, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [session.sessionId]);
 
   return (
     <div className="space-y-6">
@@ -122,18 +159,8 @@ export function AISessionDetail({ session }: Props) {
 
       {/* Scope tracking */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <ScopeSection
-          title="File Access"
-          items={session.allowedPaths}
-          icon="📁"
-          emptyMessage="No file access detected"
-        />
-        <ScopeSection
-          title="Network Domains"
-          items={session.allowedDomains}
-          icon="🌐"
-          emptyMessage="No network connections"
-        />
+        <FileAccessSection files={accessedFiles} />
+        <DomainSection domains={session.allowedDomains} />
         <ScopeSection
           title="API Calls"
           items={session.allowedApis}
@@ -154,10 +181,12 @@ export function AISessionDetail({ session }: Props) {
             <span className="text-slate-500">Last Activity:</span>{' '}
             {formatRelativeTime(session.lastActivityAt)}
           </div>
-          <div>
-            <span className="text-slate-500">Session ID:</span>{' '}
-            <span className="font-mono">{session.sessionId}</span>
-          </div>
+          {pid && (
+            <div>
+              <span className="text-slate-500">PID:</span>{' '}
+              <span className="font-mono">{pid}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -178,6 +207,61 @@ function StatBox({ label, value, color }: { label: string; value: string; color:
     <div className="rounded-xl border border-slate-700 bg-slate-900 p-4">
       <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">{label}</span>
       <p className={`mt-1 text-xl font-bold ${colorMap[color] ?? 'text-slate-100'}`}>{value}</p>
+    </div>
+  );
+}
+
+function FileAccessSection({ files }: { files: AccessedFile[] }) {
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-900 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span>📁</span>
+        <h3 className="text-sm font-semibold text-slate-300">File Access</h3>
+        <span className="text-xs text-slate-500">({files.length})</span>
+      </div>
+      {files.length === 0 ? (
+        <p className="text-xs text-slate-600">No file access detected</p>
+      ) : (
+        <div className="space-y-1.5 max-h-40 overflow-y-auto">
+          {files.map((file) => (
+            <div key={file.pathHash} className="flex items-center justify-between gap-2 text-xs">
+              <div className="min-w-0 flex-1">
+                <span className="font-medium text-slate-300 truncate block" title={file.path}>
+                  {file.fileName}
+                </span>
+                <span className="text-slate-600 truncate block text-[10px]" title={file.path}>
+                  {file.path}
+                </span>
+              </div>
+              <span className="shrink-0 text-slate-500 tabular-nums">{file.accessCount}x</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DomainSection({ domains }: { domains: string[] }) {
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-900 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span>🌐</span>
+        <h3 className="text-sm font-semibold text-slate-300">Network Domains</h3>
+        <span className="text-xs text-slate-500">({domains.length})</span>
+      </div>
+      {domains.length === 0 ? (
+        <p className="text-xs text-slate-600">No network connections</p>
+      ) : (
+        <div className="space-y-1.5 max-h-40 overflow-y-auto">
+          {domains.map((domain, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-400 shrink-0" />
+              <span className="font-mono text-slate-400 truncate">{domain}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

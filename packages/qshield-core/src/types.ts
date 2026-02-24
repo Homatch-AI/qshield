@@ -428,3 +428,34 @@ export const RISK_THRESHOLDS = {
   INVALID: 70,
   FROZEN: 90,
 };
+
+// ---------------------------------------------------------------------------
+// AI-Protected Zones
+// ---------------------------------------------------------------------------
+
+export type ZoneProtectionLevel = 'warn' | 'block' | 'freeze';
+
+export interface AIProtectedZone {
+  id: string;
+  path: string;
+  name: string;
+  type: 'file' | 'directory';
+  protectionLevel: ZoneProtectionLevel;
+  createdAt: string;
+  enabled: boolean;
+  violationCount: number;
+  lastViolation: string | null;
+}
+
+export interface ZoneViolation {
+  id: string;
+  zoneId: string;
+  zoneName: string;
+  zonePath: string;
+  agentName: string;
+  agentSessionId: string;
+  accessedFile: string;
+  protectionLevel: ZoneProtectionLevel;
+  action: 'warned' | 'blocked' | 'frozen';
+  timestamp: string;
+}

@@ -10,6 +10,8 @@ import type {
   AssetSensitivity,
   AssetTrustState,
   AssetChangeEvent,
+  AIProtectedZone,
+  ZoneProtectionLevel,
 } from '@qshield/core';
 
 // ---------------------------------------------------------------------------
@@ -59,6 +61,18 @@ CREATE TABLE IF NOT EXISTS asset_metadata (
   value TEXT,
   PRIMARY KEY (asset_id, key),
   FOREIGN KEY (asset_id) REFERENCES high_trust_assets(id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_protected_zones (
+  id TEXT PRIMARY KEY,
+  path TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'directory',
+  protection_level TEXT NOT NULL DEFAULT 'freeze',
+  created_at TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  violation_count INTEGER NOT NULL DEFAULT 0,
+  last_violation TEXT
 );
 `;
 
@@ -129,6 +143,21 @@ function rowToAsset(row: Record<string, unknown>): HighTrustAsset {
     changeCount: row.change_count as number,
     evidenceCount: row.evidence_count as number,
     enabled: (row.enabled as number) === 1,
+  };
+}
+
+/** Map a SQLite row to an AIProtectedZone. */
+function rowToZone(row: Record<string, unknown>): AIProtectedZone {
+  return {
+    id: row.id as string,
+    path: row.path as string,
+    name: row.name as string,
+    type: row.type as 'file' | 'directory',
+    protectionLevel: row.protection_level as ZoneProtectionLevel,
+    createdAt: row.created_at as string,
+    enabled: (row.enabled as number) === 1,
+    violationCount: row.violation_count as number,
+    lastViolation: (row.last_violation as string) ?? null,
   };
 }
 
@@ -320,7 +349,8 @@ export class AssetStore {
   }
 
   removeAsset(id: string): boolean {
-    // Also delete change log entries
+    // Delete from child tables first (foreign key order)
+    this.db.prepare('DELETE FROM asset_metadata WHERE asset_id = ?').run(id);
     this.db.prepare('DELETE FROM asset_change_log WHERE asset_id = ?').run(id);
     const result = this.stmtDelete.run(id);
     if (result.changes > 0) {
@@ -497,6 +527,60 @@ export class AssetStore {
 
   updateMeta(assetId: string, key: string, value: string): void {
     this.setMeta(assetId, key, value);
+  }
+
+  // -----------------------------------------------------------------------
+  // AI Protected Zones
+  // -----------------------------------------------------------------------
+
+  addProtectedZone(data: { path: string; name: string; type: string; protectionLevel: string }): AIProtectedZone {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO ai_protected_zones (id, path, name, type, protection_level, created_at, enabled, violation_count)
+      VALUES (?, ?, ?, ?, ?, ?, 1, 0)
+    `).run(id, data.path, data.name, data.type, data.protectionLevel, now);
+    return this.getProtectedZone(id)!;
+  }
+
+  removeProtectedZone(zoneId: string): void {
+    this.db.prepare('DELETE FROM ai_protected_zones WHERE id = ?').run(zoneId);
+  }
+
+  getProtectedZone(zoneId: string): AIProtectedZone | null {
+    const row = this.db.prepare('SELECT * FROM ai_protected_zones WHERE id = ?').get(zoneId) as Record<string, unknown> | undefined;
+    return row ? rowToZone(row) : null;
+  }
+
+  listProtectedZones(): AIProtectedZone[] {
+    const rows = this.db.prepare('SELECT * FROM ai_protected_zones ORDER BY created_at DESC').all() as Record<string, unknown>[];
+    return rows.map(rowToZone);
+  }
+
+  getProtectedZoneByPath(filePath: string): AIProtectedZone | null {
+    const zones = this.listProtectedZones().filter(z => z.enabled);
+    for (const zone of zones) {
+      if (zone.type === 'file' && filePath === zone.path) return zone;
+      if (zone.type === 'directory' && (filePath.startsWith(zone.path + '/') || filePath === zone.path)) return zone;
+    }
+    return null;
+  }
+
+  recordZoneViolation(zoneId: string): void {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      UPDATE ai_protected_zones
+      SET violation_count = violation_count + 1, last_violation = ?
+      WHERE id = ?
+    `).run(now, zoneId);
+  }
+
+  updateZoneProtectionLevel(zoneId: string, level: string): void {
+    this.db.prepare('UPDATE ai_protected_zones SET protection_level = ? WHERE id = ?').run(level, zoneId);
+  }
+
+  toggleZone(zoneId: string, enabled: boolean): void {
+    this.db.prepare('UPDATE ai_protected_zones SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, zoneId);
   }
 
   // -----------------------------------------------------------------------

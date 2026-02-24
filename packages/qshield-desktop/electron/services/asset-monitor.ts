@@ -3,7 +3,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import log from 'electron-log';
-import { safeExecFile } from './safe-exec';
+import { safeExec, safeExecFile } from './safe-exec';
 import { SENSITIVITY_MULTIPLIERS } from '@qshield/core';
 import type {
   HighTrustAsset,
@@ -97,6 +97,7 @@ export class AssetMonitor {
   private verifyInterval: ReturnType<typeof setInterval> | null = null;
   private accessPollTimer: ReturnType<typeof setInterval> | null = null;
   private knownAccessors: Map<string, Set<string>> = new Map(); // assetId → Set<"processName:pid">
+  private lastUsedDates: Map<string, string> = new Map(); // assetId → last known kMDItemLastUsedDate
   private pausedAssets: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   constructor(store: AssetStore) {
@@ -150,9 +151,20 @@ export class AssetMonitor {
     // is determined by its sensitivity level
     this.verifyInterval = setInterval(() => this.periodicVerify(), 60_000);
 
-    // Poll for file access (lsof) every 10 seconds (macOS only)
+    // Poll for file access every 10 seconds (macOS only)
+    // Two complementary strategies:
+    //   1. lsof: detects processes with files currently open (video players, databases)
+    //   2. Spotlight metadata: detects apps that opened-then-closed files (TextEdit, Preview)
     if (process.platform === 'darwin') {
-      this.accessPollTimer = setInterval(() => this.checkFileAccess(), 10_000);
+      this.accessPollTimer = setInterval(() => {
+        this.checkFileAccess().catch((err) =>
+          log.error('[AssetMonitor] lsof poll error:', err),
+        );
+        this.checkSpotlightAccess().catch((err) =>
+          log.error('[AssetMonitor] Spotlight poll error:', err),
+        );
+      }, 10_000);
+      log.info('[AssetMonitor] Access polling started (10s interval, lsof + Spotlight)');
     }
 
     log.info(`[AssetMonitor] Watching ${assets.length} high-trust assets`);
@@ -175,6 +187,7 @@ export class AssetMonitor {
     this.hashCache.clear();
     this.snapshots.clear();
     this.knownAccessors.clear();
+    this.lastUsedDates.clear();
     log.info('[AssetMonitor] Stopped');
   }
 
@@ -804,6 +817,10 @@ export class AssetMonitor {
       'kernel_task', 'launchd', 'diskarbitrationd',
       'revisiond', 'filecoordinationd',
       'Finder', 'finder',               // Finder directory indexing / .DS_Store writes
+      'lsof',                            // our own lsof scan
+      'usernoted', 'cfprefsd', 'distnoted',
+      'endpointsecurityd', 'sandboxd', 'trustd',
+      'suggestd',
     ]);
 
     log.debug(`[AssetMonitor] checkFileAccess: polling ${assets.length} assets`);
@@ -881,14 +898,142 @@ export class AssetMonitor {
     }
   }
 
+  /**
+   * Detect file opens via macOS Spotlight metadata (kMDItemLastUsedDate).
+   *
+   * Most macOS apps (TextEdit, Preview, etc.) read files into memory and close
+   * the file handle immediately — lsof can't detect these brief opens.
+   * But macOS Spotlight updates kMDItemLastUsedDate when an app opens a file
+   * via LaunchServices, so we poll this metadata to detect opens.
+   */
+  private async checkSpotlightAccess(): Promise<void> {
+    if (process.platform !== 'darwin') return;
+
+    const assets = this.store.listAssets().filter((a) => a.enabled);
+    if (assets.length === 0) return;
+
+    for (const asset of assets) {
+      if (this.pausedAssets.has(asset.id)) continue;
+
+      try {
+        if (asset.type === 'file') {
+          // For files: check kMDItemLastUsedDate directly
+          const stdout = await safeExec(
+            `mdls -name kMDItemLastUsedDate -raw "${asset.path}"`,
+            { timeout: 5_000 },
+          );
+          const lastUsed = stdout.trim();
+          if (!lastUsed || lastUsed === '(null)') continue;
+
+          const prev = this.lastUsedDates.get(asset.id);
+          this.lastUsedDates.set(asset.id, lastUsed);
+
+          // Skip first poll (establish baseline) or if unchanged
+          if (!prev || lastUsed === prev) continue;
+
+          // kMDItemLastUsedDate changed → file was opened by an app
+          log.info(`[AssetMonitor] Spotlight: "${asset.name}" opened (lastUsed: ${prev} → ${lastUsed})`);
+
+          const impact =
+            asset.sensitivity === 'critical' ? -10
+            : asset.sensitivity === 'strict' ? -5
+            : -2;
+
+          const accessEvent: AssetChangeEvent = {
+            assetId: asset.id,
+            path: asset.path,
+            sensitivity: asset.sensitivity,
+            eventType: 'asset-accessed',
+            previousHash: asset.contentHash,
+            newHash: asset.contentHash,
+            trustStateBefore: asset.trustState,
+            trustStateAfter: asset.trustState,
+            timestamp: new Date().toISOString(),
+            metadata: {
+              fileName: path.basename(asset.path),
+              isHighTrustAsset: true,
+              detectedBy: 'spotlight-metadata',
+              lastUsedDate: lastUsed,
+              previousUsedDate: prev,
+              accessorNames: ['Unknown App (detected via Spotlight)'],
+              trustImpact: impact,
+            },
+          };
+
+          this.store.logChange(asset.id, accessEvent);
+          this.notifyListeners(accessEvent, asset);
+        } else {
+          // For directories: find files opened in the last 30 seconds
+          const since = new Date(Date.now() - 30_000).toISOString().replace('T', ' ').slice(0, 19);
+          const stdout = await safeExec(
+            `mdfind -onlyin "${asset.path}" 'kMDItemLastUsedDate >= $time.iso(${since})' 2>/dev/null`,
+            { timeout: 5_000 },
+          );
+          const files = stdout.trim().split('\n').filter((f) => {
+            if (!f) return false;
+            const name = path.basename(f);
+            return !name.startsWith('.') && name !== '.DS_Store';
+          });
+          if (files.length === 0) continue;
+
+          // Build a key from file paths to detect new opens
+          const fileKey = files.sort().join('|');
+          const prevKey = this.lastUsedDates.get(asset.id);
+          this.lastUsedDates.set(asset.id, fileKey);
+
+          if (!prevKey) continue; // first poll — establish baseline
+
+          // Find truly new files (not in previous poll)
+          const prevFiles = new Set(prevKey.split('|'));
+          const newFiles = files.filter((f) => !prevFiles.has(f));
+          if (newFiles.length === 0) continue;
+
+          const fileNames = newFiles.map((f) => path.basename(f));
+          log.info(`[AssetMonitor] Spotlight: "${asset.name}" dir — ${fileNames.length} file(s) opened: ${fileNames.join(', ')}`);
+
+          const impact =
+            asset.sensitivity === 'critical' ? -10
+            : asset.sensitivity === 'strict' ? -5
+            : -2;
+
+          const accessEvent: AssetChangeEvent = {
+            assetId: asset.id,
+            path: asset.path,
+            sensitivity: asset.sensitivity,
+            eventType: 'asset-accessed',
+            previousHash: asset.contentHash,
+            newHash: asset.contentHash,
+            trustStateBefore: asset.trustState,
+            trustStateAfter: asset.trustState,
+            timestamp: new Date().toISOString(),
+            metadata: {
+              fileName: fileNames[0],
+              isHighTrustAsset: true,
+              detectedBy: 'spotlight-metadata',
+              accessedFiles: newFiles,
+              accessorNames: ['Unknown App (detected via Spotlight)'],
+              trustImpact: impact,
+            },
+          };
+
+          this.store.logChange(asset.id, accessEvent);
+          this.notifyListeners(accessEvent, asset);
+        }
+      } catch (err) {
+        log.debug(`[AssetMonitor] Spotlight check failed for ${asset.name}:`, err);
+      }
+    }
+  }
+
   /** Run lsof on a file or directory path and parse the output. */
   private async runLsof(targetPath: string, isDirectory = false): Promise<Array<{ processName: string; pid: string; user: string; accessType: string; filePath: string }>> {
     try {
-      // For directories, use +D (recursive) to find processes accessing files within
+      // +d (non-recursive) for directories — +D (recursive) is far too slow for
+      // large directories and times out.  +d checks only the directory itself.
       const args = isDirectory
-        ? ['-F', 'pcufan', '+D', targetPath]
-        : ['-F', 'pcufa', '--', targetPath];
-      const stdout = await safeExecFile('lsof', args, { timeout: 5_000 });
+        ? ['-F', 'pcufan', '+d', targetPath]
+        : ['-F', 'pcufan', '--', targetPath];
+      const stdout = await safeExecFile('lsof', args, { timeout: 10_000 });
       if (!stdout.trim()) {
         return [];
       }
@@ -903,10 +1048,7 @@ export class AssetMonitor {
         const value = line.slice(1);
         switch (tag) {
           case 'p':
-            // New process — push previous if complete
-            if (current.pid && current.processName) {
-              results.push({ ...current });
-            }
+            // New process block — reset current (don't push here, push on 'n')
             current = { processName: '', pid: value, user: '', accessType: '', filePath: '' };
             break;
           case 'c':
@@ -919,34 +1061,51 @@ export class AssetMonitor {
             current.accessType = value; // 'r', 'w', 'u' (read, write, read-write)
             break;
           case 'f':
-            // File descriptor — ignore (we have the path)
+            // File descriptor — ignore (we have the path from 'n')
             break;
           case 'n':
+            // Each 'n' line completes a file-descriptor entry — push immediately
+            // so we capture ALL open files per process, not just the last one.
             current.filePath = value;
+            if (current.pid && current.processName) {
+              results.push({ ...current });
+            }
             break;
         }
       }
-      // Push last entry
-      if (current.pid && current.processName) {
-        results.push(current);
-      }
 
-      // Filter out our own app
-      const appName = 'QShield';
-      return results.filter((r) => !r.processName.includes(appName) && r.processName !== 'Electron');
-    } catch {
+      // Filter out our own app and lsof itself
+      return results.filter((r) =>
+        !r.processName.includes('QShield') &&
+        r.processName !== 'Electron' &&
+        r.processName !== 'lsof',
+      );
+    } catch (err) {
+      log.debug(`[AssetMonitor] runLsof failed for "${targetPath}":`, err instanceof Error ? err.message : err);
       return [];
     }
   }
 
   /** Convert raw process names to human-readable app names. */
   private friendlyProcessName(rawName: string): string {
-    // macOS apps often show as "AppName" already, but some have suffixes
     const map: Record<string, string> = {
       'com.apple.TextEdit': 'TextEdit',
       'com.apple.Preview': 'Preview',
       'com.apple.finder': 'Finder',
       'com.microsoft.VSCode': 'VS Code',
+      'Preview': 'Preview',
+      'TextEdit': 'TextEdit',
+      'QuickLookUIService': 'Quick Look',
+      'qlmanage': 'Quick Look',
+      'open': 'Finder',
+      'Google Chrome': 'Chrome',
+      'Safari': 'Safari',
+      'firefox': 'Firefox',
+      'Slack': 'Slack',
+      'Microsoft Word': 'Microsoft Word',
+      'Microsoft Excel': 'Microsoft Excel',
+      'VLC': 'VLC Player',
+      'IINA': 'IINA Player',
       'code': 'VS Code',
       'Code Helper': 'VS Code',
       'vim': 'Vim',
