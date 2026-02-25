@@ -755,7 +755,7 @@ function EmailSignatureSection() {
               <p style={{ margin: '0 0 4px' }}>Best regards,<br />Jane Smith</p>
               <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '12px', paddingTop: '4px' }}>
                 {previewHtml ? (
-                  <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                  <div style={{ pointerEvents: 'none' }} dangerouslySetInnerHTML={{ __html: previewHtml }} />
                 ) : (
                   <div className="text-slate-400 text-xs italic py-2">Loading preview...</div>
                 )}
