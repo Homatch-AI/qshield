@@ -17,10 +17,10 @@ afterEach(() => {
 describe('Database - Users', () => {
   it('creates a user and retrieves by email', () => {
     const id = randomUUID();
-    db.createUser(id, 'test@qshield.io', 'Test User', 'hash123');
-    const user = db.getUserByEmail('test@qshield.io');
+    db.createUser(id, 'test@qshield.app', 'Test User', 'hash123');
+    const user = db.getUserByEmail('test@qshield.app');
     expect(user).not.toBeNull();
-    expect(user!.email).toBe('test@qshield.io');
+    expect(user!.email).toBe('test@qshield.app');
     expect(user!.name).toBe('Test User');
     expect(user!.tier).toBe('personal');
     expect(user!.active).toBe(1);
@@ -28,14 +28,14 @@ describe('Database - Users', () => {
 
   it('retrieves user by API key hash', () => {
     const id = randomUUID();
-    db.createUser(id, 'key@qshield.io', null, 'api-hash-001');
+    db.createUser(id, 'key@qshield.app', null, 'api-hash-001');
     const user = db.getUserByApiKeyHash('api-hash-001');
     expect(user).not.toBeNull();
     expect(user!.id).toBe(id);
   });
 
   it('returns null for non-existent email', () => {
-    expect(db.getUserByEmail('nobody@qshield.io')).toBeNull();
+    expect(db.getUserByEmail('nobody@qshield.app')).toBeNull();
   });
 
   it('returns null for non-existent API key', () => {
@@ -44,13 +44,13 @@ describe('Database - Users', () => {
 
   it('retrieves user by ID', () => {
     const id = randomUUID();
-    db.createUser(id, 'byid@qshield.io', 'By ID', 'hash-byid');
-    expect(db.getUserById(id)!.email).toBe('byid@qshield.io');
+    db.createUser(id, 'byid@qshield.app', 'By ID', 'hash-byid');
+    expect(db.getUserById(id)!.email).toBe('byid@qshield.app');
   });
 
   it('updates last login', () => {
     const id = randomUUID();
-    db.createUser(id, 'login@qshield.io', null, 'hash-login');
+    db.createUser(id, 'login@qshield.app', null, 'hash-login');
     expect(db.getUserById(id)!.last_login).toBeNull();
     db.updateLastLogin(id);
     expect(db.getUserById(id)!.last_login).not.toBeNull();
@@ -59,8 +59,8 @@ describe('Database - Users', () => {
   it('rejects duplicate email', () => {
     const id1 = randomUUID();
     const id2 = randomUUID();
-    db.createUser(id1, 'dup@qshield.io', null, 'hash-a');
-    expect(() => db.createUser(id2, 'dup@qshield.io', null, 'hash-b')).toThrow();
+    db.createUser(id1, 'dup@qshield.app', null, 'hash-a');
+    expect(() => db.createUser(id2, 'dup@qshield.app', null, 'hash-b')).toThrow();
   });
 });
 
