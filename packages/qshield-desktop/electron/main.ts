@@ -222,11 +222,16 @@ function createMainWindow(): BrowserWindow {
   });
 
   win.webContents.on('will-navigate', (event, url) => {
-    // Allow Vite dev server and local file navigation
-    if (url.startsWith('http://localhost') || url.startsWith('file://')) {
-      return;
+    try {
+      const parsed = new URL(url);
+      // Allow Vite dev server and local file navigation
+      if (parsed.hostname === 'localhost' || parsed.protocol === 'file:') {
+        return;
+      }
+    } catch {
+      // Malformed URL — block it
     }
-    // Block external URLs from loading in the app window
+    // Everything else opens in system browser
     event.preventDefault();
     shell.openExternal(url);
   });
