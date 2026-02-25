@@ -1,4 +1,4 @@
-{
+"build": "pnpm --filter @qshield/core build && tsc",
   "name": "@qshield/gateway",
   "version": "1.1.0",
   "description": "QShield Gateway — trust report validation server",
