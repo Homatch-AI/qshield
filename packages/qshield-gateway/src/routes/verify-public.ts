@@ -87,7 +87,7 @@ function renderVerified(v: StoredVerification): string {
   <div class="detail"><span class="label">Evidence chain</span><span>${v.evidence_count} records</span></div>
   <div class="detail"><span class="label">Verification ID</span><span style="font-family:monospace;font-size:.8rem">${escapeHtml(v.id)}</span></div>
 </div>
-<a class="cta" href="https://qshield.io/download${referralParam}">Protect your emails too &rarr; Get QShield</a>`;
+<a class="cta" href="https://www.qshield.app/download${referralParam}">Protect your emails too &rarr; Get QShield</a>`;
 
   return renderPage(
     `Verified by QShield — ${v.sender_name}`,
@@ -106,7 +106,7 @@ function renderNotFound(): string {
 <div class="shield miss">&#x2753;</div>
 <h1>Verification not found</h1>
 <div class="subtitle">This verification ID was not found in our records. It may have expired or may be invalid.</div>
-<a class="cta" href="https://qshield.io">Learn about QShield</a>`,
+<a class="cta" href="https://www.qshield.app">Learn about QShield</a>`,
   );
 }
 
@@ -119,7 +119,7 @@ function renderTampered(): string {
 <div class="shield warn">&#x26a0;</div>
 <h1>Evidence chain integrity check failed</h1>
 <div class="subtitle">The trust data for this email may have been tampered with. Exercise caution.</div>
-<a class="cta" href="https://qshield.io">Learn about QShield</a>`,
+<a class="cta" href="https://www.qshield.app">Learn about QShield</a>`,
   );
 }
 

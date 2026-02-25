@@ -80,7 +80,7 @@ export interface MessageSummary {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MESSAGE_BASE_URL = 'https://qshield.io/m';
+const MESSAGE_BASE_URL = 'https://api.qshield.app/m';
 const MAX_MESSAGES = 100;
 
 const EXPIRY_MS: Record<string, number> = {

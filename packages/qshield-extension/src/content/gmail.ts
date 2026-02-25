@@ -89,7 +89,7 @@ export function createStaticBadgeHtml(): string {
     <td style="padding:2px 0 0 0;">
       <span style="font-size:9px;color:#94a3b8;">Protected by </span>
       <span style="font-size:9px;color:#94a3b8;font-weight:600;">QShield</span>
-      <span style="font-size:9px;color:#cbd5e1;"> — Verify your emails too → qshield.io</span>
+      <span style="font-size:9px;color:#cbd5e1;"> — Verify your emails too → qshield.app</span>
     </td>
   </tr>
 </table>`;
@@ -261,8 +261,8 @@ function buildAttachmentCard(
     </table>
     <div style="text-align:left;margin-top:6px;">
       <span style="font-size:11px;color:#94a3b8;">
-        Protected by <a href="https://qshield.io" style="color:#0ea5e9;text-decoration:none;">QShield</a> \u2014
-        Secure your files too \u2192 <a href="https://qshield.io" style="color:#0ea5e9;text-decoration:none;">qshield.io</a>
+        Protected by <a href="https://www.qshield.app" style="color:#0ea5e9;text-decoration:none;">QShield</a> \u2014
+        Secure your files too \u2192 <a href="https://www.qshield.app" style="color:#0ea5e9;text-decoration:none;">qshield.app</a>
       </span>
     </div>
   `;

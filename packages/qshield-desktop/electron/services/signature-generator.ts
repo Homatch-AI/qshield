@@ -107,7 +107,7 @@ function shieldIconDataUri(color: string): string {
 
 function poweredByRow(config: SignatureConfig, referralId: string): string {
   if (!config.showTagline) return '';
-  const downloadUrl = `https://qshield.io/download?ref=${referralId}`;
+  const downloadUrl = `https://www.qshield.app?ref=${referralId}`;
   return `<tr>
     <td style="padding:2px 0 0 0;">
       <span style="font-size:9px;color:#94a3b8;">Powered by </span>
@@ -147,7 +147,7 @@ function buildInlineSignature(config: SignatureConfig, score: number, level: str
 
 function buildBannerSignature(config: SignatureConfig, score: number, level: string, verifyUrl: string, timestamp: string, referralId: string): string {
   const levelColor = getLevelColor(level);
-  const downloadUrl = `https://qshield.io/download?ref=${referralId}`;
+  const downloadUrl = `https://www.qshield.app?ref=${referralId}`;
   const timeStr = config.showTimestamp
     ? new Date(timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '';
@@ -182,7 +182,7 @@ function buildBannerSignature(config: SignatureConfig, score: number, level: str
                         ${config.showTimestamp ? `<span style="font-size:10px;color:#94a3b8;${config.showLink || config.showDownloadCta ? 'margin-left:12px;' : ''}">${timeStr}</span>` : ''}
                       </td>
                     </tr>
-                    ${config.showTagline ? `<tr><td style="padding-top:6px;"><span style="font-size:10px;color:#94a3b8;">Protect your emails too &rarr; </span><a href="${downloadUrl}" style="font-size:10px;color:${config.accentColor};text-decoration:none;font-weight:500;">qshield.io</a></td></tr>` : ''}
+                    ${config.showTagline ? `<tr><td style="padding-top:6px;"><span style="font-size:10px;color:#94a3b8;">Protect your emails too &rarr; </span><a href="${downloadUrl}" style="font-size:10px;color:${config.accentColor};text-decoration:none;font-weight:500;">qshield.app</a></td></tr>` : ''}
                   </table>
                 </td>
               </tr>
@@ -235,7 +235,7 @@ export function generateVerificationBadgeHtml(opts: {
   const levelColor = getLevelColor(opts.trustLevel);
   const iconUri = shieldIconDataUri(levelColor);
   const brandingRow = opts.showBranding
-    ? `<tr><td colspan="3" style="padding:2px 12px 6px 12px;font-size:9px;color:#94a3b8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">Protected by <a href="https://qshield.io/download" style="color:#94a3b8;text-decoration:none;font-weight:600;">QShield</a> &mdash; <a href="https://qshield.io/download" style="color:#0ea5e9;text-decoration:none;">protect your emails too</a></td></tr>`
+    ? `<tr><td colspan="3" style="padding:2px 12px 6px 12px;font-size:9px;color:#94a3b8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">Protected by <a href="https://www.qshield.app" style="color:#94a3b8;text-decoration:none;font-weight:600;">QShield</a> &mdash; <a href="https://www.qshield.app" style="color:#0ea5e9;text-decoration:none;">protect your emails too</a></td></tr>`
     : '';
 
   return `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:8px 0;">
@@ -267,7 +267,7 @@ export function generateSignatureHTML(
   verificationId: string = '',
   verifyUrl: string = '',
   referralId: string = '',
-  sender: string = 'user@qshield.io',
+  sender: string = 'user@qshield.app',
 ): SignatureResult {
   const generatedAt = new Date().toISOString();
   const trustLevel = getLevelFromScore(trustScore);

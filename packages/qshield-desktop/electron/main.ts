@@ -1098,11 +1098,11 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         const trustLevel = trustScore >= 90 ? 'verified' : trustScore >= 70 ? 'normal' : trustScore >= 50 ? 'elevated' : trustScore >= 30 ? 'warning' : 'critical';
         const record = verificationService.createRecord({
           senderName,
-          senderEmail: 'user@qshield.io',
+          senderEmail: 'user@qshield.app',
           trustScore,
           trustLevel,
         });
-        return generateSignatureHTML(merged, trustScore, record.verificationId, record.verifyUrl, record.referralId, 'user@qshield.io');
+        return generateSignatureHTML(merged, trustScore, record.verificationId, record.verifyUrl, record.referralId, 'user@qshield.app');
       },
       getConfig: () => {
         const saved = config.get('signatureConfig') as SignatureConfig | undefined;
@@ -1166,7 +1166,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         return secureMessageSvc.create(
           o as Parameters<typeof secureMessageSvc.create>[0],
           'QShield User',
-          licEmail || 'user@qshield.io',
+          licEmail || 'user@qshield.app',
         );
       },
       list: () => secureMessageSvc.list(),
@@ -2020,7 +2020,7 @@ app.whenReady().then(async () => {
     getTrustScore: () => currentTrustScore,
     getTrustLevel: () => currentTrustLevel,
     getUserEmail: () => {
-      return (services?.licenseManager?.getLicense() as { email?: string })?.email || 'user@qshield.io';
+      return (services?.licenseManager?.getLicense() as { email?: string })?.email || 'user@qshield.app';
     },
     getUserName: () => {
       return 'QShield User';

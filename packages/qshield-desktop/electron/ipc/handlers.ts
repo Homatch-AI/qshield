@@ -720,7 +720,7 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     }
     const licenseEmail = (services.licenseManager.getLicense() as { email?: string }).email;
     const senderName = 'QShield User';
-    const senderEmail = licenseEmail || 'user@qshield.io';
+    const senderEmail = licenseEmail || 'user@qshield.app';
     return ok(services.secureMessageService.create(
       { subject: subject as string, content: content as string, attachments: Array.isArray(attachments) ? attachments : undefined, expiresIn: expiresIn as string, maxViews: maxViews as number, requireVerification: !!requireVerification, allowedRecipients: Array.isArray(allowedRecipients) ? allowedRecipients : [] },
       senderName,
@@ -775,7 +775,7 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
     return ok(services.secureFileService.upload(
       { fileName: fileName as string, mimeType: (mimeType as string) || 'application/octet-stream', data: buf, expiresIn: expiresIn as '1h' | '24h' | '7d' | '30d', maxDownloads: typeof maxDownloads === 'number' ? maxDownloads : -1 },
       'QShield User',
-      licEmail || 'user@qshield.io',
+      licEmail || 'user@qshield.app',
     ));
   });
 

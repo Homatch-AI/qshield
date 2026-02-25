@@ -71,7 +71,7 @@ export function buildSecureEmailBody(subject: string, shareUrl: string, expiresA
     <div style="font-size:12px;color:#94a3b8;margin-top:12px;">${expiryText}</div>
   </div>
   <div style="text-align:center;margin-top:8px;">
-    <span style="font-size:11px;color:#94a3b8;">Protected by <a href="https://qshield.io" style="color:#0ea5e9;text-decoration:none;">QShield</a> \u2014 Verify your emails too \u2192 <a href="https://qshield.io" style="color:#0ea5e9;text-decoration:none;">qshield.io</a></span>
+    <span style="font-size:11px;color:#94a3b8;">Protected by <a href="https://www.qshield.app" style="color:#0ea5e9;text-decoration:none;">QShield</a> \u2014 Verify your emails too \u2192 <a href="https://www.qshield.app" style="color:#0ea5e9;text-decoration:none;">qshield.app</a></span>
   </div>
 </div>`;
 }

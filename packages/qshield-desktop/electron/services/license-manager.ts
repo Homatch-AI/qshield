@@ -223,7 +223,7 @@ export class LicenseManager {
 
     const payload = {
       tier,
-      email: opts.email ?? 'user@qshield.io',
+      email: opts.email ?? 'user@qshield.app',
       issuedAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
     };

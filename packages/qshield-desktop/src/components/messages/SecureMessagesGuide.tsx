@@ -73,7 +73,7 @@ export default function SecureMessagesGuide() {
         <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">URL Structure</div>
         <code className="block text-sm font-mono text-slate-300">
           <span className="text-slate-500">https://</span>
-          <span className="text-sky-400">qshield.io/m/</span>
+          <span className="text-sky-400">api.qshield.app/m/</span>
           <span className="text-amber-400">a1b2c3d4e5f6</span>
           <span className="text-slate-500">#</span>
           <span className="text-emerald-400">base64url(AES-256-key)</span>

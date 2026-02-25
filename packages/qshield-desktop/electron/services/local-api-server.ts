@@ -312,7 +312,7 @@ export class LocalApiServer {
     };
 
     this.sendJson(res, 200, {
-      authenticated: this.deps.getUserEmail() !== 'user@qshield.io',
+      authenticated: this.deps.getUserEmail() !== 'user@qshield.app',
       edition,
       verificationsToday: stats.totalGenerated,
       dailyLimit: dailyLimits[edition] ?? 5,

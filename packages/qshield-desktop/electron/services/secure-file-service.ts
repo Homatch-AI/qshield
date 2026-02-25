@@ -274,7 +274,7 @@ export class SecureFileService {
       status: file.status,
       currentDownloads: file.currentDownloads,
       maxDownloads: file.maxDownloads,
-      shareUrl: `https://qshield.io/f/${file.id}#${keyBase64url}`,
+      shareUrl: `https://api.qshield.app/f/${file.id}#${keyBase64url}`,
     };
   }
 
