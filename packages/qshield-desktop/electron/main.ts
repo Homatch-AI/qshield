@@ -907,6 +907,7 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
   const certGen = new StandaloneCertGenerator();
   const verificationService = new VerificationRecordService(
     keyManager?.getVerificationHmacKey(),
+    config.getGatewayConfig()?.url,
   );
   const licMgr = new LicenseManager();
   const licenseInfo = licMgr.initialize();

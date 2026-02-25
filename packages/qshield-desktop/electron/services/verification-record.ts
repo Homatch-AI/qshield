@@ -26,7 +26,7 @@ export interface VerificationStats {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const VERIFY_BASE_URL = 'https://verify.qshield.io/v';
+const DEFAULT_GATEWAY_URL = 'https://api.qshield.app';
 
 // ── Service ──────────────────────────────────────────────────────────────────
 
@@ -34,12 +34,15 @@ export class VerificationRecordService {
   private records: VerificationRecord[] = [];
   private referralId: string;
   private hmacKey: string;
+  private verifyBaseUrl: string;
 
-  constructor(hmacKey?: string) {
+  constructor(hmacKey?: string, gatewayUrl?: string) {
     if (!hmacKey) {
       throw new Error('VerificationRecordService requires an HMAC key — pass one from KeyManager');
     }
     this.hmacKey = hmacKey;
+    const base = gatewayUrl || DEFAULT_GATEWAY_URL;
+    this.verifyBaseUrl = `${base.replace(/\/+$/, '')}/v`;
     // Generate a stable referral ID (in production this would be persisted)
     this.referralId = randomBytes(8).toString('hex');
   }
@@ -89,7 +92,7 @@ export class VerificationRecordService {
 
     return {
       verificationId,
-      verifyUrl: `${VERIFY_BASE_URL}/${verificationId}`,
+      verifyUrl: `${this.verifyBaseUrl}/${verificationId}`,
       referralId: this.referralId,
     };
   }

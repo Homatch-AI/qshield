@@ -274,7 +274,7 @@ export function generateSignatureHTML(
   const verificationHash = generateVerificationHash(generatedAt, trustScore, sender);
 
   // Fallback URLs if no verification record was created
-  const effectiveVerifyUrl = verifyUrl || `https://verify.qshield.io/v/${verificationHash.slice(0, 12)}`;
+  const effectiveVerifyUrl = verifyUrl || `https://api.qshield.app/v/${verificationHash.slice(0, 12)}`;
   const effectiveVerificationId = verificationId || verificationHash.slice(0, 12);
   const effectiveReferralId = referralId || verificationHash.slice(0, 16);
 
