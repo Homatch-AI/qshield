@@ -212,6 +212,25 @@ function createMainWindow(): BrowserWindow {
     win.show();
   });
 
+  // Open external links in system browser instead of navigating the Electron window
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
+  win.webContents.on('will-navigate', (event, url) => {
+    // Allow Vite dev server and local file navigation
+    if (url.startsWith('http://localhost') || url.startsWith('file://')) {
+      return;
+    }
+    // Block external URLs from loading in the app window
+    event.preventDefault();
+    shell.openExternal(url);
+  });
+
   if (isDev) {
     win.loadURL('http://localhost:5173');
   } else {
