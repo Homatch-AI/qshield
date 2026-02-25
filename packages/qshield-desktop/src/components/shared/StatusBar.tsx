@@ -16,7 +16,7 @@ export function StatusBar() {
 
   const fetchGateway = useCallback(async () => {
     if (isIPCAvailable()) return window.qshield.gateway.getStatus();
-    return { connected: true, url: 'http://localhost:3001' };
+    return { connected: true, url: 'https://api.qshield.app' };
   }, []);
   const fetchAdapters = useCallback(async () => {
     if (isIPCAvailable()) return window.qshield.adapters.list();

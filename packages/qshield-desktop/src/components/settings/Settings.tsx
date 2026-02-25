@@ -40,7 +40,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (config) {
-      setGatewayUrl((config.gatewayUrl as string) ?? 'http://localhost:3001');
+      setGatewayUrl((config.gatewayUrl as string) ?? 'https://api.qshield.app');
       setNotificationsEnabled((config.notificationsEnabled as boolean) ?? true);
       setNotificationThreshold((config.notificationSeverityThreshold as string) ?? 'medium');
       setShieldOverlay((config['shield.enabled'] as boolean) ?? (config.shieldOverlay as boolean) ?? true);
@@ -146,7 +146,7 @@ export default function Settings() {
               type="url"
               value={gatewayUrl}
               onChange={(e) => setGatewayUrl(e.target.value)}
-              placeholder="http://localhost:3001"
+              placeholder="https://api.qshield.app"
               className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500/50"
             />
             <button

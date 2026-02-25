@@ -108,7 +108,7 @@ const CURRENT_CONFIG_VERSION = 1;
 const defaults: AppConfig = {
   configVersion: CURRENT_CONFIG_VERSION,
   gateway: {
-    url: 'http://localhost:8000',
+    url: 'https://api.qshield.app',
     timeout: 10_000,
     retryAttempts: 3,
     retryDelay: 1000,

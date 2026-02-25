@@ -513,7 +513,7 @@ export function mockCertificates(count: number = 5): TrustCertificate[] {
 /** Generate mock default config */
 export function mockConfig(): Record<string, unknown> {
   return {
-    gatewayUrl: 'http://localhost:3001',
+    gatewayUrl: 'https://api.qshield.app',
     gatewayTimeout: 5000,
     gatewayRetryAttempts: 3,
     gatewayRetryDelay: 1000,
