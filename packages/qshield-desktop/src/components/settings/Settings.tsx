@@ -757,15 +757,15 @@ function EmailSignatureSection() {
                 {previewHtml ? (
                   <div
                     onClick={(e) => {
-                      const anchor = (e.target as HTMLElement).closest('a');
+                      const anchor = (e.target as HTMLElement).closest('a[data-href]');
                       if (!anchor) return;
-                      const href = anchor.getAttribute('href');
-                      if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-                        e.preventDefault();
-                        window.qshield.app.openExternal(href);
-                      }
+                      const href = anchor.getAttribute('data-href');
+                      if (href) window.qshield.app.openExternal(href);
                     }}
-                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                    dangerouslySetInnerHTML={{
+                      __html: previewHtml.replace(/ href="/g, ' data-href="'),
+                    }}
+                    style={{ cursor: 'default' }}
                   />
                 ) : (
                   <div className="text-slate-400 text-xs italic py-2">Loading preview...</div>
