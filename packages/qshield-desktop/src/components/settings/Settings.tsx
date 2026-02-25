@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import useConfigStore from '@/stores/config-store';
 import { useTrustState } from '@/hooks/useTrustState';
 import { SkeletonCard } from '@/components/shared/SkeletonLoader';
@@ -597,6 +597,7 @@ function EmailSignatureSection() {
   const [showTagline, setShowTagline] = useState(true);
   const [showDownloadCta, setShowDownloadCta] = useState(true);
   const [previewHtml, setPreviewHtml] = useState('');
+  const previewRef = useRef<HTMLDivElement>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
   const [configLoaded, setConfigLoaded] = useState(false);
   const [verifyStats, setVerifyStats] = useState<{ totalGenerated: number; totalClicks: number; clickThroughRate: number } | null>(null);
@@ -645,6 +646,24 @@ function EmailSignatureSection() {
       setPreviewHtml(result.html);
     }).catch(() => {});
   }, [style, primaryText, secondaryText, accentColor, showScore, showLink, showIcon, showTimestamp, senderName, showTagline, showDownloadCta, score]);
+
+  // Attach click handlers to <a> tags in the signature preview after render
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    const handler = (e: Event) => {
+      const anchor = (e.target as HTMLElement).closest('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.qshield.app.openExternal(href);
+      }
+    };
+    el.addEventListener('click', handler);
+    return () => el.removeEventListener('click', handler);
+  }, [previewHtml]);
 
   const handleCopy = useCallback(async () => {
     if (!isIPCAvailable()) return;
@@ -756,16 +775,8 @@ function EmailSignatureSection() {
               <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '12px', paddingTop: '4px' }}>
                 {previewHtml ? (
                   <div
-                    onClick={(e) => {
-                      const anchor = (e.target as HTMLElement).closest('a[data-href]');
-                      if (!anchor) return;
-                      const href = anchor.getAttribute('data-href');
-                      if (href) window.qshield.app.openExternal(href);
-                    }}
-                    dangerouslySetInnerHTML={{
-                      __html: previewHtml.replace(/ href="/g, ' data-href="'),
-                    }}
-                    style={{ cursor: 'default' }}
+                    ref={previewRef}
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
                   />
                 ) : (
                   <div className="text-slate-400 text-xs italic py-2">Loading preview...</div>
