@@ -102,7 +102,7 @@ export interface AppConfig {
 }
 
 /** Current config schema version */
-const CURRENT_CONFIG_VERSION = 1;
+const CURRENT_CONFIG_VERSION = 2;
 
 /** Default configuration values */
 const defaults: AppConfig = {
@@ -166,14 +166,15 @@ type Migration = (store: Store<AppConfig>) => void;
  */
 const migrations: Record<number, Migration> = {
   // Version 1: initial schema — no migration needed from 0.
-  // Future example:
-  // 2: (store) => {
-  //   // Add new field with default
-  //   if (!store.has('someNewKey')) {
-  //     store.set('someNewKey', 'defaultValue');
-  //   }
-  //   store.set('configVersion', 2);
-  // },
+  // Version 2: migrate gateway URL from localhost to production
+  2: (store) => {
+    const gw = store.get('gateway');
+    if (gw && (gw.url === 'http://localhost:8000' || gw.url === 'http://localhost:3001')) {
+      store.set('gateway', { ...gw, url: 'https://api.qshield.app' });
+      log.info('Migrated gateway URL from localhost to https://api.qshield.app');
+    }
+    store.set('configVersion', 2);
+  },
 };
 
 /** Run any pending migrations */
