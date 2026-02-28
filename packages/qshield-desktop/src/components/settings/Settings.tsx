@@ -643,8 +643,9 @@ function EmailSignatureSection() {
     if (!isIPCAvailable()) return;
     window.qshield.signature.generate(currentConfig).then((raw) => {
       const result = raw as { html: string };
-      setPreviewHtml(result.html);
-    }).catch(() => {});
+      console.log('[Signature Preview] generate result:', typeof result.html, result.html?.length);
+      setPreviewHtml(result.html || '');
+    }).catch((err) => { console.error('[Signature Preview] generate failed:', err); });
   }, [style, primaryText, secondaryText, accentColor, showScore, showLink, showIcon, showTimestamp, senderName, showTagline, showDownloadCta, score]);
 
   // Attach click handlers to <a> tags in the signature preview after render

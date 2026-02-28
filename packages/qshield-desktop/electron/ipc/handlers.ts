@@ -530,13 +530,15 @@ export function registerIpcHandlers(services: ServiceRegistry): void {
   wrapHandler(IPC_CHANNELS.SIGNATURE_GENERATE, async (_event, config) => {
     const score = services.signatureGenerator.getCurrentTrustScore();
     const result = services.signatureGenerator.generate(config, score);
+    log.info(`[Signature] generate: style=${(config as Record<string, unknown>)?.style}, score=${score}, html=${(result as { html?: string }).html?.length ?? 0} chars`);
     return ok(result);
   });
 
   wrapHandler(IPC_CHANNELS.SIGNATURE_COPY, async (_event, config) => {
     const score = services.signatureGenerator.getCurrentTrustScore();
     const result = services.signatureGenerator.generate(config, score) as { html: string; trustScore: number };
-    clipboard.writeHTML(result.html);
+    log.info(`[Signature] copy: html=${result.html?.length ?? 0} chars, score=${result.trustScore}`);
+    clipboard.write({ html: result.html, text: result.html });
     return ok({ copied: true, trustScore: result.trustScore });
   });
 
