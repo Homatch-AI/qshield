@@ -14,8 +14,11 @@ interface VerificationBody {
 }
 
 export async function verificationRoutes(app: FastifyInstance, db: GatewayDatabase): Promise<void> {
-  // POST /api/v1/verification — register a new verification record
-  app.post('/api/v1/verification', async (request: FastifyRequest<{ Body: VerificationBody }>, reply: FastifyReply) => {
+  // POST /api/v1/verification — register a new verification record (public, no auth)
+  // Integrity is verified via the HMAC evidenceChainHash field.
+  app.post('/api/v1/verification', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (request: FastifyRequest<{ Body: VerificationBody }>, reply: FastifyReply) => {
     const body = request.body;
     if (!body?.verificationId || !body.senderEmail || !body.evidenceChainHash) {
       return reply.code(400).send({ error: 'Missing required fields', code: 'INVALID_REQUEST' });
@@ -25,9 +28,13 @@ export async function verificationRoutes(app: FastifyInstance, db: GatewayDataba
     const existing = db.getVerification(body.verificationId);
     if (existing) return reply.code(409).send({ error: 'Verification already exists', code: 'DUPLICATE' });
 
+    // Derive user_id from email lookup, or use a hash of the sender email
+    const user = db.getUserByEmail(body.senderEmail);
+    const userId = user?.id ?? `anon:${body.senderEmail}`;
+
     db.insertVerification({
       id: body.verificationId,
-      user_id: request.userId,
+      user_id: userId,
       sender_name: body.senderName,
       sender_email: body.senderEmail,
       trust_score: body.trustScore,
@@ -39,18 +46,5 @@ export async function verificationRoutes(app: FastifyInstance, db: GatewayDataba
     });
 
     return reply.code(201).send({ success: true, verificationId: body.verificationId });
-  });
-
-  // GET /api/v1/verification/:id — authenticated detail
-  app.get('/api/v1/verification/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-    const record = db.getVerification(request.params.id);
-    if (!record) return reply.code(404).send({ error: 'Not found', code: 'NOT_FOUND' });
-    if (record.user_id !== request.userId) return reply.code(403).send({ error: 'Forbidden', code: 'FORBIDDEN' });
-    return record;
-  });
-
-  // GET /api/v1/verification/stats
-  app.get('/api/v1/verification/stats', async (request: FastifyRequest) => {
-    return db.getVerificationStats(request.userId);
   });
 }

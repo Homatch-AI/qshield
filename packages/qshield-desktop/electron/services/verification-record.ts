@@ -34,6 +34,7 @@ export class VerificationRecordService {
   private records: VerificationRecord[] = [];
   private referralId: string;
   private hmacKey: string;
+  private gatewayBaseUrl: string;
   private verifyBaseUrl: string;
 
   constructor(hmacKey?: string, gatewayUrl?: string) {
@@ -41,8 +42,8 @@ export class VerificationRecordService {
       throw new Error('VerificationRecordService requires an HMAC key — pass one from KeyManager');
     }
     this.hmacKey = hmacKey;
-    const base = gatewayUrl || DEFAULT_GATEWAY_URL;
-    this.verifyBaseUrl = `${base.replace(/\/+$/, '')}/v`;
+    this.gatewayBaseUrl = (gatewayUrl || DEFAULT_GATEWAY_URL).replace(/\/+$/, '');
+    this.verifyBaseUrl = `${this.gatewayBaseUrl}/v`;
     // Generate a stable referral ID (in production this would be persisted)
     this.referralId = randomBytes(8).toString('hex');
   }
@@ -137,10 +138,26 @@ export class VerificationRecordService {
     return createHmac('sha256', this.hmacKey).update(data).digest('hex').slice(0, 12);
   }
 
-  /** POST verification record to Gateway (best-effort) */
+  /** POST verification record to Gateway (best-effort, fire-and-forget) */
   private async registerWithGateway(record: VerificationRecord): Promise<void> {
-    // In production, this would POST to the gateway
-    // For now, just log it
-    log.debug(`[VerificationRecord] Would POST to gateway: ${record.verificationId}`);
+    const url = `${this.gatewayBaseUrl}/api/v1/verification`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        verificationId: record.verificationId,
+        senderName: record.senderName,
+        senderEmail: record.senderEmail,
+        trustScore: record.trustScore,
+        trustLevel: record.trustLevel,
+        emailSubjectHash: record.emailSubjectHash,
+        evidenceChainHash: record.evidenceChainHash,
+        referralId: record.referralId,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Gateway returned ${response.status}`);
+    }
+    log.info(`[VerificationRecord] Registered with gateway: ${record.verificationId}`);
   }
 }

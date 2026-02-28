@@ -1096,13 +1096,16 @@ function createServiceRegistry(config: ConfigManager, realTrustMonitor: TrustMon
         const merged = { ...DEFAULT_SIGNATURE_CONFIG, ...(sigConfig as Partial<SignatureConfig>) };
         const senderName = merged.senderName || 'QShield User';
         const trustLevel = trustScore >= 90 ? 'verified' : trustScore >= 70 ? 'normal' : trustScore >= 50 ? 'elevated' : trustScore >= 30 ? 'warning' : 'critical';
+        const authSession = config.get('auth') as { session?: { user?: { email?: string } } } | undefined;
+        const emailConfig = config.get('emailNotifications') as { recipientEmail?: string } | undefined;
+        const senderEmail = authSession?.session?.user?.email || emailConfig?.recipientEmail || 'user@qshield.app';
         const record = verificationService.createRecord({
           senderName,
-          senderEmail: 'user@qshield.app',
+          senderEmail,
           trustScore,
           trustLevel,
         });
-        return generateSignatureHTML(merged, trustScore, record.verificationId, record.verifyUrl, record.referralId, 'user@qshield.app');
+        return generateSignatureHTML(merged, trustScore, record.verificationId, record.verifyUrl, record.referralId, senderEmail);
       },
       getConfig: () => {
         const saved = config.get('signatureConfig') as SignatureConfig | undefined;

@@ -67,13 +67,13 @@ export async function buildApp(opts?: { dbPath?: string }) {
   await healthRoutes(app);
   await authRoutes(app, db, authService, requireAuth);
   await verifyPublicRoutes(app, db);
+  await verificationRoutes(app, db);
 
   // Authenticated routes — registered as plugins for hook encapsulation
   app.register(async (scope) => {
     scope.addHook('preHandler', requireAuth);
     await trustRoutes(scope, db, signalHub);
     await evidenceRoutes(scope, db, verifier);
-    await verificationRoutes(scope, db);
     await certificateRoutes(scope, db, verifier);
     await policyRoutes(scope, db);
   });

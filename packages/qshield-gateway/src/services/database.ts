@@ -162,8 +162,7 @@ CREATE TABLE IF NOT EXISTS verifications (
   evidence_count INTEGER DEFAULT 0,
   referral_id TEXT,
   click_count INTEGER DEFAULT 0,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users(id)
+  created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_verifications_user ON verifications(user_id);
 
